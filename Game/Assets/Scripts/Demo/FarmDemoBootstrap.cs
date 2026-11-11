@@ -4,7 +4,7 @@ using UnityEngine;
 namespace ElysFarm.Demo
 {
     /// <summary>
-    /// 体块化演示场景的引导器：搭出地块、仓库与 NPC 的方块替身，
+    /// 体块化演示场景的引导器：搭出地块、产出仓与 NPC 的方块替身，
     /// 用真实时间推进 <see cref="FarmWorld"/>，并让 NPC 每个工步都重新跑一遍效用打分。
     /// 这里不调用任何模型，也不持有领域状态——只读 <see cref="FarmWorld"/> 的快照。
     /// </summary>
@@ -25,10 +25,13 @@ namespace ElysFarm.Demo
         static readonly Color CropMature = new Color(0.95f, 0.74f, 0.16f);
         static readonly Color WeedGreen = new Color(0.55f, 0.62f, 0.20f);
 
+        /// <summary>领域世界（唯一状态来源）。</summary>
         public FarmWorld World { get; private set; }
 
+        /// <summary>演示地块。</summary>
         public Field Field { get; private set; }
 
+        /// <summary>演示 NPC。</summary>
         public Npc Npc { get; private set; }
 
         /// <summary>NPC 此刻想干什么，供 HUD 展示。</summary>
@@ -81,7 +84,7 @@ namespace ElysFarm.Demo
 
             pendingStep = best.Value;
             CurrentIntent = $"前往 {pendingStep.FieldId} · {FarmDemoText.StepName(pendingStep.Step)}";
-            walkTarget = new Vector3(Field.X, NpcGroundY, Field.Z - 2.6f);
+            walkTarget = new Vector3(Field.Position.X, NpcGroundY, Field.Position.Z - 2.6f);
             walking = true;
             UpdateViews();
         }
@@ -89,9 +92,9 @@ namespace ElysFarm.Demo
         void SetUpWorld()
         {
             World = new FarmWorld(new FarmClock());
-            Field = World.AddField(FieldId, 0f, 3f, 0.3f);
-            Npc = World.AddNpc(NpcId, "阿禾", 0f, -3f);
-            World.SetProduceStore(-3f, -3f);
+            Field = World.AddField(FieldId, new FarmPosition(0f, 3f), 0.3f);
+            Npc = World.AddNpc(NpcId, "阿禾", new FarmPosition(-1.5f, -3f));
+            World.SetProduceStore(new FarmPosition(-2.4f, -3f));
             World.AddSeeds(CropCatalog.RadishId, 10);
             World.DaySettled += day => LastMessage = $"第 {day} 天开始，作物结算完毕";
             LastMessage = $"第 1 天，{Npc.DisplayName}在产出仓旁待命";
@@ -103,7 +106,7 @@ namespace ElysFarm.Demo
 
             var fieldBase = CreateBlock(
                 "Field A1",
-                new Vector3(Field.X, FieldTop * 0.5f, Field.Z),
+                new Vector3(Field.Position.X, FieldTop * 0.5f, Field.Position.Z),
                 new Vector3(3f, FieldTop, 3f),
                 DrySoil);
             fieldMaterial = fieldBase.GetComponent<Renderer>().sharedMaterial;
@@ -117,7 +120,7 @@ namespace ElysFarm.Demo
 
             CreateBlock(
                 "Produce Store",
-                new Vector3(-3f, 0.8f, -3f),
+                new Vector3(-4f, 0.8f, -3f),
                 new Vector3(2.4f, 1.6f, 2.4f),
                 new Color(0.58f, 0.38f, 0.22f));
 
@@ -132,10 +135,10 @@ namespace ElysFarm.Demo
             var postColor = new Color(0.72f, 0.62f, 0.46f);
             var corners = new[]
             {
-                new Vector3(-1.7f, 0.4f, Field.Z - 1.7f),
-                new Vector3(1.7f, 0.4f, Field.Z - 1.7f),
-                new Vector3(-1.7f, 0.4f, Field.Z + 1.7f),
-                new Vector3(1.7f, 0.4f, Field.Z + 1.7f)
+                new Vector3(-1.7f, 0.4f, Field.Position.Z - 1.7f),
+                new Vector3(1.7f, 0.4f, Field.Position.Z - 1.7f),
+                new Vector3(-1.7f, 0.4f, Field.Position.Z + 1.7f),
+                new Vector3(1.7f, 0.4f, Field.Position.Z + 1.7f)
             };
 
             foreach (var corner in corners)
@@ -148,7 +151,7 @@ namespace ElysFarm.Demo
         {
             weedsView = new GameObject("Weeds").transform;
             weedsView.SetParent(transform, false);
-            weedsView.position = new Vector3(Field.X, FieldTop + 0.1f, Field.Z);
+            weedsView.position = new Vector3(Field.Position.X, FieldTop + 0.1f, Field.Position.Z);
 
             var tuftMaterial = CreateMaterial("Weed", WeedGreen);
             var offsets = new[]
@@ -176,7 +179,7 @@ namespace ElysFarm.Demo
         {
             var npc = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             npc.name = $"NPC {Npc.DisplayName}";
-            npc.transform.position = new Vector3(Npc.X, NpcGroundY, Npc.Z);
+            npc.transform.position = new Vector3(Npc.Position.X, NpcGroundY, Npc.Position.Z);
             npc.transform.localScale = new Vector3(0.65f, 0.8f, 0.65f);
             npc.GetComponent<Renderer>().sharedMaterial = CreateMaterial("Npc", new Color(0.25f, 0.55f, 0.72f));
             npcView = npc.transform;
@@ -222,7 +225,7 @@ namespace ElysFarm.Demo
             var next = Vector3.MoveTowards(position, walkTarget, WalkSpeed * Time.deltaTime);
             next.y = NpcGroundY;
             npcView.position = next;
-            World.MoveNpc(NpcId, next.x, next.z);
+            World.MoveNpc(NpcId, new FarmPosition(next.x, next.z));
 
             var direction = new Vector3(walkTarget.x - next.x, 0f, walkTarget.z - next.z);
             if (direction.sqrMagnitude > 0.0004f)
@@ -241,7 +244,9 @@ namespace ElysFarm.Demo
             if (result.Executed)
             {
                 LastMessage = $"第 {World.Clock.Day} 天：{FarmDemoText.StepName(pendingStep.Step)}完成"
-                    + (result.Yield > 0 ? $"，收得 {result.Yield} 个萝卜" : string.Empty);
+                    + (result.Yield > 0
+                        ? $"，收得 {result.Yield} 个{CropCatalog.Radish.DisplayName}"
+                        : string.Empty);
                 CurrentIntent = LastMessage;
             }
             else
@@ -262,7 +267,7 @@ namespace ElysFarm.Demo
             if (sown)
             {
                 var height = 0.15f + Field.Growth * 1.2f;
-                cropView.position = new Vector3(Field.X, FieldTop + height * 0.5f, Field.Z);
+                cropView.position = new Vector3(Field.Position.X, FieldTop + height * 0.5f, Field.Position.Z);
                 cropView.localScale = new Vector3(0.9f, height, 0.9f);
                 cropMaterial.SetColor("_BaseColor", Color.Lerp(CropGreen, CropMature, Field.Growth));
             }

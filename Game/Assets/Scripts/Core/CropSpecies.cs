@@ -8,8 +8,10 @@ namespace ElysFarm.Core
     /// </summary>
     public sealed class CropSpecies
     {
+        /// <summary>品种 id，例如 radish / wheat。</summary>
         public string Id { get; set; }
 
+        /// <summary>展示名，例如「萝卜」。</summary>
         public string DisplayName { get; set; }
 
         /// <summary>从播种到成熟需要的游戏日数。</summary>

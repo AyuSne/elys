@@ -21,10 +21,7 @@ namespace ElysFarm.Core
         readonly UtilityScorer scorer = new UtilityScorer();
 
         /// <summary>产出仓的位置；随身物品只有在这里才能移交。</summary>
-        public float ProduceStoreX { get; private set; }
-
-        /// <summary>产出仓的 Z 坐标。</summary>
-        public float ProduceStoreZ { get; private set; }
+        public FarmPosition ProduceStore { get; private set; }
 
         /// <summary>游戏时钟。</summary>
         public FarmClock Clock { get; }
@@ -52,9 +49,9 @@ namespace ElysFarm.Core
         }
 
         /// <summary>加入一块地；id 必须唯一。</summary>
-        public Field AddField(string id, float x, float z, float fertility = 0.3f, float resilience = 0.5f)
+        public Field AddField(string id, FarmPosition position, float fertility = 0.3f, float resilience = 0.5f)
         {
-            var field = new Field(id, x, z, fertility, resilience);
+            var field = new Field(id, position, fertility, resilience);
             if (fieldsById.ContainsKey(id))
             {
                 throw new ArgumentException($"地块 id 重复：{id}", nameof(id));
@@ -66,9 +63,9 @@ namespace ElysFarm.Core
         }
 
         /// <summary>加入一名 NPC；id 必须唯一。</summary>
-        public Npc AddNpc(string id, string displayName, float x = 0f, float z = 0f)
+        public Npc AddNpc(string id, string displayName, FarmPosition position = default)
         {
-            var npc = new Npc(id, displayName, x, z);
+            var npc = new Npc(id, displayName, position);
             if (npcsById.ContainsKey(id))
             {
                 throw new ArgumentException($"NPC id 重复：{id}", nameof(id));
@@ -80,10 +77,9 @@ namespace ElysFarm.Core
         }
 
         /// <summary>指定产出仓的位置，随身物品只在这里移交。</summary>
-        public void SetProduceStore(float x, float z)
+        public void SetProduceStore(FarmPosition position)
         {
-            ProduceStoreX = x;
-            ProduceStoreZ = z;
+            ProduceStore = position;
         }
 
         /// <summary>往种子库入账。</summary>
@@ -117,7 +113,7 @@ namespace ElysFarm.Core
         /// <summary>NPC 是否在产出仓的移交半径内。</summary>
         public bool IsAtProduceStore(Npc npc)
         {
-            return npc.DistanceTo(ProduceStoreX, ProduceStoreZ) <= ProduceStoreRadius;
+            return npc.DistanceTo(ProduceStore) <= ProduceStoreRadius;
         }
 
         /// <summary>推进真实时间；跨日时由 <see cref="FarmClock"/> 触发结算。</summary>
@@ -202,7 +198,7 @@ namespace ElysFarm.Core
 
                     if (!Ledger.TryTakeSeeds(species.Id, species.SeedCost))
                     {
-                        throw new InvalidOperationException("播种校验通过后种子却扣不动：账本被绕过了 FarmWorld");
+                        return StepResult.Rejected(npcId, fieldId, step, ActionValidator.SeedShortageReason(species));
                     }
 
                     field.Apply(step, species);
@@ -224,28 +220,28 @@ namespace ElysFarm.Core
             }
 
             npc.ExertStep();
-            log.Add(new WorkLogEntry(Clock.Day, npc.Id, field.Id, step, produced, field.State));
+            log.Add(new WorkLogEntry(Clock.Day, npc.Id, field.Id, step, produced));
             return StepResult.Success(npcId, fieldId, step, produced);
         }
 
         /// <summary>NPC 移动；表现层每帧把位置写回领域，保证距离项与移交判定一致。</summary>
-        public void MoveNpc(string npcId, float x, float z)
+        public void MoveNpc(string npcId, FarmPosition position)
         {
-            GetNpc(npcId).MoveTo(x, z);
+            GetNpc(npcId).MoveTo(position);
         }
 
         /// <summary>NPC 在产出仓取货到随身；不在产出仓则拒绝。</summary>
         public bool TryPickUpProduce(string npcId, string speciesId, int count)
         {
             var npc = GetNpc(npcId);
-            return IsAtProduceStore(npc) && Ledger.TryPickUp(speciesId, count);
+            return IsAtProduceStore(npc) && Ledger.TryPickUp(npc.Id, speciesId, count);
         }
 
         /// <summary>NPC 回到产出仓后把随身交回；不在产出仓则拒绝。</summary>
         public bool TryDepositHeld(string npcId, string speciesId, int count)
         {
             var npc = GetNpc(npcId);
-            return IsAtProduceStore(npc) && Ledger.TryDeposit(speciesId, count);
+            return IsAtProduceStore(npc) && Ledger.TryDeposit(npc.Id, speciesId, count);
         }
 
         void SettleDay(int day)

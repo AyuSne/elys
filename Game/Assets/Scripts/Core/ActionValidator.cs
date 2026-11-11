@@ -6,6 +6,7 @@ namespace ElysFarm.Core
     /// </summary>
     public static class ActionValidator
     {
+        /// <summary>校验工步此刻是否可执行；不可执行时必须给出可读理由。</summary>
         public static bool Validate(FarmWorld world, Npc npc, Field field, WorkStep step, out string reason)
         {
             if (!field.Can(step, out reason))
@@ -39,12 +40,18 @@ namespace ElysFarm.Core
 
             if (world.Ledger.SeedsOf(species.Id) < species.SeedCost)
             {
-                reason = $"种子库里没有{species.DisplayName}种子了";
+                reason = SeedShortageReason(species);
                 return false;
             }
 
             reason = null;
             return true;
+        }
+
+        /// <summary>种子不足时的统一可读理由。</summary>
+        public static string SeedShortageReason(CropSpecies species)
+        {
+            return $"种子库里没有{species.DisplayName}种子了";
         }
     }
 }

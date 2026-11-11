@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ElysFarm.Core
 {
@@ -11,8 +12,10 @@ namespace ElysFarm.Core
         /// <summary>一个游戏日对应的真实秒数。</summary>
         public const float SecondsPerDay = 300f;
 
-        /// <summary>加速倍率，只接受 <see cref="AllowedSpeeds"/> 中的值。</summary>
-        public static readonly float[] AllowedSpeeds = { 1f, 4f, 16f };
+        static readonly float[] SpeedValues = { 1f, 4f, 16f };
+
+        /// <summary>允许的加速档位；只读呈现，不能通过它改档。</summary>
+        public static IReadOnlyList<float> AllowedSpeeds => SpeedValues;
 
         public FarmClock(float speed = 1f)
         {
@@ -21,13 +24,13 @@ namespace ElysFarm.Core
 
         float speed = 1f;
 
-        /// <summary>当前加速倍率。</summary>
+        /// <summary>当前加速倍率，只接受 1x / 4x / 16x。</summary>
         public float Speed
         {
             get => speed;
             set
             {
-                if (Array.IndexOf(AllowedSpeeds, value) < 0)
+                if (Array.IndexOf(SpeedValues, value) < 0)
                 {
                     throw new ArgumentOutOfRangeException(nameof(value), value, "加速倍率只接受 1x / 4x / 16x");
                 }

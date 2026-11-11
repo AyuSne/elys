@@ -14,9 +14,9 @@ namespace ElysFarm.Tests
         static FarmWorld NewWorld(int seeds = 10, float speed = 1f)
         {
             var world = new FarmWorld(new FarmClock { Speed = speed });
-            world.AddField("A1", 0f, 2f);
-            world.AddNpc("ahe", "阿禾", 0f, -4f);
-            world.SetProduceStore(0f, -4f);
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f));
+            world.SetProduceStore(new FarmPosition(0f, -4f));
             world.AddSeeds(CropCatalog.RadishId, seeds);
             return world;
         }
@@ -148,19 +148,19 @@ namespace ElysFarm.Tests
 
             Assert.IsTrue(world.IsAtProduceStore(world.GetNpc("ahe")), "NPC 初始在产出仓");
             Assert.IsTrue(world.TryPickUpProduce("ahe", CropCatalog.RadishId, 2), "在产出仓才能取货");
-            Assert.AreEqual(2, world.Ledger.HeldOf(CropCatalog.RadishId));
+            Assert.AreEqual(2, world.Ledger.HeldOf("ahe", CropCatalog.RadishId));
             Assert.AreEqual(1, world.Ledger.ProduceOf(CropCatalog.RadishId));
             Assert.AreEqual(3, world.Ledger.ProduceTotal, "取到随身只是搬家");
             Assert.IsTrue(world.Ledger.Verify(out error), error);
 
-            world.MoveNpc("ahe", 0f, 4f);
+            world.MoveNpc("ahe", new FarmPosition(0f, 4f));
             Assert.IsFalse(world.TryDepositHeld("ahe", CropCatalog.RadishId, 2), "不在产出仓不能移交");
-            Assert.AreEqual(2, world.Ledger.HeldOf(CropCatalog.RadishId), "失败的移交不能改动账本");
+            Assert.AreEqual(2, world.Ledger.HeldOf("ahe", CropCatalog.RadishId), "失败的移交不能改动账本");
 
-            world.MoveNpc("ahe", 0f, -4f);
+            world.MoveNpc("ahe", new FarmPosition(0f, -4f));
             Assert.IsTrue(world.TryDepositHeld("ahe", CropCatalog.RadishId, 2));
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId));
-            Assert.AreEqual(0, world.Ledger.HeldOf(CropCatalog.RadishId));
+            Assert.AreEqual(0, world.Ledger.HeldOf("ahe", CropCatalog.RadishId));
             Assert.AreEqual(2, world.Ledger.HeldAdded);
             Assert.AreEqual(2, world.Ledger.HeldRemoved);
             Assert.IsTrue(world.Ledger.Verify(out error), error);
@@ -176,6 +176,8 @@ namespace ElysFarm.Tests
             GrowRadishToMature(world, field);
 
             Assert.AreEqual(FieldState.Mature, field.State);
+            Assert.IsFalse(field.Can(WorkStep.Water, out var matureReason), "成熟后只需求收获");
+            Assert.AreEqual("已经熟了，先收了吧", matureReason);
 
             var growth = field.Growth;
             var water = field.Water;
@@ -225,7 +227,7 @@ namespace ElysFarm.Tests
         {
             var world = NewWorld(seeds: 5);
             var mature = world.GetField("A1");
-            world.AddField("A2", 20f, 20f);
+            world.AddField("A2", new FarmPosition(20f, 20f));
 
             PlantRadish(world);
             GrowRadishToMature(world, mature);

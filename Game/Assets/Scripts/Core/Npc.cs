@@ -25,11 +25,8 @@ namespace ElysFarm.Core
         /// <summary>展示名，例如「阿禾」。</summary>
         public string DisplayName { get; }
 
-        /// <summary>在农场平面上的 X 坐标。</summary>
-        public float X { get; private set; }
-
-        /// <summary>在农场平面上的 Z 坐标。</summary>
-        public float Z { get; private set; }
+        /// <summary>在农场平面上的位置。</summary>
+        public FarmPosition Position { get; private set; }
 
         /// <summary>体力，0..1；影响效用打分的体力项，低于阈值时无法执行工步。</summary>
         public float Stamina { get; private set; } = 1f;
@@ -49,7 +46,7 @@ namespace ElysFarm.Core
             }
         }
 
-        public Npc(string id, string displayName, float x = 0f, float z = 0f)
+        public Npc(string id, string displayName, FarmPosition position = default)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -58,28 +55,24 @@ namespace ElysFarm.Core
 
             Id = id;
             DisplayName = string.IsNullOrWhiteSpace(displayName) ? id : displayName;
-            X = x;
-            Z = z;
+            Position = position;
         }
 
         /// <summary>与某地块的平面距离，供效用打分的距离项使用。</summary>
         public float DistanceTo(Field field)
         {
-            return field.DistanceTo(X, Z);
+            return Position.DistanceTo(field.Position);
         }
 
         /// <summary>与任意一点的平面距离。</summary>
-        public float DistanceTo(float x, float z)
+        public float DistanceTo(FarmPosition position)
         {
-            var dx = X - x;
-            var dz = Z - z;
-            return (float)Math.Sqrt(dx * dx + dz * dz);
+            return Position.DistanceTo(position);
         }
 
-        internal void MoveTo(float x, float z)
+        internal void MoveTo(FarmPosition position)
         {
-            X = x;
-            Z = z;
+            Position = position;
         }
 
         internal void ExertStep()

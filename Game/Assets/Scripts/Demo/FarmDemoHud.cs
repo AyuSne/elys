@@ -110,10 +110,14 @@ namespace ElysFarm.Demo
             GUILayout.EndHorizontal();
             GUILayout.Space(6f);
 
-            GUILayout.Label($"种子库：萝卜 × {ledger.SeedsOf(CropCatalog.RadishId)}", labelStyle);
+            var cropName = CropCatalog.Radish.DisplayName;
+            GUILayout.Label($"种子库：{cropName} × {ledger.SeedsOf(CropCatalog.RadishId)}", labelStyle);
             GUILayout.Label(
-                $"产出仓：萝卜 × {ledger.ProduceOf(CropCatalog.RadishId)}（随身 {ledger.HeldOf(CropCatalog.RadishId)}）",
+                $"产出仓：{cropName} × {ledger.ProduceOf(CropCatalog.RadishId)}（随身 {ledger.HeldOf(demo.Npc.Id, CropCatalog.RadishId)}）",
                 labelStyle);
+            GUILayout.Label(
+                $"流水：种子 +{ledger.SeedsAdded}/-{ledger.SeedsRemoved} · 产出 +{ledger.ProduceAdded}/-{ledger.ProduceRemoved} · 随身 +{ledger.HeldAdded}/-{ledger.HeldRemoved}",
+                smallStyle);
             GUILayout.Label($"{npc.DisplayName}体力：{npc.Stamina:P0}", labelStyle);
             GUILayout.Space(6f);
 
@@ -176,9 +180,10 @@ namespace ElysFarm.Demo
             for (var i = first; i < log.Count; i++)
             {
                 var entry = log[i];
-                var yieldText = entry.Yield > 0 ? $" +{entry.Yield} 萝卜" : string.Empty;
+                var yieldText = entry.Yield > 0 ? $" +{entry.Yield} {CropCatalog.Radish.DisplayName}" : string.Empty;
+                var actor = demo.World.GetNpc(entry.NpcId).DisplayName;
                 GUILayout.Label(
-                    $"第 {entry.Day} 天 · {demo.Npc.DisplayName} · {FarmDemoText.StepName(entry.Step)} {entry.FieldId}{yieldText}",
+                    $"第 {entry.Day} 天 · {actor} · {FarmDemoText.StepName(entry.Step)} {entry.FieldId}{yieldText}",
                     labelStyle);
             }
 

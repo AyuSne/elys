@@ -14,11 +14,8 @@ namespace ElysFarm.Core
 
         public string Id { get; }
 
-        /// <summary>地块在农场平面上的 X 坐标，仅用于效用打分里的距离项。</summary>
-        public float X { get; }
-
-        /// <summary>地块在农场平面上的 Z 坐标，仅用于效用打分里的距离项。</summary>
-        public float Z { get; }
+        /// <summary>地块在农场平面上的位置，用于效用打分的距离项。</summary>
+        public FarmPosition Position { get; }
 
         public FieldState State { get; private set; } = FieldState.Empty;
 
@@ -60,7 +57,9 @@ namespace ElysFarm.Core
 
         const string NotPlantedReason = "地里什么都没种";
 
-        public Field(string id, float x = 0f, float z = 0f, float fertility = 0.5f, float resilience = 0.5f)
+        const string MatureReason = "已经熟了，先收了吧";
+
+        public Field(string id, FarmPosition position, float fertility = 0.5f, float resilience = 0.5f)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -68,18 +67,9 @@ namespace ElysFarm.Core
             }
 
             Id = id;
-            X = x;
-            Z = z;
+            Position = position;
             Fertility = FarmMath.Clamp01(fertility);
             Resilience = FarmMath.Clamp01(resilience);
-        }
-
-        /// <summary>与某点的平面距离，供效用打分的距离项使用。</summary>
-        public float DistanceTo(float x, float z)
-        {
-            var dx = X - x;
-            var dz = Z - z;
-            return (float)Math.Sqrt(dx * dx + dz * dz);
         }
 
         /// <summary>
@@ -130,6 +120,12 @@ namespace ElysFarm.Core
                         return false;
                     }
 
+                    if (State == FieldState.Mature)
+                    {
+                        reason = MatureReason;
+                        return false;
+                    }
+
                     if (Water >= 0.99f)
                     {
                         reason = "刚浇过，不渴";
@@ -146,6 +142,12 @@ namespace ElysFarm.Core
                         return false;
                     }
 
+                    if (State == FieldState.Mature)
+                    {
+                        reason = MatureReason;
+                        return false;
+                    }
+
                     if (Fertility >= 0.99f)
                     {
                         reason = "肥力还够";
@@ -159,6 +161,12 @@ namespace ElysFarm.Core
                     if (!IsSown)
                     {
                         reason = NotPlantedReason;
+                        return false;
+                    }
+
+                    if (State == FieldState.Mature)
+                    {
+                        reason = MatureReason;
                         return false;
                     }
 
@@ -237,10 +245,6 @@ namespace ElysFarm.Core
         /// <summary>
         /// 结算一个游戏日：生长推进、水分流失、杂草生长、肥力下降。
         /// 水分耗尽时生长停滞 —— 这是「不浇水就长不大」的唯一实现点。
-        /// </summary>
-        /// <summary>
-        /// 结算一个游戏日：生长推进、水分流失、杂草生长、肥力下降。
-        /// 水分耗尽时生长停滞 —— 这是「不浇水就长不大」的唯一实现点。
         /// 成熟后不再生长，但水分、杂草与肥力仍会随日结算。
         /// </summary>
         public void AdvanceDay()
@@ -266,8 +270,8 @@ namespace ElysFarm.Core
 
             if (IsGrowing)
             {
+                Growth = Math.Min(Growth, MatureThreshold);
                 State = Growth >= MatureThreshold ? FieldState.Mature : FieldState.Growing;
-                Growth = Math.Min(Growth, MatureThreshold * 1.5f);
             }
         }
     }

@@ -7,12 +7,14 @@ namespace ElysFarm.Core
     /// 背包的三本账（见 GLOSSARY）：种子库、产出仓、随身。
     /// 「背包功能正常」真正要证明的是收支守恒 —— 没有凭空出现的种子，
     /// 也没有凭空中饱私囊的收成，所以三本账都记录累计进出并暴露 <see cref="Verify"/>。
+    /// 随身按 NPC 分开记，因为它是 NPC 级持有。
     /// </summary>
     public sealed class FarmLedger
     {
         readonly Dictionary<string, int> seeds = new Dictionary<string, int>();
         readonly Dictionary<string, int> produce = new Dictionary<string, int>();
-        readonly Dictionary<string, int> held = new Dictionary<string, int>();
+        readonly Dictionary<string, Dictionary<string, int>> heldByNpc =
+            new Dictionary<string, Dictionary<string, int>>();
 
         /// <summary>累计入账的种子数。</summary>
         public int SeedsAdded { get; private set; }
@@ -20,10 +22,10 @@ namespace ElysFarm.Core
         /// <summary>累计被播种消耗的种子数。</summary>
         public int SeedsRemoved { get; private set; }
 
-        /// <summary>累计入库的产出数。</summary>
+        /// <summary>累计入库的产出数（不含随身搬运）。</summary>
         public int ProduceAdded { get; private set; }
 
-        /// <summary>累计被取走的产出数。</summary>
+        /// <summary>累计从产出仓取走的产出数。</summary>
         public int ProduceRemoved { get; private set; }
 
         /// <summary>累计取到随身的产出数。</summary>
@@ -35,23 +37,38 @@ namespace ElysFarm.Core
         /// <summary>种子库当前总数。</summary>
         public int SeedTotal => Sum(seeds);
 
-        /// <summary>产出总量（产出仓 + NPC 随身）。</summary>
-        public int ProduceTotal => Sum(produce) + Sum(held);
+        /// <summary>产出总量（产出仓 + 所有 NPC 的随身）。</summary>
+        public int ProduceTotal => Sum(produce) + HeldTotal;
 
         /// <summary>产出仓当前总数（不含随身）。</summary>
         public int StoredProduce => Sum(produce);
 
-        /// <summary>NPC 随身当前总数。</summary>
-        public int HeldTotal => Sum(held);
+        /// <summary>所有 NPC 的随身当前总数。</summary>
+        public int HeldTotal
+        {
+            get
+            {
+                var total = 0;
+                foreach (var book in heldByNpc.Values)
+                {
+                    total += Sum(book);
+                }
 
-        /// <summary>某种子库中某品种的当前数量。</summary>
+                return total;
+            }
+        }
+
+        /// <summary>种子库中某品种的当前数量。</summary>
         public int SeedsOf(string speciesId) => Get(seeds, speciesId);
 
         /// <summary>产出仓中某品种的当前数量。</summary>
         public int ProduceOf(string speciesId) => Get(produce, speciesId);
 
-        /// <summary>随身中某品种的当前数量。</summary>
-        public int HeldOf(string speciesId) => Get(held, speciesId);
+        /// <summary>某 NPC 的随身里某品种的当前数量。</summary>
+        public int HeldOf(string npcId, string speciesId)
+        {
+            return heldByNpc.TryGetValue(npcId, out var book) ? Get(book, speciesId) : 0;
+        }
 
         /// <summary>往种子库入账。</summary>
         public void AddSeeds(string speciesId, int count)
@@ -84,9 +101,10 @@ namespace ElysFarm.Core
             ProduceAdded += count;
         }
 
-        /// <summary>NPC 从产出仓取货到随身（总量不变）。</summary>
-        public bool TryPickUp(string speciesId, int count)
+        /// <summary>NPC 从产出仓取货到自己的随身（总量不变）。</summary>
+        public bool TryPickUp(string npcId, string speciesId, int count)
         {
+            RequireNpc(npcId);
             Require(speciesId, count);
 
             if (Get(produce, speciesId) < count)
@@ -95,22 +113,25 @@ namespace ElysFarm.Core
             }
 
             produce[speciesId] = Get(produce, speciesId) - count;
-            held[speciesId] = Get(held, speciesId) + count;
+            var book = HeldBook(npcId);
+            book[speciesId] = Get(book, speciesId) + count;
             HeldAdded += count;
             return true;
         }
 
         /// <summary>NPC 把随身物品交回产出仓（总量不变）。</summary>
-        public bool TryDeposit(string speciesId, int count)
+        public bool TryDeposit(string npcId, string speciesId, int count)
         {
+            RequireNpc(npcId);
             Require(speciesId, count);
 
-            if (Get(held, speciesId) < count)
+            if (HeldOf(npcId, speciesId) < count)
             {
                 return false;
             }
 
-            held[speciesId] = Get(held, speciesId) - count;
+            var book = HeldBook(npcId);
+            book[speciesId] = Get(book, speciesId) - count;
             produce[speciesId] = Get(produce, speciesId) + count;
             HeldRemoved += count;
             return true;
@@ -138,10 +159,17 @@ namespace ElysFarm.Core
         public bool Verify(out string error)
         {
             if (!VerifyNoNegatives(seeds, "种子库", out error)
-                || !VerifyNoNegatives(produce, "产出仓", out error)
-                || !VerifyNoNegatives(held, "随身", out error))
+                || !VerifyNoNegatives(produce, "产出仓", out error))
             {
                 return false;
+            }
+
+            foreach (var pair in heldByNpc)
+            {
+                if (!VerifyNoNegatives(pair.Value, $"随身（{pair.Key}）", out error))
+                {
+                    return false;
+                }
             }
 
             var expectedSeeds = SeedsAdded - SeedsRemoved;
@@ -202,6 +230,25 @@ namespace ElysFarm.Core
             {
                 throw new ArgumentOutOfRangeException(nameof(count), "数量必须为正");
             }
+        }
+
+        static void RequireNpc(string npcId)
+        {
+            if (string.IsNullOrWhiteSpace(npcId))
+            {
+                throw new ArgumentException("必须指定 NPC id", nameof(npcId));
+            }
+        }
+
+        Dictionary<string, int> HeldBook(string npcId)
+        {
+            if (!heldByNpc.TryGetValue(npcId, out var book))
+            {
+                book = new Dictionary<string, int>();
+                heldByNpc.Add(npcId, book);
+            }
+
+            return book;
         }
 
         static int Get(Dictionary<string, int> ledger, string speciesId)

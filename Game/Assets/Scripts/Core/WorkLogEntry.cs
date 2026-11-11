@@ -20,23 +20,18 @@ namespace ElysFarm.Core
         /// <summary>本次收获的产出数量；非收获为 0。</summary>
         public int Yield { get; }
 
-        /// <summary>执行后地块的状态。</summary>
-        public FieldState FieldStateAfter { get; }
-
         public WorkLogEntry(
             int day,
             string npcId,
             string fieldId,
             WorkStep step,
-            int yield,
-            FieldState fieldStateAfter)
+            int yield)
         {
             Day = day;
             NpcId = npcId;
             FieldId = fieldId;
             Step = step;
             Yield = yield;
-            FieldStateAfter = fieldStateAfter;
         }
     }
 }
