@@ -13,3 +13,7 @@ Five canonical triage roles, each label string equal to its role name. See `docs
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Unity project notes
+
+Before touching `Game/`, read `docs/agents/unity-pitfalls.md`: file encoding, batch test runs, driving the Editor for Play-mode verification, scene generation, and the domain/spec traps already hit.
