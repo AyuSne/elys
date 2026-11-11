@@ -60,7 +60,6 @@ Thumbs.db
 .env
 *.env.local
 
-# 测试报告：归档最近一次全绿结果，其余（临时/重跑/JUnit）不入库
+# 测试报告：生成物，不入库
 /test-results.xml
-/TestResults/*
-!/TestResults/editmode.xml
+/TestResults/

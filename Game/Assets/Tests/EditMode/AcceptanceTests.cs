@@ -53,7 +53,7 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 步骤完整_五个工步都按序执行并留下流水()
+        public void 五个工步完整_按序执行并留下流水()
         {
             var world = NewWorld();
             RunLoop(world, out var order);

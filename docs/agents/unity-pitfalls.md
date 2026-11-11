@@ -90,18 +90,19 @@
 - **两轴评审可能互相矛盾。** 本票遇到过：Standards 轴说 embedding、距离硬门槛是「规格没要求的超范围」，Spec 轴说删掉就违背规格。不要试图同时满足两边；把范围决定写进 `docs/spec` 或 ADR（本票在 `docs/spec/ai-farm-npc.md` 加了「范围注记」），再在最终说明里引用这个决定。
 - 评审意见分两类：违背文档/术语的硬项必须改；架构建议可以记录理由后不改（例如演示引导器保持单文件、不为两个浮点数提前引入类型，虽然最后仍抽了 `FarmPosition`）。
 - `git rm` 之后不要再 `git add` 那个已不存在的路径：整条 `git add` 会失败，而之前已暂存的删除仍会被提交。用 `git add -A <dir>`，提交后 `git show --stat HEAD` 复核。
-- `.gitignore` 里用户自己的未提交修改不要顺手带进提交；`Screenshots/`、`Temp/`、`Logs/` 都在忽略列表里，截图证据要单独说明路径。`unity test` 生成的 `test-results.xml` 不入库（#4 决定：归档 `TestResults/editmode.xml`，其余临时报告忽略）。
+- `.gitignore` 里用户自己的未提交修改不要顺手带进提交；`Screenshots/`、`Temp/`、`Logs/` 都在忽略列表里，截图证据要单独说明路径。`unity test` 生成的报告不入库（#4 决定：`TestResults/` 整体忽略；把生成物塞进受版本控制的路径，会让「跑完测试再打包」永远撞上脏工作树保护）。
 - `gh issue close` 成功时会把「✓ Closed issue ...」写到 **stderr**，PowerShell 会显示成 `NativeCommandError`，但 issue 其实已经关掉；用 `gh issue view <n> --json state` 复核，不要按退出码重试。
 - `gh issue list --json ... --jq` 的表达式含括号、管道或中文时容易被 PowerShell 拆成多个参数；在 PowerShell 里 `ConvertFrom-Json` 后再过滤，或只给 `--jq` 一个不含空格/管道的简单表达式。
 - `unity package` 命令在本机 CLI 不存在；加 UPM 包走 `Game/Packages/manifest.json`（或 Pipeline 的 package 命令），改完让 Unity 重新打开工程解析，`packages-lock.json` 的 `depth` 会跟着变。
 
 ## 交付与打包（#4）
 
-- 跑测试：`unity test Game --mode EditMode --output TestResults/editmode.xml`，`--output` 会直接覆盖写报告。`scripts/run-tests.ps1` 额外把三个验收项（步骤完整 / 背包守恒 / 时间推进）的结果打印出来。
-- 打包：`unity build Game --target StandaloneWindows64 --execute-method ElysFarm.EditorTools.FarmBuild.BuildWindows --output-path <绝对路径>\Elys.exe`。CLI 把路径作为 `-buildOutput` 传给 Editor，execute-method 必须自己读这个参数；默认拒绝在脏工作树上构建，开发期加 `--allow-dirty-build`。
+- 跑测试：`unity test Game --mode EditMode --output TestResults/editmode.xml`，`--output` 会直接覆盖写报告。`scripts/run-tests.ps1` 额外把三个验收项（五个工步完整 / 背包守恒 / 时间推进）的结果打印出来。测试名用「工步」，不用词汇表里的 Avoid 词「步骤」。
+- 打包：`unity build Game --target StandaloneWindows64 --execute-method ElysFarm.EditorTools.FarmBuild.BuildWindows --output-path <绝对路径>\Elys.exe`。CLI 把路径作为 `-buildOutput` 传给 Editor，execute-method 必须自己读这个参数。`scripts/build-windows.ps1` 默认带 `--allow-dirty-build`（`-RequireClean` 可强制干净）：打包本身会弄脏工程文件，第二次打包时 `unity build` 的干净树检查几乎必然失败。
 - **打包会顺手改工程文件**：`PC_RPAsset.asset` 的 shader prefilter、`UniversalRenderPipelineGlobalSettings.asset` 的 `m_RuntimeSettings`、`ProjectSettings.asset` 的 `m_BuildTargetBatching`。这些是构建副产物，提交前 `git checkout --` 还原；别把它们混进功能提交。
 - 运行时 `GameObject.CreatePrimitive` + `Shader.Find("Universal Render Pipeline/Lit")` 的材质在包里可能找不到 shader（方块变粉/不可见）。URP Lit 的 GUID 已加进 `GraphicsSettings.asset` 的 Always Included Shaders；升级 URP 版本后要复核这个 GUID。
-- 构建的密钥扫描只按**确切文件名**（`.env`、`.secrets.local.json`、`secrets.json`）判断。第一版按「文件名包含 secret」扫，直接把 `SecretFileLocator.cs` 拦成了密钥文件。
+- 构建的密钥扫描只按**确切文件名或 `.env` 后缀**判断（`.env`、`.env.local`、`.secrets.local.json`、`secrets.local.json`、`secrets.json`、`*.env`）。第一版按「文件名包含 secret」扫，直接把 `SecretFileLocator.cs` 拦成了密钥文件。C# 与 PowerShell 两份实现要同步改。
+- 构建配置不写成 EditMode 用例：`FarmBuild` 只把 `FarmDemo.unity` 传给 `BuildPlayer`，包必然从演示场景启动；场景/窗口/HUD 的验证放冒烟脚本，避免为了打包再开一条测试接缝。
 - 抓玩家窗口截图：PowerShell 进程要先 `SetProcessDPIAware()`，否则 125% 缩放下 `GetWindowRect` 返回 1038×614、截图右下角被裁。最小化窗口的 rect 是 `(-32000,-32000)`，抓图前 `ShowWindow(hwnd, 9)` 还原，并校验宽高。
 - 玩家日志在 `%USERPROFILE%\AppData\LocalLow\Elys\Elys\Player.log`（跟着 companyName / productName 变）。冒烟脚本用它确认引导器跑过、没有异常。
 - 冒烟截图时游戏窗口会弹到桌面上，可能被人手最小化或关掉；脚本要能自己还原窗口，失败信息要说清是「窗口被最小化」而不是笼统的「截图失败」。

@@ -63,7 +63,7 @@ Write-Host ''
 Write-Host '题目要求的三项验收（#4）：'
 
 $groups = @(
-    @{ Name = '步骤完整'; Pattern = 'AcceptanceTests.步骤完整_' },
+    @{ Name = '五个工步完整'; Pattern = 'AcceptanceTests.五个工步完整_' },
     @{ Name = '背包守恒'; Pattern = 'AcceptanceTests.背包守恒_' },
     @{ Name = '时间推进'; Pattern = 'AcceptanceTests.时间推进_' }
 )

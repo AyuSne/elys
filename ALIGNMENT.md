@@ -118,6 +118,7 @@
 |---|---|
 | 回归证据 | `unity test --mode EditMode` 覆盖五步迁移 + 背包守恒 + 时间推进，出 XML 报告 |
 | 演示证据 | `unity command capture game_view --source camera`，按固定剧本截图 |
+| 包证据 | `scripts/build-windows.ps1` 打包；`scripts/smoke-test-build.ps1` 启动、截图并检查 `Player.log` |
 | 开发期 | `unity command script eval`（2 秒生效的即时断言） |
 
 ## 七、假设（若与你理解不同请指出）

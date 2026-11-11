@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build;
@@ -9,8 +8,8 @@ using UnityEngine;
 namespace ElysFarm.EditorTools
 {
     /// <summary>
-    /// Windows 交付包的构建入口（#4）。固定只打农场演示场景，构建前后都检查工程与产物里
-    /// 有没有疑似密钥文件，避免把 .secrets.local.json 一类的东西带进包。
+    /// Windows 交付包的构建入口（#4）。固定只打农场演示场景，构建前后由
+    /// <see cref="BuildSecrets"/> 检查工程与产物里有没有疑似密钥文件。
     ///
     /// 命令行（由 scripts/build-windows.ps1 调用）：
     /// unity build Game --target StandaloneWindows64
@@ -22,31 +21,16 @@ namespace ElysFarm.EditorTools
         /// <summary>交付包启动的唯一场景。</summary>
         public const string DemoScenePath = "Assets/Scenes/FarmDemo.unity";
 
-        /// <summary>
-        /// 产物与工程里都不允许出现的密钥文件名。只按确切名字判断，避免误伤
-        /// SecretFileLocator 这类源码文件；密钥永远不该以这些名字出现在 Assets 里。
-        /// </summary>
-        static bool LooksLikeSecret(string fileName)
-        {
-            var name = fileName.ToLowerInvariant();
-            return name == ".env"
-                || name == ".env.local"
-                || name == ".secrets.local.json"
-                || name == "secrets.local.json"
-                || name == "secrets.json"
-                || name.EndsWith(".env");
-        }
-
         [MenuItem("Elys/构建 Windows 包")]
         public static void BuildWindows()
         {
             var outputPath = ResolveOutputPath();
-            var secrets = FindSecretFiles(Application.dataPath);
-            if (secrets.Count > 0)
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(DemoScenePath) == null)
             {
-                throw new BuildFailedException(
-                    "[Elys] Assets 里发现疑似密钥文件，拒绝打包：\n" + string.Join("\n", secrets));
+                throw new BuildFailedException($"[Elys] 找不到演示场景：{DemoScenePath}");
             }
+
+            BuildSecrets.EnsureNone(Application.dataPath, "Assets");
 
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
@@ -64,13 +48,7 @@ namespace ElysFarm.EditorTools
                     + "日志在 Game/Logs/ 下。");
             }
 
-            var outputDirectory = Path.GetDirectoryName(outputPath) ?? string.Empty;
-            var leaked = FindSecretFiles(outputDirectory);
-            if (leaked.Count > 0)
-            {
-                throw new BuildFailedException(
-                    "[Elys] 构建产物的目录里发现疑似密钥文件，拒绝交付：\n" + string.Join("\n", leaked));
-            }
+            BuildSecrets.EnsureNone(Path.GetDirectoryName(outputPath), "构建产物");
 
             Debug.Log(
                 $"[Elys] Windows 构建成功：{summary.outputPath}"
@@ -92,25 +70,6 @@ namespace ElysFarm.EditorTools
             var projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             var repoRoot = Path.GetFullPath(Path.Combine(projectRoot, ".."));
             return Path.Combine(repoRoot, "Builds", "Windows", "Elys.exe");
-        }
-
-        static List<string> FindSecretFiles(string root)
-        {
-            var found = new List<string>();
-            if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
-            {
-                return found;
-            }
-
-            foreach (var path in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
-            {
-                if (LooksLikeSecret(Path.GetFileName(path)))
-                {
-                    found.Add(path);
-                }
-            }
-
-            return found;
         }
     }
 }

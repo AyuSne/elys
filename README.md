@@ -4,7 +4,7 @@
 > 模型只负责理解人话和措辞，所有动作都要过确定性的白名单与前置条件校验；
 > 模型不可用时整条链路自动回退本地模板，演示不会卡死。
 
-![Windows 包里的体块演示](docs/images/windows-build.png)
+![Windows 包里 16 倍速自主跑完一轮后的状态：第 6 天、产出仓 6 个萝卜、账本自检通过](docs/images/windows-build.png)
 
 这是面试实践题「AI 小世界里的模拟经营」的第 3 天可交付切点：完整的种田闭环、
 可复核的 EditMode 回归报告、可直接双击运行的 Windows 包，以及这份 README。
@@ -46,8 +46,10 @@
 
 ```powershell
 unity open Game
-unity status --until-ready --project-path D:\Elys\Game
+unity status --until-ready
 ```
+
+同时开了多个 Unity 工程时，再给 `status` 加 `--project-path <仓库绝对路径>\Game`。
 
 > 第一次打开会导入 URP 与测试框架，需要几分钟。场景里只有一个引导器与 HUD，
 > 地块、作物、NPC 的方块都是运行时由代码生成的，所以改布局只改代码，不用手改场景。
@@ -62,6 +64,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-tests.ps1
 
 脚本会跑全套 EditMode 用例，把 NUnit XML 写到 `TestResults/editmode.xml`，
 并在终端打印总数、失败数与**题目要求的三项验收**各自的结果。退出码非 0 表示有失败。
+报告是生成物（`TestResults/` 不入库），每次运行覆盖。
 
 ### 等价的原生命令
 
@@ -69,26 +72,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-tests.ps1
 unity test Game --mode EditMode --timeout 900 --output TestResults/editmode.xml
 ```
 
-跑测试不需要打开 Unity 编辑器；编辑器开着（尤其 Play Mode）时测试会被拒绝。
+Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后可以直接
+`unity test --mode EditMode`。跑测试不需要打开 Unity 编辑器；编辑器开着（尤其 Play Mode）时测试会被拒绝。
 需要 Unity CLI（`unity` 命令，安装：`irm https://unity.com/install.ps1 | iex`）。
 
 ### 报告里看什么
 
-`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。仓库里归档了
-最近一次全绿的报告；每次运行时由脚本覆盖。
+`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。
 
 题目三项要求与用例的对应关系：
 
 | 题目要求 | 验收用例（报告里可直接搜） | 断言的是 |
 |---|---|---|
-| 步骤完整 | `AcceptanceTests.步骤完整_五个工步都按序执行并留下流水` | 五个工步按顺序执行、每条都留下流水、最后一步是收获 |
+| 五个工步完整（题面「步骤完整」） | `AcceptanceTests.五个工步完整_按序执行并留下流水` | 五个工步按顺序执行、每条都留下流水、最后一步是收获 |
 | 时间、背包功能正常 | `AcceptanceTests.背包守恒_全流程结束后三本账收支相抵` | 入账减出账等于持有；播 1 颗种子、收 3 个萝卜 |
 | 时间推进 | `AcceptanceTests.时间推进_不跨日不会成熟且萝卜第4天收获` | 不跨日不生长；第 1 天播种、第 4 天收获 |
-| 交付物本身 | `DeliveryTests.*` | 包从农场演示场景启动、场景里挂着引导器与 HUD、产品名是 Elys |
 | 密钥不泄露 | `SecretFileLocatorTests.*` | 编辑器只读仓库根；打包后的播放器不隐式读任何密钥文件 |
 
-全部用例共 60 个，覆盖领域闭环、时钟、三本账、意图路由（含模型失败降级）、
-模型协议与交付配置。领域测试只打 `FarmWorld` 这条缝，模型测试用假客户端，不联网、不花钱。
+全部用例共 57 个，覆盖领域闭环、时钟、三本账、意图路由（含模型失败降级）、
+模型协议与密钥来源。领域测试只打 `FarmWorld` 这条缝，模型测试用假客户端，不联网、不花钱。
+包本身的装配由构建脚本固定（`FarmBuild` 只把 `FarmDemo.unity` 传给 `BuildPlayer`），
+运行证据由 `scripts/smoke-test-build.ps1` 与上面的截图给出，不写成 EditMode 用例。
 
 ## 打 Windows 包
 
@@ -101,7 +105,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1
 - 只打 `Assets/Scenes/FarmDemo.unity` 一个场景，保证启动就是演示；
 - 构建前扫一遍 `Assets/`、构建后扫一遍产物目录，发现 `.env` /
   `.secrets.local.json` 一类文件就失败，不产出可疑的包；
-- 默认拒绝在未提交的工作树上构建；开发期可加 `-AllowDirty`。
+- 默认允许在有未提交改动的工作树上构建（打包本身会改写 URP 预过滤等工程文件，
+  下一次打包时工作树往往已经不干净）。要「从干净提交构建」时加 `-RequireClean`，它会要求工作树干净。
 
 等价的 CLI 命令（`--output-path` 给绝对路径最稳）：
 
@@ -132,7 +137,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-test-build.p
 复制示例文件，填入自己的密钥：
 
 ```powershell
-Copy-Item .secrets.local.json.example .secrets.local.json
+Copy-Item .secrets.local.example.json .secrets.local.json
 ```
 
 ```json
@@ -152,7 +157,8 @@ Copy-Item .secrets.local.json.example .secrets.local.json
 
 ### 在打好的包里
 
-打包后的播放器**不隐式读取任何文件**，只认环境变量：
+打包后的播放器**不隐式读取任何文件**，只认环境变量；或者显式指定一个文件。
+先设置环境变量，再启动包：
 
 ```powershell
 # 当前 PowerShell 窗口里设置后再启动
@@ -173,7 +179,7 @@ $env:ELYS_SECRETS_FILE = 'D:\keys\elys.json'
 |---|---|
 | 入库 | `.secrets.local.json`、`.env`、`*.env.local` 在 `.gitignore` 里；仓库里只提交 `*.example.json` |
 | 进包 | 构建只打 `Assets/Scenes/FarmDemo.unity`；`Assets/` 在构建前会被扫描，发现密钥类文件直接失败 |
-| 运行时 | `SecretFileLocator` 只在编辑器里找仓库根的本地文件；播放器只认环境变量或显式路径（有测试覆盖） |
+| 运行时 | `SecretFileLocator` 只在编辑器里找仓库根的本地文件；播放器不隐式读任何文件，只认环境变量或显式指定的 `ELYS_SECRETS_FILE`（有测试覆盖） |
 | 日志 | 模型配置只打印模型名与地址，不打印密钥 |
 
 ## 怎么玩
@@ -206,10 +212,10 @@ Game/                        Unity 工程（Unity Hub 打开这一层）
   Assets/Scripts/Core/Intent 意图解析：模型出口、本地模板、三出口路由
   Assets/Scripts/Model/      DeepSeek HTTP 客户端与密钥来源
   Assets/Scripts/Demo/       体块演示场景的引导器与 IMGUI HUD
-  Assets/Tests/EditMode/     EditMode 回归测试（60 个）
-  Assets/Editor/             场景生成器与 Windows 构建入口
+  Assets/Tests/EditMode/     EditMode 回归测试（57 个）
+  Assets/Editor/             场景生成器、密钥防线与 Windows 构建入口
 scripts/                     跑测试、打包、冒烟验收的 PowerShell 脚本
-TestResults/editmode.xml     最近一次全绿的回归报告
+TestResults/                 测试报告生成目录（不入库）
 docs/                        规格、ADR、调研、领域词汇表与 agent 笔记
 ```
 

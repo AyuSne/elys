@@ -5,14 +5,15 @@
 .DESCRIPTION
     构建由 Assets/Editor/FarmBuild.cs 执行：只打农场演示场景，构建前后各扫一遍疑似密钥文件。
     需要 unity CLI 与 Unity 6000.3.10f1（含 Windows Build Support 模块）。
-    默认拒绝在工作树有未提交改动时构建；开发期可加 -AllowDirty。
+    默认允许在有未提交改动的工作树上构建：打包本身会改写 URP 预过滤等工程文件，
+    下一次打包时工作树往往已经不干净。要发布「从干净提交构建」的包时加 -RequireClean。
 .EXAMPLE
     pwsh ./scripts/build-windows.ps1
-    pwsh ./scripts/build-windows.ps1 -AllowDirty -Launch
+    pwsh ./scripts/build-windows.ps1 -RequireClean -Launch
 #>
 param(
     [string]$Output = 'Builds/Windows/Elys.exe',
-    [switch]$AllowDirty,
+    [switch]$RequireClean,
     [switch]$Launch
 )
 
@@ -43,7 +44,7 @@ $unityArgs = @(
     '--output-path', $outputPath,
     '--timeout', '1800'
 )
-if ($AllowDirty) {
+if (-not $RequireClean) {
     $unityArgs += '--allow-dirty-build'
 }
 
@@ -67,7 +68,8 @@ if (-not (Test-Path $outputPath)) {
 }
 
 # 产物目录里再独立扫一遍：不依赖 C# 构建脚本的结论。
-$secretNames = '^\.env($|\.)|secrets?\.local\.json$|^secrets\.json$'
+# 规则与 BuildSecrets.LooksLikeSecret 一致：确切文件名 + *.env 后缀。
+$secretNames = '^\.env($|\.)|\.env$|secrets(\.local)?\.json$'
 $leaks = @(Get-ChildItem $outputDirectory -Recurse -File |
     Where-Object { $_.Name -match $secretNames })
 if ($leaks.Count -gt 0) {

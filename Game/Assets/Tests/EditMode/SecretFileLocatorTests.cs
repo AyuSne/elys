@@ -1,5 +1,4 @@
 using System.IO;
-using System.Linq;
 using ElysFarm.Model;
 using NUnit.Framework;
 
@@ -17,34 +16,32 @@ namespace ElysFarm.Tests
         [Test]
         public void 编辑器里从仓库根的本地密钥文件读取()
         {
-            var candidates = SecretFileLocator.Candidates(isEditor: true, DataPath, explicitPath: null);
-
             Assert.AreEqual(
                 Path.GetFullPath(Path.Combine(DataPath, "..", "..", ".secrets.local.json")),
-                candidates.Single(),
+                SecretFileLocator.Resolve(isEditor: true, DataPath, explicitPath: null),
                 "编辑器的默认来源是仓库根，不是工程目录或 Assets");
         }
 
         [Test]
         public void 播放器不隐式读取任何密钥文件()
         {
-            var candidates = SecretFileLocator.Candidates(isEditor: false, DataPath, explicitPath: null);
-
-            Assert.IsEmpty(candidates, "打包后的播放器只认环境变量，不在包旁边翻密钥文件");
+            Assert.IsNull(
+                SecretFileLocator.Resolve(isEditor: false, DataPath, explicitPath: null),
+                "打包后的播放器只认环境变量，不在包旁边翻密钥文件");
         }
 
         [Test]
-        public void 显式指定的密钥文件优先且唯一()
+        public void 显式指定的密钥文件优先()
         {
             var explicitPath = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "elys-keys", "team.json"));
 
             Assert.AreEqual(
                 explicitPath,
-                SecretFileLocator.Candidates(isEditor: true, DataPath, explicitPath).Single(),
+                SecretFileLocator.Resolve(isEditor: true, DataPath, explicitPath),
                 "显式路径应覆盖仓库根的默认来源");
             Assert.AreEqual(
                 explicitPath,
-                SecretFileLocator.Candidates(isEditor: false, DataPath, explicitPath).Single(),
+                SecretFileLocator.Resolve(isEditor: false, DataPath, explicitPath),
                 "播放器也允许显式指定，但只读这一份");
         }
     }

@@ -56,20 +56,17 @@ namespace ElysFarm.Demo
 
         static JObject ReadSecretsFile()
         {
-            var candidates = SecretFileLocator.Candidates(
+            var path = SecretFileLocator.Resolve(
                 Application.isEditor,
                 Application.dataPath,
                 Environment.GetEnvironmentVariable("ELYS_SECRETS_FILE"));
 
-            foreach (var path in candidates)
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
-                if (File.Exists(path))
-                {
-                    return JObject.Parse(File.ReadAllText(path));
-                }
+                return null;
             }
 
-            return null;
+            return JObject.Parse(File.ReadAllText(path));
         }
 
         static string FirstNonEmpty(string value, string fallback)
