@@ -16,9 +16,29 @@ namespace ElysFarm.Tests
             var world = new FarmWorld(new FarmClock { Speed = speed });
             world.AddField("A1", 0f, 2f);
             world.AddNpc("ahe", "阿禾", 0f, -4f);
-            world.SetWarehouse(0f, -4f);
+            world.SetProduceStore(0f, -4f);
             world.AddSeeds(CropCatalog.RadishId, seeds);
             return world;
+        }
+
+        static void PlantRadish(FarmWorld world)
+        {
+            world.ExecuteStep("ahe", "A1", WorkStep.Sow);
+            world.ExecuteStep("ahe", "A1", WorkStep.Water);
+            world.ExecuteStep("ahe", "A1", WorkStep.Fertilize);
+        }
+
+        static void GrowRadishToMature(FarmWorld world, Field field)
+        {
+            for (var day = 0; day < 10 && field.State != FieldState.Mature; day++)
+            {
+                if (field.Can(WorkStep.Water, out _))
+                {
+                    world.ExecuteStep("ahe", "A1", WorkStep.Water);
+                }
+
+                world.AdvanceDays(1);
+            }
         }
 
         [Test]
@@ -61,7 +81,7 @@ namespace ElysFarm.Tests
             world.AdvanceDays(10);
 
             Assert.AreNotEqual(FieldState.Mature, field.State, "不浇水不该成熟");
-            Assert.Less(field.Growth, 0.5f, "只有播种当天那一点水分，长不了多少");
+            Assert.AreEqual(0f, field.Growth, 0.0001f, "没浇过水，一天也不该长");
         }
 
         [Test]
@@ -126,22 +146,48 @@ namespace ElysFarm.Tests
             Assert.AreEqual(3, world.Ledger.ProduceTotal);
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
 
-            Assert.IsTrue(world.IsAtWarehouse(world.GetNpc("ahe")), "NPC 初始在仓库");
-            Assert.IsTrue(world.TryPickUpProduce("ahe", CropCatalog.RadishId, 2), "在仓库才能取货");
-            Assert.AreEqual(2, world.Ledger.CarriedOf(CropCatalog.RadishId));
+            Assert.IsTrue(world.IsAtProduceStore(world.GetNpc("ahe")), "NPC 初始在产出仓");
+            Assert.IsTrue(world.TryPickUpProduce("ahe", CropCatalog.RadishId, 2), "在产出仓才能取货");
+            Assert.AreEqual(2, world.Ledger.HeldOf(CropCatalog.RadishId));
             Assert.AreEqual(1, world.Ledger.ProduceOf(CropCatalog.RadishId));
             Assert.AreEqual(3, world.Ledger.ProduceTotal, "取到随身只是搬家");
             Assert.IsTrue(world.Ledger.Verify(out error), error);
 
             world.MoveNpc("ahe", 0f, 4f);
-            Assert.IsFalse(world.TryDepositCarried("ahe", CropCatalog.RadishId, 2), "不在仓库不能移交");
-            Assert.AreEqual(2, world.Ledger.CarriedOf(CropCatalog.RadishId), "失败的移交不能改动账本");
+            Assert.IsFalse(world.TryDepositHeld("ahe", CropCatalog.RadishId, 2), "不在产出仓不能移交");
+            Assert.AreEqual(2, world.Ledger.HeldOf(CropCatalog.RadishId), "失败的移交不能改动账本");
 
             world.MoveNpc("ahe", 0f, -4f);
-            Assert.IsTrue(world.TryDepositCarried("ahe", CropCatalog.RadishId, 2));
+            Assert.IsTrue(world.TryDepositHeld("ahe", CropCatalog.RadishId, 2));
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId));
-            Assert.AreEqual(0, world.Ledger.CarriedOf(CropCatalog.RadishId));
+            Assert.AreEqual(0, world.Ledger.HeldOf(CropCatalog.RadishId));
+            Assert.AreEqual(2, world.Ledger.HeldAdded);
+            Assert.AreEqual(2, world.Ledger.HeldRemoved);
             Assert.IsTrue(world.Ledger.Verify(out error), error);
+        }
+
+        [Test]
+        public void 成熟后每天仍结算水分杂草与肥力()
+        {
+            var world = NewWorld();
+            var field = world.GetField("A1");
+
+            PlantRadish(world);
+            GrowRadishToMature(world, field);
+
+            Assert.AreEqual(FieldState.Mature, field.State);
+
+            var growth = field.Growth;
+            var water = field.Water;
+            var weeds = field.Weeds;
+            var fertility = field.Fertility;
+
+            world.AdvanceDays(1);
+
+            Assert.AreEqual(growth, field.Growth, 0.0001f, "成熟后不再生长");
+            Assert.Less(field.Water, water, "成熟后仍会失水");
+            Assert.Greater(field.Weeds, weeds, "成熟后仍会长草");
+            Assert.Less(field.Fertility, fertility, "成熟后仍会掉肥力");
         }
 
         [Test]
@@ -152,9 +198,7 @@ namespace ElysFarm.Tests
 
             foreach (var world in new[] { slow, fast })
             {
-                world.ExecuteStep("ahe", "A1", WorkStep.Sow);
-                world.ExecuteStep("ahe", "A1", WorkStep.Water);
-                world.ExecuteStep("ahe", "A1", WorkStep.Fertilize);
+                PlantRadish(world);
                 world.AdvanceDays(2);
             }
 
@@ -183,18 +227,8 @@ namespace ElysFarm.Tests
             var mature = world.GetField("A1");
             world.AddField("A2", 20f, 20f);
 
-            world.ExecuteStep("ahe", "A1", WorkStep.Sow);
-            world.ExecuteStep("ahe", "A1", WorkStep.Water);
-            world.ExecuteStep("ahe", "A1", WorkStep.Fertilize);
-            for (var day = 0; day < 5 && mature.State != FieldState.Mature; day++)
-            {
-                if (mature.Can(WorkStep.Water, out _))
-                {
-                    world.ExecuteStep("ahe", "A1", WorkStep.Water);
-                }
-
-                world.AdvanceDays(1);
-            }
+            PlantRadish(world);
+            GrowRadishToMature(world, mature);
 
             Assert.AreEqual(FieldState.Mature, mature.State);
 

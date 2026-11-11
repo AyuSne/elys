@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using ElysFarm.Core;
 using UnityEngine;
 
@@ -36,7 +35,7 @@ namespace ElysFarm.Demo
         public string CurrentIntent { get; private set; } = "等天亮";
 
         /// <summary>最近一次工步的结果或跨日提示。</summary>
-        public string LastMessage { get; private set; } = "第 1 天，阿禾在仓库旁待命";
+        public string LastMessage { get; private set; } = "第 1 天，NPC 在产出仓旁待命";
 
         Transform npcView;
         Transform cropView;
@@ -72,7 +71,7 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            var best = FindBestStep();
+            var best = World.NextStep(NpcId);
             if (!best.HasValue)
             {
                 CurrentIntent = "等下一件该干的活";
@@ -92,9 +91,10 @@ namespace ElysFarm.Demo
             World = new FarmWorld(new FarmClock());
             Field = World.AddField(FieldId, 0f, 3f, 0.3f);
             Npc = World.AddNpc(NpcId, "阿禾", 0f, -3f);
-            World.SetWarehouse(-3f, -3f);
+            World.SetProduceStore(-3f, -3f);
             World.AddSeeds(CropCatalog.RadishId, 10);
             World.DaySettled += day => LastMessage = $"第 {day} 天开始，作物结算完毕";
+            LastMessage = $"第 1 天，{Npc.DisplayName}在产出仓旁待命";
         }
 
         void BuildBlockScene()
@@ -116,7 +116,7 @@ namespace ElysFarm.Demo
             CreateFence();
 
             CreateBlock(
-                "Warehouse",
+                "Produce Store",
                 new Vector3(-3f, 0.8f, -3f),
                 new Vector3(2.4f, 1.6f, 2.4f),
                 new Color(0.58f, 0.38f, 0.22f));
@@ -175,7 +175,7 @@ namespace ElysFarm.Demo
         void CreateNpc()
         {
             var npc = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            npc.name = "NPC 阿禾";
+            npc.name = $"NPC {Npc.DisplayName}";
             npc.transform.position = new Vector3(Npc.X, NpcGroundY, Npc.Z);
             npc.transform.localScale = new Vector3(0.65f, 0.8f, 0.65f);
             npc.GetComponent<Renderer>().sharedMaterial = CreateMaterial("Npc", new Color(0.25f, 0.55f, 0.72f));
@@ -188,14 +188,7 @@ namespace ElysFarm.Demo
 
         void FrameCamera()
         {
-            var camera = Camera.main;
-            if (camera != null)
-            {
-                camera.transform.SetPositionAndRotation(new Vector3(0f, 12f, -10f), Quaternion.Euler(42f, 0f, 0f));
-                camera.fieldOfView = 45f;
-                camera.clearFlags = CameraClearFlags.SolidColor;
-                camera.backgroundColor = new Color(0.13f, 0.19f, 0.24f);
-            }
+            ApplyCameraPose(Camera.main);
 
             var sun = FindFirstObjectByType<Light>();
             if (sun == null)
@@ -207,6 +200,20 @@ namespace ElysFarm.Demo
 
             sun.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
             sun.intensity = 1.15f;
+        }
+
+        /// <summary>把相机摆到俯视 45° 的演示机位；场景生成器与运行时共用同一组数值。</summary>
+        public static void ApplyCameraPose(Camera camera)
+        {
+            if (camera == null)
+            {
+                return;
+            }
+
+            camera.transform.SetPositionAndRotation(new Vector3(0f, 12f, -10f), Quaternion.Euler(42f, 0f, 0f));
+            camera.fieldOfView = 45f;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.13f, 0.19f, 0.24f);
         }
 
         void Walk()
@@ -244,20 +251,6 @@ namespace ElysFarm.Demo
             }
 
             nextDecisionAt = Time.time + WorkPause;
-        }
-
-        StepCandidate? FindBestStep()
-        {
-            IReadOnlyList<StepCandidate> candidates = World.RankCandidates(NpcId);
-            foreach (var candidate in candidates)
-            {
-                if (candidate.IsValid)
-                {
-                    return candidate;
-                }
-            }
-
-            return null;
         }
 
         void UpdateViews()

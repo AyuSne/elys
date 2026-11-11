@@ -27,9 +27,9 @@ namespace ElysFarm.Core
             get => speed;
             set
             {
-                if (value <= 0f)
+                if (Array.IndexOf(AllowedSpeeds, value) < 0)
                 {
-                    throw new ArgumentOutOfRangeException(nameof(value), "加速倍率必须为正");
+                    throw new ArgumentOutOfRangeException(nameof(value), value, "加速倍率只接受 1x / 4x / 16x");
                 }
 
                 speed = value;

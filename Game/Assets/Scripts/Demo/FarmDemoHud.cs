@@ -30,11 +30,7 @@ namespace ElysFarm.Demo
         {
             if (demo == null)
             {
-                demo = FindFirstObjectByType<FarmDemoBootstrap>();
-                if (demo == null)
-                {
-                    return;
-                }
+                return;
             }
 
             if (font != null)
@@ -116,9 +112,9 @@ namespace ElysFarm.Demo
 
             GUILayout.Label($"种子库：萝卜 × {ledger.SeedsOf(CropCatalog.RadishId)}", labelStyle);
             GUILayout.Label(
-                $"产出仓：萝卜 × {ledger.ProduceOf(CropCatalog.RadishId)}（随身 {ledger.CarriedOf(CropCatalog.RadishId)}）",
+                $"产出仓：萝卜 × {ledger.ProduceOf(CropCatalog.RadishId)}（随身 {ledger.HeldOf(CropCatalog.RadishId)}）",
                 labelStyle);
-            GUILayout.Label($"阿禾体力：{npc.Stamina:P0}", labelStyle);
+            GUILayout.Label($"{npc.DisplayName}体力：{npc.Stamina:P0}", labelStyle);
             GUILayout.Space(6f);
 
             GUILayout.Label($"地块 {field.Id}：{FarmDemoText.StateName(field.State)}", boldStyle);
@@ -133,7 +129,7 @@ namespace ElysFarm.Demo
         {
             var panelWidth = 400f;
             GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 16f, 16f, panelWidth, 340f), GUI.skin.box);
-            GUILayout.Label("阿禾的决策", titleStyle);
+            GUILayout.Label($"{demo.Npc.DisplayName}的决策", titleStyle);
             GUILayout.Label("决策来源：本地效用打分 · 模型调用 0 次", smallStyle);
             GUILayout.Label($"当前意图：{demo.CurrentIntent}", labelStyle);
             GUILayout.Label($"上一结果：{demo.LastMessage}", smallStyle);
@@ -182,7 +178,7 @@ namespace ElysFarm.Demo
                 var entry = log[i];
                 var yieldText = entry.Yield > 0 ? $" +{entry.Yield} 萝卜" : string.Empty;
                 GUILayout.Label(
-                    $"第 {entry.Day} 天 · 阿禾 · {FarmDemoText.StepName(entry.Step)} {entry.FieldId}{yieldText}",
+                    $"第 {entry.Day} 天 · {demo.Npc.DisplayName} · {FarmDemoText.StepName(entry.Step)} {entry.FieldId}{yieldText}",
                     labelStyle);
             }
 

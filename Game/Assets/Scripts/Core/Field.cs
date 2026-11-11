@@ -42,11 +42,23 @@ namespace ElysFarm.Core
         /// <summary>抗性（预留：极端天气时减少损失）。</summary>
         public float Resilience { get; private set; }
 
-        /// <summary>地块上是否有正在生长的作物。</summary>
+        /// <summary>地块上是否还留着作物（已成熟的地块也算，因为作物还没收）。</summary>
         public bool IsSown =>
             State == FieldState.Sown ||
             State == FieldState.Growing ||
             State == FieldState.Mature;
+
+        /// <summary>作物是否还在生长；成熟后不再变化。</summary>
+        public bool IsGrowing =>
+            State == FieldState.Sown ||
+            State == FieldState.Growing;
+
+        /// <summary>是否可以播种：空地或已收获。</summary>
+        public bool IsFree =>
+            State == FieldState.Empty ||
+            State == FieldState.Harvested;
+
+        const string NotPlantedReason = "地里什么都没种";
 
         public Field(string id, float x = 0f, float z = 0f, float fertility = 0.5f, float resilience = 0.5f)
         {
@@ -58,8 +70,8 @@ namespace ElysFarm.Core
             Id = id;
             X = x;
             Z = z;
-            Fertility = Clamp01(fertility);
-            Resilience = Clamp01(resilience);
+            Fertility = FarmMath.Clamp01(fertility);
+            Resilience = FarmMath.Clamp01(resilience);
         }
 
         /// <summary>与某点的平面距离，供效用打分的距离项使用。</summary>
@@ -71,6 +83,29 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
+        /// 此刻对某工步的原始需求，0..1。地块自己回答「缺什么」，
+        /// 效用打分只负责乘权重与排序。已成熟的地块只需求收获。
+        /// </summary>
+        public float Need(WorkStep step)
+        {
+            switch (step)
+            {
+                case WorkStep.Sow:
+                    return IsFree ? 1f : 0f;
+                case WorkStep.Water:
+                    return IsGrowing ? 1f - Water : 0f;
+                case WorkStep.Fertilize:
+                    return IsGrowing ? 1f - Fertility : 0f;
+                case WorkStep.Weed:
+                    return IsGrowing ? Weeds : 0f;
+                case WorkStep.Harvest:
+                    return State == FieldState.Mature ? 1f : 0f;
+                default:
+                    return 0f;
+            }
+        }
+
+        /// <summary>
         /// 检查某工步此刻能否执行。不能执行时通过 reason 给出可读理由，
         /// 该理由会直接显示在决策可视化层里（对应「候选动作与被否决的原因」）。
         /// </summary>
@@ -79,7 +114,7 @@ namespace ElysFarm.Core
             switch (step)
             {
                 case WorkStep.Sow:
-                    if (State != FieldState.Empty && State != FieldState.Harvested)
+                    if (!IsFree)
                     {
                         reason = "这块地还没空出来";
                         return false;
@@ -91,7 +126,7 @@ namespace ElysFarm.Core
                 case WorkStep.Water:
                     if (!IsSown)
                     {
-                        reason = "地里什么都没种";
+                        reason = NotPlantedReason;
                         return false;
                     }
 
@@ -107,7 +142,7 @@ namespace ElysFarm.Core
                 case WorkStep.Fertilize:
                     if (!IsSown)
                     {
-                        reason = "地里什么都没种";
+                        reason = NotPlantedReason;
                         return false;
                     }
 
@@ -123,7 +158,7 @@ namespace ElysFarm.Core
                 case WorkStep.Weed:
                     if (!IsSown)
                     {
-                        reason = "地里什么都没种";
+                        reason = NotPlantedReason;
                         return false;
                     }
 
@@ -169,7 +204,7 @@ namespace ElysFarm.Core
                     Crop = species ?? throw new ArgumentNullException(nameof(species), "播种必须指定品种");
                     State = FieldState.Sown;
                     Growth = 0f;
-                    Water = 0.2f;
+                    Water = 0f;
                     Weeds = 0f;
                     return 0;
 
@@ -203,16 +238,21 @@ namespace ElysFarm.Core
         /// 结算一个游戏日：生长推进、水分流失、杂草生长、肥力下降。
         /// 水分耗尽时生长停滞 —— 这是「不浇水就长不大」的唯一实现点。
         /// </summary>
+        /// <summary>
+        /// 结算一个游戏日：生长推进、水分流失、杂草生长、肥力下降。
+        /// 水分耗尽时生长停滞 —— 这是「不浇水就长不大」的唯一实现点。
+        /// 成熟后不再生长，但水分、杂草与肥力仍会随日结算。
+        /// </summary>
         public void AdvanceDay()
         {
-            if (!IsSown || State == FieldState.Mature)
+            if (!IsSown)
             {
                 return;
             }
 
             var species = Crop;
 
-            if (Water > 0.05f)
+            if (IsGrowing && Water > 0f)
             {
                 var perDay = 1f / Math.Max(1, species.DaysToMature);
                 var weedPenalty = Weeds * 0.5f;
@@ -220,22 +260,15 @@ namespace ElysFarm.Core
                 Growth += perDay * (1f + fertilityBonus) * (1f - weedPenalty);
             }
 
-            Water = Clamp01(Water - species.WaterDrainPerDay);
-            Fertility = Clamp01(Fertility - 0.15f);
-            Weeds = Clamp01(Weeds + species.WeedPerDay);
+            Water = FarmMath.Clamp01(Water - species.WaterDrainPerDay);
+            Weeds = FarmMath.Clamp01(Weeds + species.WeedPerDay);
+            Fertility = FarmMath.Clamp01(Fertility - 0.15f);
 
-            State = Growth >= MatureThreshold ? FieldState.Mature : FieldState.Growing;
-            Growth = Math.Min(Growth, MatureThreshold * 1.5f);
-        }
-
-        static float Clamp01(float v)
-        {
-            if (v < 0f)
+            if (IsGrowing)
             {
-                return 0f;
+                State = Growth >= MatureThreshold ? FieldState.Mature : FieldState.Growing;
+                Growth = Math.Min(Growth, MatureThreshold * 1.5f);
             }
-
-            return v > 1f ? 1f : v;
         }
     }
 }

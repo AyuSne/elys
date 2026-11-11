@@ -22,7 +22,7 @@ namespace ElysFarm.EditorTools
             var camera = Camera.main;
             if (camera != null)
             {
-                camera.transform.SetPositionAndRotation(new Vector3(0f, 12f, -10f), Quaternion.Euler(42f, 0f, 0f));
+                FarmDemoBootstrap.ApplyCameraPose(camera);
             }
 
             var root = new GameObject("Farm Demo");

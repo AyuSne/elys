@@ -6,13 +6,16 @@ namespace ElysFarm.Core
     /// </summary>
     public readonly struct StepResult
     {
+        /// <summary>是否真的执行了。</summary>
         public bool Executed { get; }
 
+        /// <summary>执行者（或未执行时的候选执行者）。</summary>
         public string NpcId { get; }
 
+        /// <summary>目标地块；无事可做时为 null。</summary>
         public string FieldId { get; }
 
-        /// <summary>被否决或无事可做时无工步可报。</summary>
+        /// <summary>本次工步；被否决或无事可做时无工步可报。</summary>
         public WorkStep? Step { get; }
 
         /// <summary>本次收获的产出数量；非收获为 0。</summary>
@@ -31,16 +34,19 @@ namespace ElysFarm.Core
             Reason = reason;
         }
 
+        /// <summary>记录一次成功执行。</summary>
         public static StepResult Success(string npcId, string fieldId, WorkStep step, int yield)
         {
             return new StepResult(true, npcId, fieldId, step, yield, null);
         }
 
+        /// <summary>记录一次被前置条件或资源约束否决的尝试。</summary>
         public static StepResult Rejected(string npcId, string fieldId, WorkStep step, string reason)
         {
             return new StepResult(false, npcId, fieldId, step, 0, reason);
         }
 
+        /// <summary>没有可执行的工步。</summary>
         public static StepResult None(string npcId, string reason)
         {
             return new StepResult(false, npcId, null, null, 0, reason);

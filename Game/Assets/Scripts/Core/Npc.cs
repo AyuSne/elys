@@ -17,8 +17,12 @@ namespace ElysFarm.Core
         /// <summary>每个游戏日恢复的体力。</summary>
         public const float StaminaPerDay = 0.35f;
 
+        string preferredSpeciesId = CropCatalog.RadishId;
+
+        /// <summary>NPC 的唯一 id。</summary>
         public string Id { get; }
 
+        /// <summary>展示名，例如「阿禾」。</summary>
         public string DisplayName { get; }
 
         /// <summary>在农场平面上的 X 坐标。</summary>
@@ -30,8 +34,20 @@ namespace ElysFarm.Core
         /// <summary>体力，0..1；影响效用打分的体力项，低于阈值时无法执行工步。</summary>
         public float Stamina { get; private set; } = 1f;
 
-        /// <summary>当前打算种的品种；播种时从种子库扣该品种的种子。</summary>
-        public string PreferredSpeciesId { get; set; } = CropCatalog.RadishId;
+        /// <summary>当前打算种的品种；播种时从种子库扣该品种的种子。未知品种会被拒绝。</summary>
+        public string PreferredSpeciesId
+        {
+            get => preferredSpeciesId;
+            set
+            {
+                if (string.IsNullOrWhiteSpace(value) || !CropCatalog.TryGet(value, out _))
+                {
+                    throw new ArgumentException($"未知品种：{value}", nameof(value));
+                }
+
+                preferredSpeciesId = value;
+            }
+        }
 
         public Npc(string id, string displayName, float x = 0f, float z = 0f)
         {
@@ -46,9 +62,18 @@ namespace ElysFarm.Core
             Z = z;
         }
 
+        /// <summary>与某地块的平面距离，供效用打分的距离项使用。</summary>
         public float DistanceTo(Field field)
         {
             return field.DistanceTo(X, Z);
+        }
+
+        /// <summary>与任意一点的平面距离。</summary>
+        public float DistanceTo(float x, float z)
+        {
+            var dx = X - x;
+            var dz = Z - z;
+            return (float)Math.Sqrt(dx * dx + dz * dz);
         }
 
         internal void MoveTo(float x, float z)
@@ -59,22 +84,12 @@ namespace ElysFarm.Core
 
         internal void ExertStep()
         {
-            Stamina = Clamp01(Stamina - StaminaPerStep);
+            Stamina = FarmMath.Clamp01(Stamina - StaminaPerStep);
         }
 
         internal void RecoverDay()
         {
-            Stamina = Clamp01(Stamina + StaminaPerDay);
-        }
-
-        static float Clamp01(float value)
-        {
-            if (value < 0f)
-            {
-                return 0f;
-            }
-
-            return value > 1f ? 1f : value;
+            Stamina = FarmMath.Clamp01(Stamina + StaminaPerDay);
         }
     }
 }

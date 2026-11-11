@@ -21,17 +21,26 @@ namespace ElysFarm.Core
 
             if (step == WorkStep.Sow)
             {
-                if (!CropCatalog.TryGet(npc.PreferredSpeciesId, out var species))
-                {
-                    reason = "不知道该种什么";
-                    return false;
-                }
+                return TryResolveSow(world, npc, out _, out reason);
+            }
 
-                if (world.Ledger.SeedsOf(species.Id) < species.SeedCost)
-                {
-                    reason = $"种子库里没有{species.DisplayName}种子了";
-                    return false;
-                }
+            reason = null;
+            return true;
+        }
+
+        /// <summary>播种所需的品种与种子校验；通过时给出要播的品种。</summary>
+        public static bool TryResolveSow(FarmWorld world, Npc npc, out CropSpecies species, out string reason)
+        {
+            if (!CropCatalog.TryGet(npc.PreferredSpeciesId, out species))
+            {
+                reason = "不知道该种什么";
+                return false;
+            }
+
+            if (world.Ledger.SeedsOf(species.Id) < species.SeedCost)
+            {
+                reason = $"种子库里没有{species.DisplayName}种子了";
+                return false;
             }
 
             reason = null;

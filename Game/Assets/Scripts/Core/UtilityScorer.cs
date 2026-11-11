@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace ElysFarm.Core
 {
     /// <summary>
-    /// 手写效用打分（见 ADR-0002）：把「现在有多该做」合成一个需求项，
+    /// 手写效用打分（见 ADR-0002）：把地块的原始需求（<see cref="Field.Need"/>）按工步加权，
     /// 再乘体力系数、减距离扣分，得到候选工步的排序。
     /// 只做排序，不执行；执行必须再过 <see cref="ActionValidator"/>。
     /// </summary>
@@ -18,6 +18,14 @@ namespace ElysFarm.Core
 
         /// <summary>体力再低，动作也保留这个比例的效用——累了会变慢，不会直接罢工。</summary>
         public const float StaminaFloor = 0.6f;
+
+        // 各工步的需求权重：收获最急，施肥最缓。
+        const float SowWeight = 0.95f;
+        const float WaterWeight = 1.25f;
+        const float WaterUrgencyExponent = 1.2f;
+        const float FertilizeWeight = 0.55f;
+        const float WeedWeight = 0.9f;
+        const float HarvestWeight = 1.5f;
 
         static readonly WorkStep[] AllSteps =
         {
@@ -45,12 +53,12 @@ namespace ElysFarm.Core
             return candidates;
         }
 
-        /// <summary>给单个候选工步打分；无效候选保留否决理由，分数记 0。</summary>
-        public StepCandidate Score(FarmWorld world, Npc npc, Field field, WorkStep step)
+        static StepCandidate Score(FarmWorld world, Npc npc, Field field, WorkStep step)
         {
             var isValid = ActionValidator.Validate(world, npc, field, step, out var reason);
-            var need = Need(field, step);
-            var distancePenalty = DistanceWeight * Clamp01(npc.DistanceTo(field) / DistanceScale);
+            var need = WeightedNeed(field, step);
+            var distance = npc.DistanceTo(field);
+            var distancePenalty = DistanceWeight * FarmMath.Clamp01(distance / DistanceScale);
             var staminaFactor = StaminaFloor + (1f - StaminaFloor) * npc.Stamina;
             var score = isValid ? need * staminaFactor - distancePenalty : 0f;
 
@@ -65,33 +73,25 @@ namespace ElysFarm.Core
                 reason);
         }
 
-        static float Need(Field field, WorkStep step)
+        static float WeightedNeed(Field field, WorkStep step)
         {
+            var need = field.Need(step);
+
             switch (step)
             {
                 case WorkStep.Sow:
-                    return field.State == FieldState.Empty || field.State == FieldState.Harvested ? 0.95f : 0f;
-
+                    return need * SowWeight;
                 case WorkStep.Water:
-                    return IsGrowing(field) ? Pow(1f - field.Water, 1.2f) * 1.25f : 0f;
-
+                    return Pow(need, WaterUrgencyExponent) * WaterWeight;
                 case WorkStep.Fertilize:
-                    return IsGrowing(field) ? (1f - field.Fertility) * 0.55f : 0f;
-
+                    return need * FertilizeWeight;
                 case WorkStep.Weed:
-                    return IsGrowing(field) ? field.Weeds * 0.9f : 0f;
-
+                    return need * WeedWeight;
                 case WorkStep.Harvest:
-                    return field.State == FieldState.Mature ? 1.5f : 0f;
-
+                    return need * HarvestWeight;
                 default:
                     return 0f;
             }
-        }
-
-        static bool IsGrowing(Field field)
-        {
-            return field.State == FieldState.Sown || field.State == FieldState.Growing;
         }
 
         static int Compare(StepCandidate a, StepCandidate b)
@@ -114,16 +114,6 @@ namespace ElysFarm.Core
         static float Pow(float value, float exponent)
         {
             return (float)Math.Pow(value, exponent);
-        }
-
-        static float Clamp01(float value)
-        {
-            if (value < 0f)
-            {
-                return 0f;
-            }
-
-            return value > 1f ? 1f : value;
         }
     }
 }

@@ -61,5 +61,12 @@ namespace ElysFarm.Tests
             Assert.AreEqual(0, clock.Tick(-1f));
             Assert.AreEqual(1, clock.Day);
         }
+
+        [Test]
+        public void 只接受三个加速档位()
+        {
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => new FarmClock { Speed = 2f });
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => new FarmClock { Speed = 0f });
+        }
     }
 }

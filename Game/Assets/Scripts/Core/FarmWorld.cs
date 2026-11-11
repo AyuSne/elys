@@ -10,6 +10,9 @@ namespace ElysFarm.Core
     /// </summary>
     public sealed class FarmWorld
     {
+        /// <summary>与产出仓的移交半径。</summary>
+        public const float ProduceStoreRadius = 1.5f;
+
         readonly List<Field> fields = new List<Field>();
         readonly List<Npc> npcs = new List<Npc>();
         readonly List<WorkLogEntry> log = new List<WorkLogEntry>();
@@ -17,20 +20,22 @@ namespace ElysFarm.Core
         readonly Dictionary<string, Npc> npcsById = new Dictionary<string, Npc>();
         readonly UtilityScorer scorer = new UtilityScorer();
 
-        /// <summary>仓库的位置；随身物品只有在这里才能移交。</summary>
-        public float WarehouseX { get; private set; }
+        /// <summary>产出仓的位置；随身物品只有在这里才能移交。</summary>
+        public float ProduceStoreX { get; private set; }
 
-        public float WarehouseZ { get; private set; }
+        /// <summary>产出仓的 Z 坐标。</summary>
+        public float ProduceStoreZ { get; private set; }
 
-        /// <summary>与仓库的移交半径。</summary>
-        public const float WarehouseRadius = 1.5f;
-
+        /// <summary>游戏时钟。</summary>
         public FarmClock Clock { get; }
 
+        /// <summary>背包的三本账：种子库、产出仓、随身。</summary>
         public FarmLedger Ledger { get; }
 
+        /// <summary>全部地块，按加入顺序排列。</summary>
         public IReadOnlyList<Field> Fields => fields;
 
+        /// <summary>全部 NPC，按加入顺序排列。</summary>
         public IReadOnlyList<Npc> Npcs => npcs;
 
         /// <summary>已执行工步的流水，按发生顺序。</summary>
@@ -46,6 +51,7 @@ namespace ElysFarm.Core
             Clock.DayAdvanced += SettleDay;
         }
 
+        /// <summary>加入一块地；id 必须唯一。</summary>
         public Field AddField(string id, float x, float z, float fertility = 0.3f, float resilience = 0.5f)
         {
             var field = new Field(id, x, z, fertility, resilience);
@@ -59,6 +65,7 @@ namespace ElysFarm.Core
             return field;
         }
 
+        /// <summary>加入一名 NPC；id 必须唯一。</summary>
         public Npc AddNpc(string id, string displayName, float x = 0f, float z = 0f)
         {
             var npc = new Npc(id, displayName, x, z);
@@ -72,10 +79,11 @@ namespace ElysFarm.Core
             return npc;
         }
 
-        public void SetWarehouse(float x, float z)
+        /// <summary>指定产出仓的位置，随身物品只在这里移交。</summary>
+        public void SetProduceStore(float x, float z)
         {
-            WarehouseX = x;
-            WarehouseZ = z;
+            ProduceStoreX = x;
+            ProduceStoreZ = z;
         }
 
         /// <summary>往种子库入账。</summary>
@@ -84,6 +92,7 @@ namespace ElysFarm.Core
             Ledger.AddSeeds(speciesId, count);
         }
 
+        /// <summary>按 id 取地块。</summary>
         public Field GetField(string id)
         {
             if (!fieldsById.TryGetValue(id, out var field))
@@ -94,6 +103,7 @@ namespace ElysFarm.Core
             return field;
         }
 
+        /// <summary>按 id 取 NPC。</summary>
         public Npc GetNpc(string id)
         {
             if (!npcsById.TryGetValue(id, out var npc))
@@ -104,11 +114,10 @@ namespace ElysFarm.Core
             return npc;
         }
 
-        public bool IsAtWarehouse(Npc npc)
+        /// <summary>NPC 是否在产出仓的移交半径内。</summary>
+        public bool IsAtProduceStore(Npc npc)
         {
-            var dx = npc.X - WarehouseX;
-            var dz = npc.Z - WarehouseZ;
-            return Math.Sqrt(dx * dx + dz * dz) <= WarehouseRadius;
+            return npc.DistanceTo(ProduceStoreX, ProduceStoreZ) <= ProduceStoreRadius;
         }
 
         /// <summary>推进真实时间；跨日时由 <see cref="FarmClock"/> 触发结算。</summary>
@@ -141,21 +150,30 @@ namespace ElysFarm.Core
             return scorer.Rank(this, GetNpc(npcId));
         }
 
+        /// <summary>效用最高的有效候选；没有该干的活时为 null。</summary>
+        public StepCandidate? NextStep(string npcId)
+        {
+            foreach (var candidate in RankCandidates(npcId))
+            {
+                if (candidate.IsValid)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>取效用最高的有效候选并执行；没有可执行工步时返回未执行结果。</summary>
         public StepResult StepOnce(string npcId)
         {
-            var candidates = RankCandidates(npcId);
-            foreach (var candidate in candidates)
+            var candidate = NextStep(npcId);
+            if (!candidate.HasValue)
             {
-                if (!candidate.IsValid)
-                {
-                    continue;
-                }
-
-                return ExecuteStep(npcId, candidate.FieldId, candidate.Step);
+                return StepResult.None(npcId, "现在没有该干的活");
             }
 
-            return StepResult.None(npcId, "现在没有该干的活");
+            return ExecuteStep(npcId, candidate.Value.FieldId, candidate.Value.Step);
         }
 
         /// <summary>
@@ -172,19 +190,19 @@ namespace ElysFarm.Core
                 return StepResult.Rejected(npcId, fieldId, step, reason);
             }
 
-            var yield = 0;
+            var produced = 0;
 
             switch (step)
             {
                 case WorkStep.Sow:
-                    if (!CropCatalog.TryGet(npc.PreferredSpeciesId, out var species))
+                    if (!ActionValidator.TryResolveSow(this, npc, out var species, out var sowReason))
                     {
-                        return StepResult.Rejected(npcId, fieldId, step, "不知道该种什么");
+                        return StepResult.Rejected(npcId, fieldId, step, sowReason);
                     }
 
                     if (!Ledger.TryTakeSeeds(species.Id, species.SeedCost))
                     {
-                        return StepResult.Rejected(npcId, fieldId, step, $"种子库里没有{species.DisplayName}种子了");
+                        throw new InvalidOperationException("播种校验通过后种子却扣不动：账本被绕过了 FarmWorld");
                     }
 
                     field.Apply(step, species);
@@ -192,10 +210,10 @@ namespace ElysFarm.Core
 
                 case WorkStep.Harvest:
                     var speciesId = field.Crop?.Id ?? npc.PreferredSpeciesId;
-                    yield = field.Apply(step);
-                    if (yield > 0)
+                    produced = field.Apply(step);
+                    if (produced > 0)
                     {
-                        Ledger.AddProduce(speciesId, yield);
+                        Ledger.AddProduce(speciesId, produced);
                     }
 
                     break;
@@ -206,8 +224,8 @@ namespace ElysFarm.Core
             }
 
             npc.ExertStep();
-            log.Add(new WorkLogEntry(Clock.Day, npc.Id, field.Id, step, yield, field.State));
-            return StepResult.Success(npcId, fieldId, step, yield);
+            log.Add(new WorkLogEntry(Clock.Day, npc.Id, field.Id, step, produced, field.State));
+            return StepResult.Success(npcId, fieldId, step, produced);
         }
 
         /// <summary>NPC 移动；表现层每帧把位置写回领域，保证距离项与移交判定一致。</summary>
@@ -216,18 +234,18 @@ namespace ElysFarm.Core
             GetNpc(npcId).MoveTo(x, z);
         }
 
-        /// <summary>NPC 在仓库从产出仓取货到随身。离开仓库则拒绝。</summary>
+        /// <summary>NPC 在产出仓取货到随身；不在产出仓则拒绝。</summary>
         public bool TryPickUpProduce(string npcId, string speciesId, int count)
         {
             var npc = GetNpc(npcId);
-            return IsAtWarehouse(npc) && Ledger.TryCarry(speciesId, count);
+            return IsAtProduceStore(npc) && Ledger.TryPickUp(speciesId, count);
         }
 
-        /// <summary>NPC 回到仓库后把随身交回产出仓。不在仓库则拒绝。</summary>
-        public bool TryDepositCarried(string npcId, string speciesId, int count)
+        /// <summary>NPC 回到产出仓后把随身交回；不在产出仓则拒绝。</summary>
+        public bool TryDepositHeld(string npcId, string speciesId, int count)
         {
             var npc = GetNpc(npcId);
-            return IsAtWarehouse(npc) && Ledger.TryDeposit(speciesId, count);
+            return IsAtProduceStore(npc) && Ledger.TryDeposit(speciesId, count);
         }
 
         void SettleDay(int day)

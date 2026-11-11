@@ -48,13 +48,15 @@ namespace ElysFarm.Tests
 
             var before = ledger.ProduceTotal;
 
-            Assert.IsTrue(ledger.TryCarry(CropCatalog.RadishId, 4));
-            Assert.AreEqual(4, ledger.CarriedOf(CropCatalog.RadishId));
+            Assert.IsTrue(ledger.TryPickUp(CropCatalog.RadishId, 4));
+            Assert.AreEqual(4, ledger.HeldOf(CropCatalog.RadishId));
+            Assert.AreEqual(4, ledger.HeldAdded, "取货要留下累计取入");
             Assert.AreEqual(2, ledger.ProduceOf(CropCatalog.RadishId));
             Assert.AreEqual(before, ledger.ProduceTotal, "随身只是搬家，总量不变");
 
             Assert.IsTrue(ledger.TryDeposit(CropCatalog.RadishId, 4));
-            Assert.AreEqual(0, ledger.CarriedOf(CropCatalog.RadishId));
+            Assert.AreEqual(0, ledger.HeldOf(CropCatalog.RadishId));
+            Assert.AreEqual(4, ledger.HeldRemoved, "交回要留下累计交回");
             Assert.AreEqual(6, ledger.ProduceOf(CropCatalog.RadishId));
             Assert.IsTrue(ledger.Verify(out var error), error);
         }
