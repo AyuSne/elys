@@ -1,0 +1,225 @@
+using System;
+
+namespace ElysFarm.Core
+{
+    /// <summary>
+    /// 地块：农场的可耕作单元，持有自身状态与其中的作物。
+    /// 它是「智能在环境里」这一设计的载体 —— 地块知道自己缺什么，
+    /// NPC 只是能对某状态施加某动作的执行器。
+    /// </summary>
+    public sealed class Field
+    {
+        /// <summary>生长进度达到该值即视为成熟。</summary>
+        public const float MatureThreshold = 1f;
+
+        public string Id { get; }
+
+        public FieldState State { get; private set; } = FieldState.Empty;
+
+        /// <summary>当前作物；空地或已收获时为 null。</summary>
+        public CropSpecies Crop { get; private set; }
+
+        // —— 作物五属性，均为 0..1 连续值 ——
+
+        /// <summary>生长进度。</summary>
+        public float Growth { get; private set; }
+
+        /// <summary>水分。</summary>
+        public float Water { get; private set; }
+
+        /// <summary>肥力。</summary>
+        public float Fertility { get; private set; }
+
+        /// <summary>杂草。</summary>
+        public float Weeds { get; private set; }
+
+        /// <summary>抗性（预留：极端天气时减少损失）。</summary>
+        public float Resilience { get; private set; }
+
+        /// <summary>地块上是否有正在生长的作物。</summary>
+        public bool IsSown =>
+            State == FieldState.Sown ||
+            State == FieldState.Growing ||
+            State == FieldState.Mature;
+
+        public Field(string id, float fertility = 0.5f, float resilience = 0.5f)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                throw new ArgumentException("地块必须有 id", nameof(id));
+            }
+
+            Id = id;
+            Fertility = Clamp01(fertility);
+            Resilience = Clamp01(resilience);
+        }
+
+        /// <summary>
+        /// 检查某工步此刻能否执行。不能执行时通过 reason 给出可读理由，
+        /// 该理由会直接显示在决策可视化层里（对应「候选动作与被否决的原因」）。
+        /// </summary>
+        public bool Can(WorkStep step, out string reason)
+        {
+            switch (step)
+            {
+                case WorkStep.Sow:
+                    if (State != FieldState.Empty && State != FieldState.Harvested)
+                    {
+                        reason = "这块地还没空出来";
+                        return false;
+                    }
+
+                    reason = null;
+                    return true;
+
+                case WorkStep.Water:
+                    if (!IsSown)
+                    {
+                        reason = "地里什么都没种";
+                        return false;
+                    }
+
+                    if (Water >= 0.99f)
+                    {
+                        reason = "刚浇过，不渴";
+                        return false;
+                    }
+
+                    reason = null;
+                    return true;
+
+                case WorkStep.Fertilize:
+                    if (!IsSown)
+                    {
+                        reason = "地里什么都没种";
+                        return false;
+                    }
+
+                    if (Fertility >= 0.99f)
+                    {
+                        reason = "肥力还够";
+                        return false;
+                    }
+
+                    reason = null;
+                    return true;
+
+                case WorkStep.Weed:
+                    if (!IsSown)
+                    {
+                        reason = "地里什么都没种";
+                        return false;
+                    }
+
+                    if (Weeds <= 0.01f)
+                    {
+                        reason = "没什么草可除";
+                        return false;
+                    }
+
+                    reason = null;
+                    return true;
+
+                case WorkStep.Harvest:
+                    if (State != FieldState.Mature)
+                    {
+                        reason = "还没熟";
+                        return false;
+                    }
+
+                    reason = null;
+                    return true;
+
+                default:
+                    reason = "未知工步";
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// 执行一个工步。调用方必须先通过 <see cref="Can"/> 校验。
+        /// 返回本次产生的产出数量（只有收获会产生产出）。
+        /// </summary>
+        public int Apply(WorkStep step, CropSpecies species = null)
+        {
+            if (!Can(step, out var reason))
+            {
+                throw new InvalidOperationException($"地块 {Id} 无法执行 {step}：{reason}");
+            }
+
+            switch (step)
+            {
+                case WorkStep.Sow:
+                    Crop = species ?? throw new ArgumentNullException(nameof(species), "播种必须指定品种");
+                    State = FieldState.Sown;
+                    Growth = 0f;
+                    Water = 0.2f;
+                    Weeds = 0f;
+                    return 0;
+
+                case WorkStep.Water:
+                    Water = 1f;
+                    return 0;
+
+                case WorkStep.Fertilize:
+                    Fertility = 1f;
+                    return 0;
+
+                case WorkStep.Weed:
+                    Weeds = 0f;
+                    return 0;
+
+                case WorkStep.Harvest:
+                    var yield = Crop?.YieldPerHarvest ?? 0;
+                    State = FieldState.Harvested;
+                    Crop = null;
+                    Growth = 0f;
+                    Water = 0f;
+                    Weeds = 0f;
+                    return yield;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(step), step, null);
+            }
+        }
+
+        /// <summary>
+        /// 结算一个游戏日：生长推进、水分流失、杂草生长、肥力下降。
+        /// 水分耗尽时生长停滞 —— 这是「不浇水就长不大」的唯一实现点。
+        /// </summary>
+        public void AdvanceDay()
+        {
+            if (!IsSown || State == FieldState.Mature)
+            {
+                return;
+            }
+
+            var species = Crop;
+
+            if (Water > 0.05f)
+            {
+                var perDay = 1f / Math.Max(1, species.DaysToMature);
+                var weedPenalty = Weeds * 0.5f;
+                var fertilityBonus = Fertility * 0.25f;
+                Growth += perDay * (1f + fertilityBonus) * (1f - weedPenalty);
+            }
+
+            Water = Clamp01(Water - species.WaterDrainPerDay);
+            Fertility = Clamp01(Fertility - 0.15f);
+            Weeds = Clamp01(Weeds + species.WeedPerDay);
+
+            State = Growth >= MatureThreshold ? FieldState.Mature : FieldState.Growing;
+            Growth = Math.Min(Growth, MatureThreshold * 1.5f);
+        }
+
+        static float Clamp01(float v)
+        {
+            if (v < 0f)
+            {
+                return 0f;
+            }
+
+            return v > 1f ? 1f : v;
+        }
+    }
+}
