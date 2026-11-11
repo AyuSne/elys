@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace ElysFarm.Core
@@ -22,6 +23,10 @@ namespace ElysFarm.Core
         static readonly WorkStep[] FertilizeSteps = { WorkStep.Fertilize };
         static readonly WorkStep[] WeedSteps = { WorkStep.Weed };
         static readonly WorkStep[] HarvestSteps = { WorkStep.Harvest };
+
+        /// <summary>合法目标的 wire token，按提示词 schema 的顺序排列。</summary>
+        internal static readonly string[] GoalTokens = { "plant", "water", "fertilize", "weed", "harvest" };
+
         /// <summary>校验工步此刻是否可执行；不可执行时必须给出可读理由。</summary>
         public static bool Validate(FarmWorld world, Npc npc, Field field, WorkStep step, out string reason)
         {
@@ -106,8 +111,8 @@ namespace ElysFarm.Core
 
             foreach (var candidate in CropCatalog.All)
             {
-                if (string.Equals(candidate.Id, text, System.StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(candidate.DisplayName, text, System.StringComparison.Ordinal)
+                if (string.Equals(candidate.Id, text, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(candidate.DisplayName, text, StringComparison.Ordinal)
                     || MatchesAlias(text, candidate.Id))
                 {
                     species = candidate;
@@ -121,23 +126,34 @@ namespace ElysFarm.Core
             return false;
         }
 
-        /// <summary>品种不在白名单时的统一可读理由。</summary>
+        /// <summary>品种不在白名单时的统一可读理由。品种名从 <see cref="CropCatalog"/> 生成，新增品种不会漏。</summary>
         public static string UnknownSpeciesReason(string token)
         {
             var text = string.IsNullOrWhiteSpace(token) ? "这个" : token.Trim();
-            return $"「{text}」可种不出来，地里只能种萝卜和小麦。";
+            var allowed = new System.Text.StringBuilder();
+            foreach (var species in CropCatalog.All)
+            {
+                if (allowed.Length > 0)
+                {
+                    allowed.Append('、');
+                }
+
+                allowed.Append(species.DisplayName);
+            }
+
+            return $"「{text}」可种不出来，地里只能种{allowed}。";
         }
 
         static bool MatchesAlias(string text, string speciesId)
         {
             if (speciesId == CropCatalog.RadishId)
             {
-                return text == "萝卜" || text.Equals("radish", System.StringComparison.OrdinalIgnoreCase);
+                return text == "萝卜" || text.Equals("radish", StringComparison.OrdinalIgnoreCase);
             }
 
             if (speciesId == CropCatalog.WheatId)
             {
-                return text == "小麦" || text == "麦子" || text.Equals("wheat", System.StringComparison.OrdinalIgnoreCase);
+                return text == "小麦" || text == "麦子" || text.Equals("wheat", StringComparison.OrdinalIgnoreCase);
             }
 
             return false;

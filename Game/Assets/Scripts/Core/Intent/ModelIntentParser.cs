@@ -14,7 +14,7 @@ namespace ElysFarm.Core
 
         public FarmGoal? Goal { get; private set; }
 
-        /// <summary>地块的原始指称，例如 east / A1 / null（交给路由器选最近的地块）。</summary>
+        /// <summary>地块的原始指称，例如 east / A1 / null（未指定，交给效用打分挑地）。</summary>
         public string FieldToken { get; private set; }
 
         /// <summary>品种的原始指称，例如 radish / null（用 NPC 当前打算种的品种）。</summary>

@@ -120,9 +120,13 @@ namespace ElysFarm.Demo
                     return;
                 }
 
-                // 不在这里预判前置条件：走到地里后由 AdvanceWorkOrder 决定
+                // 不在这里执行：走到地里后由 AdvanceWorkOrder 决定
                 // 是执行下一步，还是先做浇水/除草/施肥这类维护。
-                BeginAction(order.FieldId, next.Value);
+                var canDoNext = World.GetField(order.FieldId).Can(next.Value, out var waitReason);
+                BeginAction(
+                    order.FieldId,
+                    next.Value,
+                    canDoNext ? null : $"等 {order.FieldId} · {FarmDemoText.StepName(next.Value)}（{waitReason}）");
                 UpdateViews();
                 return;
             }
@@ -153,7 +157,7 @@ namespace ElysFarm.Demo
             CurrentIntent = AutonomyEnabled ? "自己找活干" : "待命，等玩家开口";
         }
 
-        void BeginAction(string fieldId, WorkStep step)
+        void BeginAction(string fieldId, WorkStep step, string intentHint = null)
         {
             pendingFieldId = fieldId;
             pendingWorkStep = step;
@@ -161,7 +165,7 @@ namespace ElysFarm.Demo
             var field = World.GetField(fieldId);
             walkTarget = new Vector3(field.Position.X, NpcGroundY, field.Position.Z - 2.6f);
             walking = true;
-            CurrentIntent = $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
+            CurrentIntent = intentHint ?? $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
         }
 
         /// <summary>

@@ -59,13 +59,20 @@ namespace ElysFarm.Core
             var normalized = Normalize(text);
 
             // 只拦「像农事指令的播种要求」；追问与闲聊里出现「种」不应被当成指令。
-            if (IsQuery(normalized) || !HasFarmKeyword(normalized) || DetectGoal(normalized) != FarmGoal.Plant)
+            if (!LooksLikeFarmCommand(normalized) || DetectGoal(normalized) != FarmGoal.Plant)
             {
                 return false;
             }
 
             unknown = FindUnknownCrop(normalized);
             return unknown != null;
+        }
+
+        /// <summary>文本是否像一句农活要求；用于选择规划级还是对话级的模型超时。</summary>
+        internal static bool LooksLikeFarmCommand(string text)
+        {
+            var normalized = Normalize(text);
+            return !IsQuery(normalized) && HasFarmKeyword(normalized);
         }
 
         static string Normalize(string text)

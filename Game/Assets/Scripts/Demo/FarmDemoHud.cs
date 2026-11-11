@@ -112,6 +112,7 @@ namespace ElysFarm.Demo
                 var label = speed == clock.Speed ? $"[{speed:0}x]" : $"{speed:0}x";
                 if (GUILayout.Button(label))
                 {
+                    // 演示用的时间控制，不是自然语言输入；文本输入仍只经 IntentRouter。
                     clock.Speed = speed;
                 }
             }

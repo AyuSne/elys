@@ -12,11 +12,11 @@ namespace ElysFarm.Core
     /// </summary>
     public sealed class IntentRouter
     {
-        /// <summary>
-        /// 默认硬超时：一句话等 6 秒还没结果就本地降级。
-        /// 意图解析按对话级预算；规划级 15 秒预算留给日计划（后续票）。
-        /// </summary>
-        public const float DefaultDeadlineSeconds = ChatRequest.DefaultTimeoutSeconds;
+        /// <summary>对话 / 追问 / 闲聊的硬超时（秒）。</summary>
+        public const float ChatDeadlineSeconds = ChatRequest.DefaultTimeoutSeconds;
+
+        /// <summary>农事指令（规划级）的硬超时（秒）。</summary>
+        public const float PlanningDeadlineSeconds = 15f;
 
         readonly IModelClient client;
 
@@ -34,13 +34,14 @@ namespace ElysFarm.Core
 
         /// <summary>
         /// 解析并处理一句话。无论模型是否可用都会返回结果；
+        /// 未显式指定 deadline 时，农事指令用规划级 15 秒，追问与闲聊用对话级 6 秒。
         /// 超时、网络错误与非法 JSON 都会退到本地解析，调用方不会抛出异常。
         /// </summary>
         public async Task<IntentResult> RouteAsync(
             string text,
             FarmWorld world,
             Npc npc,
-            float deadlineSeconds = DefaultDeadlineSeconds)
+            float? deadlineSeconds = null)
         {
             if (world == null)
             {
@@ -67,17 +68,21 @@ namespace ElysFarm.Core
                     new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Guard)));
             }
 
-            if (client == null || deadlineSeconds <= 0f)
+            var deadline = deadlineSeconds
+                ?? (LocalIntentParser.LooksLikeFarmCommand(text) ? PlanningDeadlineSeconds : ChatDeadlineSeconds);
+
+            if (client == null || deadline <= 0f)
             {
                 return Finish(LocalFallback(text, world, npc, ModelCallInfo.None));
             }
+
             using var timeout = new CancellationTokenSource();
             ChatRequest request;
             Task<ChatResponse> callTask;
             try
             {
                 request = IntentPrompt.Build(world, npc, text);
-                request.TimeoutSeconds = Math.Max(1, (int)Math.Ceiling(deadlineSeconds));
+                request.TimeoutSeconds = Math.Max(1, (int)Math.Ceiling(deadline));
                 callTask = client.CompleteAsync(request, timeout.Token);
             }
             catch (Exception ex)
@@ -89,7 +94,7 @@ namespace ElysFarm.Core
                     new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Error, ex.Message)));
             }
 
-            var deadlineTask = Task.Delay(TimeSpan.FromSeconds(deadlineSeconds), timeout.Token);
+            var deadlineTask = Task.Delay(TimeSpan.FromSeconds(deadline), timeout.Token);
             var winner = await Task.WhenAny(callTask, deadlineTask);
             if (winner == callTask)
             {
@@ -100,11 +105,11 @@ namespace ElysFarm.Core
                 Observe(callTask);
                 var timedOut = new ModelCallInfo(
                     null,
-                    deadlineSeconds,
+                    deadline,
                     0,
                     0,
                     ModelCallOutcome.Timeout,
-                    $"等待 {deadlineSeconds:0.#} 秒未返回");
+                    $"等待 {deadline:0.#} 秒未返回");
                 return Finish(LocalFallback(text, world, npc, timedOut));
             }
 

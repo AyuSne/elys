@@ -325,6 +325,32 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public async Task 农事指令用规划级十五秒_闲聊用对话级六秒()
+        {
+            var world = NewWorld();
+            var commandTimeout = 0;
+            var commandClient = new ScriptedModelClient((request, _) =>
+            {
+                commandTimeout = request.TimeoutSeconds;
+                return Task.FromResult(new ChatResponse(PlantRadishJson, "fake-deepseek"));
+            });
+
+            await new IntentRouter(commandClient).RouteAsync("把东边那块地种满萝卜", world, world.GetNpc("ahe"));
+            Assert.AreEqual(15, commandTimeout, "农事指令按规划级 15 秒硬超时");
+
+            var chatTimeout = 0;
+            var chatClient = new ScriptedModelClient((request, _) =>
+            {
+                chatTimeout = request.TimeoutSeconds;
+                return Task.FromResult(
+                    new ChatResponse("{\"outlet\":\"chat\",\"reply\":\"嗯。\"}", "fake-deepseek"));
+            });
+
+            await new IntentRouter(chatClient).RouteAsync("你好呀", world, world.GetNpc("ahe"));
+            Assert.AreEqual(6, chatTimeout, "闲聊按对话级 6 秒硬超时");
+        }
+
+        [Test]
         public async Task 接单后的工单能自行跑完五个工步并入库()
         {
             var world = NewWorld();

@@ -64,7 +64,7 @@
 - 模型失败不是异常路径，是常规路径。`IntentRouter` 对超时、断网、空 JSON、非法出口一律回退本地解析；测试用假 `IModelClient`，不联网。
 - 本机实测 `deepseek-flash` 的意图解析（thinking=low + JSON）稳定在 1–3 秒；偶发一次失败后重试即成功，因此降级路径必须真的可用，不能只写在文档里。
 - Play 模式下 `UnityWebRequest` 偶发 `Unable to complete SSL connection`（HTTP 0），而同一客户端在 Editor 的 `script eval` 里可以成功；这是网络/SSL 的偶发失败，不是代码 bug，自动回退本地模板即可。HUD 会显示「调用失败，已回退本地模板」。
-- 意图解析按对话级 6 秒预算；`IModelClient` 现有接口只做对话补全，embedding 与 15 秒规划预算一起留给日计划/记忆票，避免本轮出现没有调用方的死代码。
+- 农事指令按规划级 15 秒、追问/闲聊按对话级 6 秒硬超时；两者都异步等待，超时或网络错误立即回退本地模板，游戏循环不暂停。`IModelClient` 现有接口只做对话补全，embedding 留给记忆票。
 - 不点名地块时不要退回「最近的地块」，要交给效用打分挑（`IntentRouter.TryResolveCommandField`）；否则「给地浇水」会选中刚浇过的近地，违背「指令进入效用打分」。
 - 种植类工单在等待成熟时必须允许插做维护（`FarmWorld.AdvanceWorkOrder` 的 `NextMaintenanceStep`），否则小麦这类 7 天作物会因为只浇一次水而永远等不到收获。测试要断言五个计划工步的顺序，维护步不计入工单进度。
 - 模型 HTTP 客户端用自己的 `UnityWebRequest`（ADR-0003）。`thinking` / `reasoning_effort` 是请求体顶层字段，不要套 OpenAI SDK 的 `extra_body`。

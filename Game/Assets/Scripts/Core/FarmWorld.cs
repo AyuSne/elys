@@ -292,6 +292,7 @@ namespace ElysFarm.Core
         /// 种植类工单在等待期间会先做最急需的维护（浇水 / 除草 / 施肥），
         /// 否则小麦这类长周期作物会因为缺水永远等不到收获。
         /// 执行成功后推进工单，全部完成即自动清空。
+        /// 返回结果可能是计划工步，也可能是维护工步；进度以 <see cref="WorkOrder.CompletedCount"/> 为准。
         /// </summary>
         public StepResult AdvanceWorkOrder(string npcId)
         {
@@ -335,7 +336,8 @@ namespace ElysFarm.Core
 
         WorkStep? NextMaintenanceStep(string npcId, WorkOrder order)
         {
-            if (order.Steps[0] != WorkStep.Sow)
+            // 第一个工步（播种）还没做成时不能插维护：否则地块被占死会无限浇水而不报错。
+            if (order.CompletedCount == 0 || order.Steps[0] != WorkStep.Sow)
             {
                 return null;
             }

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace ElysFarm.Core
 {
@@ -10,7 +9,8 @@ namespace ElysFarm.Core
     internal static class FieldLocator
     {
         public static bool TryResolve(FarmWorld world, Npc npc, string token, out Field field, out string reason)
-        {            field = null;
+        {
+            field = null;
             reason = null;
 
             if (world.Fields.Count == 0)
