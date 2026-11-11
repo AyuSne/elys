@@ -14,6 +14,12 @@ namespace ElysFarm.Core
 
         public string Id { get; }
 
+        /// <summary>地块在农场平面上的 X 坐标，仅用于效用打分里的距离项。</summary>
+        public float X { get; }
+
+        /// <summary>地块在农场平面上的 Z 坐标，仅用于效用打分里的距离项。</summary>
+        public float Z { get; }
+
         public FieldState State { get; private set; } = FieldState.Empty;
 
         /// <summary>当前作物；空地或已收获时为 null。</summary>
@@ -42,7 +48,7 @@ namespace ElysFarm.Core
             State == FieldState.Growing ||
             State == FieldState.Mature;
 
-        public Field(string id, float fertility = 0.5f, float resilience = 0.5f)
+        public Field(string id, float x = 0f, float z = 0f, float fertility = 0.5f, float resilience = 0.5f)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -50,8 +56,18 @@ namespace ElysFarm.Core
             }
 
             Id = id;
+            X = x;
+            Z = z;
             Fertility = Clamp01(fertility);
             Resilience = Clamp01(resilience);
+        }
+
+        /// <summary>与某点的平面距离，供效用打分的距离项使用。</summary>
+        public float DistanceTo(float x, float z)
+        {
+            var dx = X - x;
+            var dz = Z - z;
+            return (float)Math.Sqrt(dx * dx + dz * dz);
         }
 
         /// <summary>

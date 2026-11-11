@@ -11,7 +11,7 @@ namespace ElysFarm.Tests
     {
         static Field NewField(float fertility = 0.3f, float resilience = 0.5f)
         {
-            return new Field("A1", fertility, resilience);
+            return new Field("A1", 0f, 0f, fertility, resilience);
         }
 
         [Test]
