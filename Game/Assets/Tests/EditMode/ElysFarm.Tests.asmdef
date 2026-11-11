@@ -4,6 +4,7 @@
     "references": [
         "ElysFarm",
         "ElysFarm.Model",
+        "ElysFarm.Demo",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

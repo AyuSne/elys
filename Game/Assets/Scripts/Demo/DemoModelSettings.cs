@@ -9,8 +9,9 @@ namespace ElysFarm.Demo
 {
     /// <summary>
     /// 演示场景的模型配置读取。密钥来源只有两处：
-    /// 环境变量，或代码仓根目录下被 .gitignore 排除的 .secrets.local.json（代码仓外/构建产物外）。
-    /// 两处都没有时返回 null，演示自动切到本地模板。
+    /// 环境变量，或编辑器里代码仓根目录下被 .gitignore 排除的 .secrets.local.json。
+    /// 打包后的播放器不隐式读取文件，只认环境变量（或显式指定的 ELYS_SECRETS_FILE），
+    /// 因此包旁边散落的密钥不会被误用。两处都没有时返回 null，演示自动切到本地模板。
     /// </summary>
     internal static class DemoModelSettings
     {
@@ -55,19 +56,20 @@ namespace ElysFarm.Demo
 
         static JObject ReadSecretsFile()
         {
-            var path = Environment.GetEnvironmentVariable("ELYS_SECRETS_FILE");
-            if (string.IsNullOrWhiteSpace(path))
+            var candidates = SecretFileLocator.Candidates(
+                Application.isEditor,
+                Application.dataPath,
+                Environment.GetEnvironmentVariable("ELYS_SECRETS_FILE"));
+
+            foreach (var path in candidates)
             {
-                var repoRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
-                path = Path.Combine(repoRoot, ".secrets.local.json");
+                if (File.Exists(path))
+                {
+                    return JObject.Parse(File.ReadAllText(path));
+                }
             }
 
-            if (!File.Exists(path))
-            {
-                return null;
-            }
-
-            return JObject.Parse(File.ReadAllText(path));
+            return null;
         }
 
         static string FirstNonEmpty(string value, string fallback)

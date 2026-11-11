@@ -1,0 +1,238 @@
+# Elys · 一句话指挥的 AI 农场
+
+> 玩家说一句话，AI NPC 自己把「播种 → 浇水 → 施肥 → 除草 → 收获」做完。
+> 模型只负责理解人话和措辞，所有动作都要过确定性的白名单与前置条件校验；
+> 模型不可用时整条链路自动回退本地模板，演示不会卡死。
+
+![Windows 包里的体块演示](docs/images/windows-build.png)
+
+这是面试实践题「AI 小世界里的模拟经营」的第 3 天可交付切点：完整的种田闭环、
+可复核的 EditMode 回归报告、可直接双击运行的 Windows 包，以及这份 README。
+之后的三名 NPC、决策可视化层、记忆与社交都是加分项，见
+[GitHub Issues](https://github.com/AyuSne/elys/issues)。
+
+## 目录
+
+- [跑起来](#跑起来)
+- [跑测试与看报告](#跑测试与看报告)
+- [打 Windows 包](#打-windows-包)
+- [配置模型密钥](#配置模型密钥)
+- [怎么玩](#怎么玩)
+- [仓库结构](#仓库结构)
+- [文档与设计](#文档与设计)
+- [已知边界](#已知边界)
+
+## 跑起来
+
+两种方式，任选一种。**只跑包不需要装 Unity。**
+
+### 方式一：直接跑已打好的包
+
+如果拿到的是带 `Builds/Windows/` 的交付目录（本机已经构建过），双击 `Builds/Windows/Elys.exe`
+（窗口 1280×720）。
+
+- 仓库本身不提交这 98 MB 二进制（`.gitignore` 排除了 `Builds/`）。只拿到源码时，按
+  [打 Windows 包](#打-windows-包) 一条命令生成；交给评审时把整个 `Builds/Windows/` 目录一起打包即可。
+- 没有配置密钥也能跑：NPC 用本地模板理解你的话，闭环照常。
+- `Builds/Windows/` 可以直接整个目录拷给别人，不依赖仓库与 Unity。
+
+### 方式二：在 Unity 里打开工程
+
+1. 安装 **Unity 6000.3.10f1**（含 Windows Build Support 模块）。
+2. 用 Unity Hub 打开仓库下的 `Game/` 目录（不是仓库根目录）。
+3. 打开 `Assets/Scenes/FarmDemo.unity`，点 Play。
+
+命令行等价做法：
+
+```powershell
+unity open Game
+unity status --until-ready --project-path D:\Elys\Game
+```
+
+> 第一次打开会导入 URP 与测试框架，需要几分钟。场景里只有一个引导器与 HUD，
+> 地块、作物、NPC 的方块都是运行时由代码生成的，所以改布局只改代码，不用手改场景。
+
+## 跑测试与看报告
+
+### 一条命令（推荐）
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-tests.ps1
+```
+
+脚本会跑全套 EditMode 用例，把 NUnit XML 写到 `TestResults/editmode.xml`，
+并在终端打印总数、失败数与**题目要求的三项验收**各自的结果。退出码非 0 表示有失败。
+
+### 等价的原生命令
+
+```powershell
+unity test Game --mode EditMode --timeout 900 --output TestResults/editmode.xml
+```
+
+跑测试不需要打开 Unity 编辑器；编辑器开着（尤其 Play Mode）时测试会被拒绝。
+需要 Unity CLI（`unity` 命令，安装：`irm https://unity.com/install.ps1 | iex`）。
+
+### 报告里看什么
+
+`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。仓库里归档了
+最近一次全绿的报告；每次运行时由脚本覆盖。
+
+题目三项要求与用例的对应关系：
+
+| 题目要求 | 验收用例（报告里可直接搜） | 断言的是 |
+|---|---|---|
+| 步骤完整 | `AcceptanceTests.步骤完整_五个工步都按序执行并留下流水` | 五个工步按顺序执行、每条都留下流水、最后一步是收获 |
+| 时间、背包功能正常 | `AcceptanceTests.背包守恒_全流程结束后三本账收支相抵` | 入账减出账等于持有；播 1 颗种子、收 3 个萝卜 |
+| 时间推进 | `AcceptanceTests.时间推进_不跨日不会成熟且萝卜第4天收获` | 不跨日不生长；第 1 天播种、第 4 天收获 |
+| 交付物本身 | `DeliveryTests.*` | 包从农场演示场景启动、场景里挂着引导器与 HUD、产品名是 Elys |
+| 密钥不泄露 | `SecretFileLocatorTests.*` | 编辑器只读仓库根；打包后的播放器不隐式读任何密钥文件 |
+
+全部用例共 60 个，覆盖领域闭环、时钟、三本账、意图路由（含模型失败降级）、
+模型协议与交付配置。领域测试只打 `FarmWorld` 这条缝，模型测试用假客户端，不联网、不花钱。
+
+## 打 Windows 包
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1
+```
+
+产物：`Builds/Windows/Elys.exe`。构建由 `Assets/Editor/FarmBuild.cs` 执行：
+
+- 只打 `Assets/Scenes/FarmDemo.unity` 一个场景，保证启动就是演示；
+- 构建前扫一遍 `Assets/`、构建后扫一遍产物目录，发现 `.env` /
+  `.secrets.local.json` 一类文件就失败，不产出可疑的包；
+- 默认拒绝在未提交的工作树上构建；开发期可加 `-AllowDirty`。
+
+等价的 CLI 命令（`--output-path` 给绝对路径最稳）：
+
+```powershell
+unity build Game --target StandaloneWindows64 `
+  --execute-method ElysFarm.EditorTools.FarmBuild.BuildWindows `
+  --output-path D:\Elys\Builds\Windows\Elys.exe
+```
+
+也可以在 Unity 菜单里点 **Elys → 构建 Windows 包**。
+
+打完包想确认它真能启动，跑一次冒烟验收（需要可交互的桌面会话）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-test-build.ps1
+```
+
+脚本会启动包、截一张窗口图到 `TestResults/smoke-window.png`、检查 `Player.log`
+里有没有 `[Elys]` 启动日志与异常，然后关掉进程。
+
+## 配置模型密钥
+
+**不配也能完整跑完种田闭环**：意图解析、追问、闲聊全部回退本地模板，只是不如模型灵活。
+配了之后 NPC 能听懂更多说法，HUD 会显示「模型在线」。
+
+### 在 Unity 编辑器里
+
+复制示例文件，填入自己的密钥：
+
+```powershell
+Copy-Item .secrets.local.json.example .secrets.local.json
+```
+
+```json
+{
+  "deepseek": {
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "apiKey": "sk-你的密钥"
+  }
+}
+```
+
+`.secrets.local.json` 在 `.gitignore` 里，**不会入库**；它放在仓库根目录（`Game/` 之外）。
+
+也可以用环境变量（优先级更高）：`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、
+`DEEPSEEK_MODEL`。
+
+### 在打好的包里
+
+打包后的播放器**不隐式读取任何文件**，只认环境变量：
+
+```powershell
+# 当前 PowerShell 窗口里设置后再启动
+$env:DEEPSEEK_API_KEY = 'sk-你的密钥'
+.\Builds\Windows\Elys.exe
+```
+
+也可以显式指定一个密钥文件（该文件不在包内即可）：
+
+```powershell
+$env:ELYS_SECRETS_FILE = 'D:\keys\elys.json'
+.\Builds\Windows\Elys.exe
+```
+
+### 为什么密钥不会进仓库、也不会进包
+
+| 环节 | 保证 |
+|---|---|
+| 入库 | `.secrets.local.json`、`.env`、`*.env.local` 在 `.gitignore` 里；仓库里只提交 `*.example.json` |
+| 进包 | 构建只打 `Assets/Scenes/FarmDemo.unity`；`Assets/` 在构建前会被扫描，发现密钥类文件直接失败 |
+| 运行时 | `SecretFileLocator` 只在编辑器里找仓库根的本地文件；播放器只认环境变量或显式路径（有测试覆盖） |
+| 日志 | 模型配置只打印模型名与地址，不打印密钥 |
+
+## 怎么玩
+
+NPC 开局**待命**，不会抢在玩家输入前把地种掉。
+
+1. 在底部输入框输入一句话，按回车或点「下达」。
+2. 试这些：
+
+| 输入 | 会发生什么 |
+|---|---|
+| `把东边那块地种满萝卜` | NPC 接单，按五步工单去 A2 地块播种、浇水、施肥、除草，等成熟后收获 |
+| `种点萝卜` | 不点名地块，交给效用打分挑最该种的那块 |
+| `给地浇水` | 只派一个浇水工步；不点名地块时同样由效用打分挑 |
+| `你在干什么` | 追问，只读回答，不改变任何状态 |
+| `今天天气不错` | 闲聊，只回话，不改变任何状态 |
+| `去种月亮` | 品种不在白名单，当场拒绝并给出可读理由 |
+
+3. 右侧「决策」面板会显示当前意图、工单进度和前五个候选工步（含被否决的理由）。
+4. 左侧显示第几天、当天进度、1x / 4x / 16x 时间档位、种子库 / 产出仓 / 随身流水、
+   每块地的生长与水分，以及「账本自检：入账 − 出账 = 持有 ✓」。
+5. 「开始自主」让 NPC 自己找活干；「暂停自主」只影响之后的选择。
+6. 一个游戏日等于 5 分钟真实时间。萝卜 3 个游戏日成熟，想快点看收获就切 16x。
+
+## 仓库结构
+
+```
+Game/                        Unity 工程（Unity Hub 打开这一层）
+  Assets/Scripts/Core/       纯领域层：FarmWorld、地块、时钟、三本账、效用打分、动作校验
+  Assets/Scripts/Core/Intent 意图解析：模型出口、本地模板、三出口路由
+  Assets/Scripts/Model/      DeepSeek HTTP 客户端与密钥来源
+  Assets/Scripts/Demo/       体块演示场景的引导器与 IMGUI HUD
+  Assets/Tests/EditMode/     EditMode 回归测试（60 个）
+  Assets/Editor/             场景生成器与 Windows 构建入口
+scripts/                     跑测试、打包、冒烟验收的 PowerShell 脚本
+TestResults/editmode.xml     最近一次全绿的回归报告
+docs/                        规格、ADR、调研、领域词汇表与 agent 笔记
+```
+
+## 文档与设计
+
+| 文档 | 内容 |
+|---|---|
+| [ALIGNMENT.md](ALIGNMENT.md) | 与出题人逐条对齐的决策（含 7 天计划与第 3 天切点） |
+| [GLOSSARY.md](GLOSSARY.md) | 领域词汇表：地块、作物、工步、工单、种子库、产出仓、随身 |
+| [docs/spec/ai-farm-npc.md](docs/spec/ai-farm-npc.md) | 规格：分层、模块、时间、背包、降级与测试接缝 |
+| [docs/adr/](docs/adr/) | 三条难回退的决策：确定性任务层 + 生成式表达层、效用打分而非 GOAP、自写 HTTP 客户端 |
+| [docs/agents/unity-pitfalls.md](docs/agents/unity-pitfalls.md) | 这个 Unity 工程实际踩过的坑（编码、测试、打包、驱动编辑器） |
+
+## 已知边界
+
+这是「第 3 天结束即可交付」的版本，刻意只做到这里：
+
+- **只有 1 名 NPC 与 2 块地**；三名 NPC、分工与社交在 #5 / #8。
+- **没有决策可视化层**，当前右侧面板是临时状态 HUD；五项决策可视化在 #6。
+- **没有记忆与追问检索**；闲聊只回话，不写记忆，见 #7。
+- **素材是纯体块**，Quaternius 导入与双机位在 #9。
+- 只是 Windows 单机包；没有存档、多人、语音。
+- 数值平衡不在考察范围，没有调；模型延迟以实际网络为准，超时即回退。
+
+> 技术说明：运行时创建的方块材质用 `Shader.Find("Universal Render Pipeline/Lit")`，
+> 因此 URP Lit 已加入 GraphicsSettings 的 Always Included Shaders，避免打包后材质丢失。
