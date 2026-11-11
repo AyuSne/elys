@@ -60,24 +60,22 @@ Write-Host "报告：$outputPath"
 Write-Host ('总数 {0} · 通过 {1} · 失败 {2} · 跳过 {3} · 用时 {4:0.00} 秒' -f `
     $run.total, $run.passed, $run.failed, $run.skipped, [double]$run.duration)
 Write-Host ''
-Write-Host '题目要求的三项验收（#4）：'
+Write-Host '题目要求的三项验收（#4，取自 AcceptanceTests）：'
 
-$groups = @(
-    @{ Name = '五个工步完整'; Pattern = 'AcceptanceTests.五个工步完整_' },
-    @{ Name = '背包守恒'; Pattern = 'AcceptanceTests.背包守恒_' },
-    @{ Name = '时间推进'; Pattern = 'AcceptanceTests.时间推进_' }
-)
+# 不写死用例名：按类名挑出验收剧本，用方法名第一个下划线前的词当标签。
+$acceptance = @($cases | Where-Object { $_.fullname -like '*AcceptanceTests.*' })
+if ($acceptance.Count -eq 0) {
+    Write-Error '报告里没有 AcceptanceTests 用例，验收剧本没有跑。'
+    exit 1
+}
 
-foreach ($group in $groups) {
-    $matched = @($cases | Where-Object { $_.fullname -like "*$($group.Pattern)*" })
-    $failed = @($matched | Where-Object { $_.result -ne 'Passed' })
-
-    if ($matched.Count -eq 0) {
-        Write-Host ('  {0}：报告里没有对应用例' -f $group.Name) -ForegroundColor Yellow
-    } elseif ($failed.Count -eq 0) {
-        Write-Host ('  {0}：通过（{1} 个用例）' -f $group.Name, $matched.Count) -ForegroundColor Green
+foreach ($case in $acceptance) {
+    $leaf = ($case.fullname -split '\.')[-1]
+    $label = ($leaf -split '_')[0]
+    if ($case.result -eq 'Passed') {
+        Write-Host ('  {0}：通过' -f $label) -ForegroundColor Green
     } else {
-        Write-Host ('  {0}：失败 {1} 个' -f $group.Name, $failed.Count) -ForegroundColor Red
+        Write-Host ('  {0}：{1}（{2}）' -f $label, $case.result, $leaf) -ForegroundColor Red
     }
 }
 

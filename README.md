@@ -103,17 +103,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows.ps1
 产物：`Builds/Windows/Elys.exe`。构建由 `Assets/Editor/FarmBuild.cs` 执行：
 
 - 只打 `Assets/Scenes/FarmDemo.unity` 一个场景，保证启动就是演示；
-- 构建前扫一遍 `Assets/`、构建后扫一遍产物目录，发现 `.env` /
-  `.secrets.local.json` 一类文件就失败，不产出可疑的包；
+- 构建前扫一遍 `Assets/`、构建后复核产物目录，发现 `.env` /
+  `.secrets.local.json` 一类文件就失败（构建后的检查发生在包已经落盘之后，需要人工清理）；
 - 默认允许在有未提交改动的工作树上构建（打包本身会改写 URP 预过滤等工程文件，
-  下一次打包时工作树往往已经不干净）。要「从干净提交构建」时加 `-RequireClean`，它会要求工作树干净。
+  下一次打包时工作树往往已经不干净）。要「从干净提交构建」时加 `-RequireClean`，它会要求工作树干净，
+  构建产物的 `Elys.provenance.json` 也会记录对应提交。
 
-等价的 CLI 命令（`--output-path` 给绝对路径最稳）：
+等价的 CLI 命令（`--output-path` 用仓库下的绝对路径；相对路径会按 Unity 的工作目录解析）：
 
 ```powershell
 unity build Game --target StandaloneWindows64 `
   --execute-method ElysFarm.EditorTools.FarmBuild.BuildWindows `
-  --output-path D:\Elys\Builds\Windows\Elys.exe
+  --output-path <仓库绝对路径>\Builds\Windows\Elys.exe `
+  --allow-dirty-build
 ```
 
 也可以在 Unity 菜单里点 **Elys → 构建 Windows 包**。
@@ -212,7 +214,7 @@ Game/                        Unity 工程（Unity Hub 打开这一层）
   Assets/Scripts/Core/Intent 意图解析：模型出口、本地模板、三出口路由
   Assets/Scripts/Model/      DeepSeek HTTP 客户端与密钥来源
   Assets/Scripts/Demo/       体块演示场景的引导器与 IMGUI HUD
-  Assets/Tests/EditMode/     EditMode 回归测试（57 个）
+  Assets/Tests/EditMode/     EditMode 回归测试
   Assets/Editor/             场景生成器、密钥防线与 Windows 构建入口
 scripts/                     跑测试、打包、冒烟验收的 PowerShell 脚本
 TestResults/                 测试报告生成目录（不入库）

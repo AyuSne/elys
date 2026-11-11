@@ -68,8 +68,9 @@ if (-not (Test-Path $outputPath)) {
 }
 
 # 产物目录里再独立扫一遍：不依赖 C# 构建脚本的结论。
-# 规则与 BuildSecrets.LooksLikeSecret 一致：确切文件名 + *.env 后缀。
-$secretNames = '^\.env($|\.)|\.env$|secrets(\.local)?\.json$'
+# 规则与 BuildSecrets.LooksLikeSecret 一致：.env / .env.local / *.env 后缀 /
+# secrets.json / secrets.local.json / .secrets.local.json。
+$secretNames = '^\.env(\.local)?$|\.env$|^\.?secrets(\.local)?\.json$'
 $leaks = @(Get-ChildItem $outputDirectory -Recurse -File |
     Where-Object { $_.Name -match $secretNames })
 if ($leaks.Count -gt 0) {

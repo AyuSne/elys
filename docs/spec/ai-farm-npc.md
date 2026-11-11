@@ -78,7 +78,7 @@
 
 **范围注记（#3 一句话指挥）**。`IModelClient` 本轮只暴露对话补全；语料解析按「农事指令 15 秒 / 追问与闲聊 6 秒」两档硬超时。embedding 与记忆检索一起在记忆票接入，避免出现没有调用方的接口。距离只作为效用打分的扣分项，不设硬门槛；拒绝理由来自品种白名单、地块选择与动作前置条件。演示场景默认让 NPC 待命，玩家第一句话被接受后恢复自主；HUD 提供「开始自主/暂停自主」开关。
 
-**范围注记（#4 可交付基线）**。这一票只补交付证据，不新增领域接缝：`AcceptanceTests` 仍打 `FarmWorld` 这条缝，把题面三项要求写成一次完整流程的断言；`SecretFileLocatorTests` 只测「密钥来源」这一条安全策略（编辑器读仓库根、播放器不隐式读任何文件），因为 #4 明确要求密钥不进仓库也不进包。包的装配（启动场景、产品名、窗口尺寸）由 `Assets/Editor/FarmBuild.cs` 固定，运行证据由 `scripts/smoke-test-build.ps1`（启动、窗口截图、Player.log）给出，不写成 EditMode 用例，也不测 UI 渲染。
+**范围注记（#4 可交付基线）**。这一票只补交付证据，不新增领域接缝：`AcceptanceTests` 仍打 `FarmWorld` 这条缝，把题面三项要求写成一次完整流程的断言；`SecretFileLocatorTests` 只测「密钥来源」这一条安全策略（编辑器读仓库根、播放器不隐式读任何文件），因为 #4 明确要求密钥不进仓库也不进包。启动场景由 `Assets/Editor/FarmBuild.cs` 固定，产品名与窗口尺寸在 `ProjectSettings.asset` 里定；运行证据由 `scripts/smoke-test-build.ps1`（启动、窗口截图、Player.log）给出，不写成 EditMode 用例，也不测 UI 渲染。
 
 ## Testing Decisions
 
@@ -89,7 +89,7 @@
 1. **`FarmWorld`** —— 最高的那条缝。五个工步的迁移、游戏日推进、背包守恒、效用打分的排序、记忆检索的加权，全部在这一条缝上测。UI 与表现层不参与测试。
 2. **`IModelClient`** —— 外部 IO 的唯一出口。所有测试使用假实现，返回预置的分类结果与固定向量，因此测试不联网、不花钱、结果可重复。
 
-不为 `MemoryStore`、`UtilityScorer`、`ActionValidator` 单开接缝：它们是 `FarmWorld` 内部模块，通过 `FarmWorld` 的行为暴露出来。
+不为 `MemoryStore`、`UtilityScorer`、`ActionValidator` 单开接缝：它们是 `FarmWorld` 内部模块，通过 `FarmWorld` 的行为暴露出来。`SecretFileLocator` 是 #4 的唯一例外（见「范围注记（#4）」）：它只做密钥来源决策，不碰领域状态。
 
 **测试的模块**：`FarmWorld`（含其内部的时钟、账本、打分、校验、记忆），以及 `IntentRouter` 的三出口分流。
 
