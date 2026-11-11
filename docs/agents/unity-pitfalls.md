@@ -58,6 +58,21 @@
 - `ALIGNMENT.md` §四把决策可视化限定为五项。临时演示 HUD 不是 `DecisionInspector`，已在 §四加注；不要把两者混在一起评。
 - `FarmClock.Speed` 只接受 1x/4x/16x。调试时想大幅加速，用 `Time.timeScale`，不要改时钟档位。
 
+## 模型与意图
+
+- 一句话指挥要区分「模型解析」与「确定性校验」。品种白名单必须在模型之前用本地规则拦一次：模型会把「去种月亮」改写成一条合法农活，只有本地白名单能稳定拒绝。
+- 模型失败不是异常路径，是常规路径。`IntentRouter` 对超时、断网、空 JSON、非法出口一律回退本地解析；测试用假 `IModelClient`，不联网。
+- 本机实测 `deepseek-flash` 的意图解析（thinking=low + JSON）稳定在 1–3 秒；偶发一次失败后重试即成功，因此降级路径必须真的可用，不能只写在文档里。
+- 模型 HTTP 客户端用自己的 `UnityWebRequest`（ADR-0003）。`thinking` / `reasoning_effort` 是请求体顶层字段，不要套 OpenAI SDK 的 `extra_body`。
+- 带中文注释的请求/响应字段用 `Newtonsoft.Json` 解析；`com.unity.nuget.newtonsoft-json` 已加入 manifest，测试程序集若 `overrideReferences: true` 则仍需显式引用。
+
+## 演示与 HUD
+
+- Game 视图实际是 1175×547 时，`capture` 输出 1280×720；按 720 摆 HUD 会重叠。布局要按 `Screen.width/height` 算，并在 547 高度下截图验收。
+- NPC 一开局就自主干活会抢在玩家输入之前把地种掉，一句话指挥的演示看起来像被拒绝。演示默认让 NPC **待命**，玩家第一句话被接受后才恢复自主；HUD 另有「开始自主/暂停自主」。
+- IMGUI 输入框与按钮走同一套提交路径；`UnityEngine.Input` 在本工程不可用（activeInputHandler=1），但 IMGUI 事件不受影响。
+- `Game/Temp/` 会被 Unity 启动时清空；`script eval --file` 的临时文件要在 Editor 打开后重写。
+
 ## 评审与 Git
 
 - 评审前先提交或冻结工作树。子代理读的是工作树；边改边审会看到中间状态（例如编码损坏的临时文件）。

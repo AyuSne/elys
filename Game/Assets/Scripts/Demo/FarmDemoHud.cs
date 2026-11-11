@@ -16,7 +16,9 @@ namespace ElysFarm.Demo
         GUIStyle labelStyle;
         GUIStyle smallStyle;
         GUIStyle boldStyle;
+        GUIStyle inputStyle;
         bool stylesReady;
+        string commandInput = string.Empty;
 
         void Start()
         {
@@ -47,6 +49,7 @@ namespace ElysFarm.Demo
             DrawStatusPanel();
             DrawDecisionPanel();
             DrawLogPanel();
+            DrawCommandPanel();
         }
 
         void InitStyles()
@@ -75,12 +78,19 @@ namespace ElysFarm.Demo
                 fontStyle = FontStyle.Bold
             };
 
+            inputStyle = new GUIStyle(GUI.skin.textField)
+            {
+                fontSize = 14,
+                padding = new RectOffset(6, 6, 4, 4)
+            };
+
             if (font != null)
             {
                 titleStyle.font = font;
                 labelStyle.font = font;
                 smallStyle.font = font;
                 boldStyle.font = font;
+                inputStyle.font = font;
             }
         }
 
@@ -88,10 +98,9 @@ namespace ElysFarm.Demo
         {
             var clock = demo.World.Clock;
             var ledger = demo.World.Ledger;
-            var field = demo.Field;
             var npc = demo.Npc;
 
-            GUILayout.BeginArea(new Rect(16f, 16f, 350f, 340f), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(12f, 8f, 360f, 326f), GUI.skin.box);
             GUILayout.Label("Elys · 农场闭环", titleStyle);
             GUILayout.Label($"第 {clock.Day} 天 · 当天已过 {clock.DayProgress:P0}", labelStyle);
             DrawProgressBar(clock.DayProgress);
@@ -121,10 +130,15 @@ namespace ElysFarm.Demo
             GUILayout.Label($"{npc.DisplayName}体力：{npc.Stamina:P0}", labelStyle);
             GUILayout.Space(6f);
 
-            GUILayout.Label($"地块 {field.Id}：{FarmDemoText.StateName(field.State)}", boldStyle);
-            GUILayout.Label(
-                $"生长 {field.Growth:P0} · 水分 {field.Water:P0} · 肥力 {field.Fertility:P0} · 杂草 {field.Weeds:P0}",
-                labelStyle);
+            foreach (var field in demo.World.Fields)
+            {
+                GUILayout.Label(
+                    field.IsSown
+                        ? $"{field.Id} · {FarmDemoText.StateName(field.State)} · 生长 {field.Growth:P0} · 水 {field.Water:P0} · 草 {field.Weeds:P0}"
+                        : $"{field.Id} · {FarmDemoText.StateName(field.State)}",
+                    labelStyle);
+            }
+
             GUILayout.Label($"账本自检：{(ledger.Verify(out var error) ? "入账 − 出账 = 持有 ✓" : error)}", smallStyle);
             GUILayout.EndArea();
         }
@@ -132,19 +146,34 @@ namespace ElysFarm.Demo
         void DrawDecisionPanel()
         {
             var panelWidth = 400f;
-            GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 16f, 16f, panelWidth, 340f), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 326f), GUI.skin.box);
             GUILayout.Label($"{demo.Npc.DisplayName}的决策", titleStyle);
-            GUILayout.Label("决策来源：本地效用打分 · 模型调用 0 次", smallStyle);
+            GUILayout.Label(
+                $"决策来源：本地效用打分 · 模型{(demo.UsingModel ? "在线" : "离线")}",
+                smallStyle);
+            GUILayout.Label($"最近调用：{FarmDemoText.Call(demo.LastCall)}", smallStyle);
             GUILayout.Label($"当前意图：{demo.CurrentIntent}", labelStyle);
             GUILayout.Label($"上一结果：{demo.LastMessage}", smallStyle);
             GUILayout.Space(6f);
+
+            var order = demo.World.OrderOf(FarmDemoBootstrap.NpcId);
+            if (order != null)
+            {
+                GUILayout.Label(
+                    $"工单：{order.FieldId} · {order.CompletedCount}/{order.Steps.Count} 步"
+                    + (order.NextStep.HasValue
+                        ? $" · 下一步 {FarmDemoText.StepName(order.NextStep.Value)}"
+                        : string.Empty),
+                    boldStyle);
+            }
+
             GUILayout.Label("候选工步（分数 / 否决理由）", boldStyle);
 
             var candidates = demo.World.RankCandidates(FarmDemoBootstrap.NpcId);
             var shown = 0;
             foreach (var candidate in candidates)
             {
-                if (shown++ >= 6)
+                if (shown++ >= 5)
                 {
                     break;
                 }
@@ -166,12 +195,12 @@ namespace ElysFarm.Demo
         void DrawLogPanel()
         {
             GUILayout.BeginArea(
-                new Rect(16f, Screen.height - 158f, Screen.width - 32f, 142f),
+                new Rect(12f, Screen.height - 208f, Screen.width - 24f, 76f),
                 GUI.skin.box);
             GUILayout.Label("已执行的工步（流水）", boldStyle);
 
             var log = demo.World.Log;
-            var first = Mathf.Max(0, log.Count - 6);
+            var first = Mathf.Max(0, log.Count - 2);
             if (first == log.Count)
             {
                 GUILayout.Label("还没有执行过工步。", smallStyle);
@@ -188,6 +217,70 @@ namespace ElysFarm.Demo
             }
 
             GUILayout.EndArea();
+        }
+
+        void DrawCommandPanel()
+        {
+            GUILayout.BeginArea(new Rect(12f, Screen.height - 128f, Screen.width - 24f, 120f), GUI.skin.box);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("玩家说：", boldStyle, GUILayout.Width(64f));
+            commandInput = GUILayout.TextField(commandInput ?? string.Empty, 120, inputStyle, GUILayout.MinWidth(260f));
+
+            GUI.enabled = !demo.IsThinking;
+            if (GUILayout.Button("下达", GUILayout.Width(56f)))
+            {
+                Submit();
+            }
+
+            if (GUILayout.Button("种满萝卜", GUILayout.Width(90f)))
+            {
+                commandInput = "把东边那块地种满萝卜";
+                Submit();
+            }
+
+            if (GUILayout.Button("去种月亮", GUILayout.Width(90f)))
+            {
+                commandInput = "去种月亮";
+                Submit();
+            }
+
+            if (GUILayout.Button(demo.AutonomyEnabled ? "暂停自主" : "开始自主", GUILayout.Width(80f)))
+            {
+                demo.ToggleAutonomy();
+            }
+
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+
+            if (Event.current.type == EventType.KeyDown
+                && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter)
+                && !demo.IsThinking
+                && !string.IsNullOrWhiteSpace(commandInput))
+            {
+                Submit();
+                Event.current.Use();
+            }
+
+            var status = demo.IsThinking
+                ? "等模型回话…（游戏没有暂停）"
+                : demo.AutonomyEnabled
+                    ? "模型" + (demo.UsingModel ? "在线" : "离线") + " · NPC 自主中"
+                    : "模型" + (demo.UsingModel ? "在线" : "离线") + " · NPC 待命";
+            GUILayout.Label($"上一句：{demo.LastPlayerText}　（{status}）", smallStyle);
+            GUILayout.Label($"NPC：{demo.LastReply}", labelStyle);
+            GUILayout.Label(demo.LastUnderstood, smallStyle);
+            GUILayout.EndArea();
+        }
+
+        void Submit()
+        {
+            if (demo.IsThinking || string.IsNullOrWhiteSpace(commandInput))
+            {
+                return;
+            }
+
+            demo.SubmitPlayerText(commandInput);
+            commandInput = string.Empty;
         }
 
         void DrawProgressBar(float progress)

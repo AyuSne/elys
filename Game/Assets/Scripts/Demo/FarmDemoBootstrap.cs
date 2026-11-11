@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using ElysFarm.Core;
 using UnityEngine;
 
@@ -12,6 +14,7 @@ namespace ElysFarm.Demo
     public sealed class FarmDemoBootstrap : MonoBehaviour
     {
         public const string FieldId = "A1";
+        public const string EastFieldId = "A2";
         public const string NpcId = "ahe";
 
         const float WalkSpeed = 2.6f;
@@ -40,16 +43,47 @@ namespace ElysFarm.Demo
         /// <summary>最近一次工步的结果或跨日提示。</summary>
         public string LastMessage { get; private set; } = "第 1 天，NPC 在产出仓旁待命";
 
-        Transform npcView;
-        Transform cropView;
-        Transform weedsView;
-        Material fieldMaterial;
-        Material cropMaterial;
+        /// <summary>玩家最近一次输入。</summary>
+        public string LastPlayerText { get; private set; } = string.Empty;
 
-        StepCandidate pendingStep;
+        /// <summary>NPC 对最近一次输入的回应（接单、拒绝或闲聊）。</summary>
+        public string LastReply { get; private set; } = string.Empty;
+
+        /// <summary>最近一次输入被理解成了什么，供 HUD 的「理解成」一行展示。</summary>
+        public string LastUnderstood { get; private set; } = "还没有收到指令";
+
+        /// <summary>正在等模型回话；此时游戏循环照常推进。</summary>
+        public bool IsThinking { get; private set; }
+
+        /// <summary>意图出口：离线时为 null 客户端，全部走本地模板。</summary>
+        public IntentRouter Router { get; private set; }
+
+        /// <summary>是否配置了模型。</summary>
+        public bool UsingModel => Router != null && Router.HasModel;
+
+        /// <summary>最近一次模型调用摘要。</summary>
+        public ModelCallInfo LastCall => Router != null ? Router.LastCall : ModelCallInfo.None;
+
+        /// <summary>是否让 NPC 自己找活干；开局待命，等玩家第一句话或手动开启。</summary>
+        public bool AutonomyEnabled { get; private set; }
+
+        Transform npcView;
+        readonly List<FieldView> fieldViews = new List<FieldView>();
+
+        string pendingFieldId;
+        WorkStep pendingWorkStep;
         Vector3 walkTarget;
         bool walking;
         float nextDecisionAt;
+
+        sealed class FieldView
+        {
+            public Field Field;
+            public Transform Crop;
+            public Transform Weeds;
+            public Material Soil;
+            public Material CropMaterial;
+        }
 
         void Awake()
         {
@@ -74,6 +108,37 @@ namespace ElysFarm.Demo
                 return;
             }
 
+            var order = World.OrderOf(NpcId);
+            if (order != null)
+            {
+                var next = order.NextStep;
+                if (!next.HasValue)
+                {
+                    CurrentIntent = "工单刚干完";
+                    UpdateViews();
+                    return;
+                }
+
+                var orderField = World.GetField(order.FieldId);
+                if (!orderField.Can(next.Value, out var waitReason))
+                {
+                    CurrentIntent = $"等 {order.FieldId} · {FarmDemoText.StepName(next.Value)}（{waitReason}）";
+                    UpdateViews();
+                    return;
+                }
+
+                BeginAction(order.FieldId, next.Value);
+                UpdateViews();
+                return;
+            }
+
+            if (!AutonomyEnabled)
+            {
+                CurrentIntent = "待命，等玩家开口";
+                UpdateViews();
+                return;
+            }
+
             var best = World.NextStep(NpcId);
             if (!best.HasValue)
             {
@@ -82,41 +147,119 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            pendingStep = best.Value;
-            CurrentIntent = $"前往 {pendingStep.FieldId} · {FarmDemoText.StepName(pendingStep.Step)}";
-            walkTarget = new Vector3(Field.Position.X, NpcGroundY, Field.Position.Z - 2.6f);
-            walking = true;
+            BeginAction(best.Value.FieldId, best.Value.Step);
             UpdateViews();
+        }
+
+        /// <summary>切换自主干活。关掉只影响之后的选择，正在走的路或工单会先干完。</summary>
+        public void ToggleAutonomy()
+        {
+            AutonomyEnabled = !AutonomyEnabled;
+            CurrentIntent = AutonomyEnabled ? "自己找活干" : "待命，等玩家开口";
+        }
+
+        void BeginAction(string fieldId, WorkStep step)
+        {
+            pendingFieldId = fieldId;
+            pendingWorkStep = step;
+
+            var field = World.GetField(fieldId);
+            walkTarget = new Vector3(field.Position.X, NpcGroundY, field.Position.Z - 2.6f);
+            walking = true;
+            CurrentIntent = $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
+        }
+
+        /// <summary>
+        /// 玩家提交一句话。真正的解析在 <see cref="IntentRouter"/> 里异步进行；
+        /// 等待期间游戏循环不暂停，NPC 继续自主干活。
+        /// </summary>
+        public void SubmitPlayerText(string text)
+        {
+            if (IsThinking || Router == null || string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            LastPlayerText = text.Trim();
+            LastReply = string.Empty;
+            LastUnderstood = "正在理解…";
+            IsThinking = true;
+            CurrentIntent = "正在听玩家说话";
+            SubmitAsync(LastPlayerText);
+        }
+
+        async void SubmitAsync(string text)
+        {
+            try
+            {
+                var result = await Router.RouteAsync(text, World, Npc);
+                if (this == null)
+                {
+                    return;
+                }
+
+                ApplyIntent(result);
+            }
+            catch (Exception ex)
+            {
+                if (this == null)
+                {
+                    return;
+                }
+
+                IsThinking = false;
+                LastReply = "我脑子卡了一下，先按本地规矩干活。";
+                LastMessage = LastReply;
+                CurrentIntent = "没听清";
+                Debug.LogWarning($"[Elys] 意图路由异常：{ex}");
+            }
+        }
+
+        void ApplyIntent(IntentResult result)
+        {
+            IsThinking = false;
+            LastReply = result.Reply;
+
+            if (result.Accepted)
+            {
+                LastUnderstood = FarmDemoText.Plan(result.FieldId, result.SpeciesId, result.PlannedSteps);
+                walking = false;
+                pendingFieldId = null;
+                nextDecisionAt = 0f;
+                AutonomyEnabled = true;
+                CurrentIntent = "按指令开工";
+                LastMessage = $"{Npc.DisplayName}：{result.Reply}";
+                return;
+            }
+
+            LastUnderstood = "没有接单";
+            LastMessage = $"{Npc.DisplayName}：{result.Reply}";
+            CurrentIntent = result.Outlet == IntentOutlet.FarmCommand ? "拒绝了这单活" : "陪着说了两句";
         }
 
         void SetUpWorld()
         {
             World = new FarmWorld(new FarmClock());
-            Field = World.AddField(FieldId, new FarmPosition(0f, 3f), 0.3f);
+            Field = World.AddField(FieldId, new FarmPosition(-2f, 3f), 0.3f);
+            World.AddField(EastFieldId, new FarmPosition(2.5f, 3f), 0.3f);
             Npc = World.AddNpc(NpcId, "阿禾", new FarmPosition(-1.5f, -3f));
             World.SetProduceStore(new FarmPosition(-2.4f, -3f));
             World.AddSeeds(CropCatalog.RadishId, 10);
+            Router = new IntentRouter(DemoModelSettings.CreateClient());
             World.DaySettled += day => LastMessage = $"第 {day} 天开始，作物结算完毕";
-            LastMessage = $"第 1 天，{Npc.DisplayName}在产出仓旁待命";
+            AutonomyEnabled = false;
+            LastMessage = $"第 1 天，{Npc.DisplayName}在产出仓旁待命"
+                + (UsingModel ? "（模型在线）" : "（本地模板）");
         }
 
         void BuildBlockScene()
         {
-            CreateBlock("Ground", new Vector3(0f, -0.1f, 0f), new Vector3(26f, 0.2f, 26f), new Color(0.32f, 0.46f, 0.26f));
+            CreateBlock("Ground", new Vector3(2f, -0.1f, 0f), new Vector3(34f, 0.2f, 28f), new Color(0.32f, 0.46f, 0.26f));
 
-            var fieldBase = CreateBlock(
-                "Field A1",
-                new Vector3(Field.Position.X, FieldTop * 0.5f, Field.Position.Z),
-                new Vector3(3f, FieldTop, 3f),
-                DrySoil);
-            fieldMaterial = fieldBase.GetComponent<Renderer>().sharedMaterial;
-
-            var crop = CreateBlock("Radish", Vector3.zero, Vector3.one, CropGreen);
-            cropView = crop.transform;
-            cropMaterial = crop.GetComponent<Renderer>().sharedMaterial;
-            cropView.gameObject.SetActive(false);
-
-            CreateFence();
+            foreach (var field in World.Fields)
+            {
+                CreateFieldView(field);
+            }
 
             CreateBlock(
                 "Produce Store",
@@ -124,21 +267,44 @@ namespace ElysFarm.Demo
                 new Vector3(2.4f, 1.6f, 2.4f),
                 new Color(0.58f, 0.38f, 0.22f));
 
-            CreateWeeds();
             CreateNpc();
 
             FrameCamera();
         }
 
-        void CreateFence()
+        void CreateFieldView(Field field)
+        {
+            var fieldBase = CreateBlock(
+                $"Field {field.Id}",
+                new Vector3(field.Position.X, FieldTop * 0.5f, field.Position.Z),
+                new Vector3(3f, FieldTop, 3f),
+                DrySoil);
+
+            var crop = CreateBlock($"Crop {field.Id}", Vector3.zero, Vector3.one, CropGreen);
+            crop.SetActive(false);
+
+            var view = new FieldView
+            {
+                Field = field,
+                Crop = crop.transform,
+                CropMaterial = crop.GetComponent<Renderer>().sharedMaterial,
+                Soil = fieldBase.GetComponent<Renderer>().sharedMaterial
+            };
+
+            CreateWeeds(field, view);
+            CreateFence(field);
+            fieldViews.Add(view);
+        }
+
+        void CreateFence(Field field)
         {
             var postColor = new Color(0.72f, 0.62f, 0.46f);
             var corners = new[]
             {
-                new Vector3(-1.7f, 0.4f, Field.Position.Z - 1.7f),
-                new Vector3(1.7f, 0.4f, Field.Position.Z - 1.7f),
-                new Vector3(-1.7f, 0.4f, Field.Position.Z + 1.7f),
-                new Vector3(1.7f, 0.4f, Field.Position.Z + 1.7f)
+                new Vector3(field.Position.X - 1.7f, 0.4f, field.Position.Z - 1.7f),
+                new Vector3(field.Position.X + 1.7f, 0.4f, field.Position.Z - 1.7f),
+                new Vector3(field.Position.X - 1.7f, 0.4f, field.Position.Z + 1.7f),
+                new Vector3(field.Position.X + 1.7f, 0.4f, field.Position.Z + 1.7f)
             };
 
             foreach (var corner in corners)
@@ -147,11 +313,11 @@ namespace ElysFarm.Demo
             }
         }
 
-        void CreateWeeds()
+        void CreateWeeds(Field field, FieldView view)
         {
-            weedsView = new GameObject("Weeds").transform;
-            weedsView.SetParent(transform, false);
-            weedsView.position = new Vector3(Field.Position.X, FieldTop + 0.1f, Field.Position.Z);
+            var weeds = new GameObject($"Weeds {field.Id}").transform;
+            weeds.SetParent(transform, false);
+            weeds.position = new Vector3(field.Position.X, FieldTop + 0.1f, field.Position.Z);
 
             var tuftMaterial = CreateMaterial("Weed", WeedGreen);
             var offsets = new[]
@@ -166,13 +332,14 @@ namespace ElysFarm.Demo
             {
                 var tuft = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 tuft.name = "Weed Tuft";
-                tuft.transform.SetParent(weedsView, false);
+                tuft.transform.SetParent(weeds, false);
                 tuft.transform.localPosition = offset;
                 tuft.transform.localScale = new Vector3(0.45f, 0.5f, 0.45f);
                 tuft.GetComponent<Renderer>().sharedMaterial = tuftMaterial;
             }
 
-            weedsView.gameObject.SetActive(false);
+            weeds.gameObject.SetActive(false);
+            view.Weeds = weeds;
         }
 
         void CreateNpc()
@@ -240,10 +407,19 @@ namespace ElysFarm.Demo
             }
 
             walking = false;
-            var result = World.ExecuteStep(NpcId, pendingStep.FieldId, pendingStep.Step);
+
+            var order = World.OrderOf(NpcId);
+            var executingOrder = order != null
+                && order.FieldId == pendingFieldId
+                && order.NextStep.HasValue
+                && order.NextStep.Value == pendingWorkStep;
+            var result = executingOrder
+                ? World.AdvanceOrder(NpcId)
+                : World.ExecuteStep(NpcId, pendingFieldId, pendingWorkStep);
+
             if (result.Executed)
             {
-                LastMessage = $"第 {World.Clock.Day} 天：{FarmDemoText.StepName(pendingStep.Step)}完成"
+                LastMessage = $"第 {World.Clock.Day} 天：{FarmDemoText.StepName(pendingWorkStep)}完成"
                     + (result.Yield > 0
                         ? $"，收得 {result.Yield} 个{CropCatalog.Radish.DisplayName}"
                         : string.Empty);
@@ -251,7 +427,7 @@ namespace ElysFarm.Demo
             }
             else
             {
-                LastMessage = $"想{FarmDemoText.StepName(pendingStep.Step)}，但{result.Reason}";
+                LastMessage = $"想{FarmDemoText.StepName(pendingWorkStep)}，但{result.Reason}";
                 CurrentIntent = "换个活干";
             }
 
@@ -260,23 +436,27 @@ namespace ElysFarm.Demo
 
         void UpdateViews()
         {
-            fieldMaterial.SetColor("_BaseColor", Color.Lerp(DrySoil, WetSoil, Field.Water));
-
-            var sown = Field.IsSown;
-            cropView.gameObject.SetActive(sown);
-            if (sown)
+            foreach (var view in fieldViews)
             {
-                var height = 0.15f + Field.Growth * 1.2f;
-                cropView.position = new Vector3(Field.Position.X, FieldTop + height * 0.5f, Field.Position.Z);
-                cropView.localScale = new Vector3(0.9f, height, 0.9f);
-                cropMaterial.SetColor("_BaseColor", Color.Lerp(CropGreen, CropMature, Field.Growth));
-            }
+                var field = view.Field;
+                view.Soil.SetColor("_BaseColor", Color.Lerp(DrySoil, WetSoil, field.Water));
 
-            weedsView.gameObject.SetActive(Field.Weeds > 0.01f);
-            if (Field.Weeds > 0.01f)
-            {
-                var spread = 0.25f + Field.Weeds * 0.9f;
-                weedsView.localScale = new Vector3(spread, spread, spread);
+                var sown = field.IsSown;
+                view.Crop.gameObject.SetActive(sown);
+                if (sown)
+                {
+                    var height = 0.15f + field.Growth * 1.2f;
+                    view.Crop.position = new Vector3(field.Position.X, FieldTop + height * 0.5f, field.Position.Z);
+                    view.Crop.localScale = new Vector3(0.9f, height, 0.9f);
+                    view.CropMaterial.SetColor("_BaseColor", Color.Lerp(CropGreen, CropMature, field.Growth));
+                }
+
+                view.Weeds.gameObject.SetActive(field.Weeds > 0.01f);
+                if (field.Weeds > 0.01f)
+                {
+                    var spread = 0.25f + field.Weeds * 0.9f;
+                    view.Weeds.localScale = new Vector3(spread, spread, spread);
+                }
             }
         }
 

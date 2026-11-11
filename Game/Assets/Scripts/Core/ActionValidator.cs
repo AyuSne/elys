@@ -9,6 +9,21 @@ namespace ElysFarm.Core
         /// <summary>校验工步此刻是否可执行；不可执行时必须给出可读理由。</summary>
         public static bool Validate(FarmWorld world, Npc npc, Field field, WorkStep step, out string reason)
         {
+            return Validate(world, npc, field, step, null, out reason);
+        }
+
+        /// <summary>
+        /// 校验工步此刻是否可执行，允许为播种指定本次要用的品种（玩家点名品种时）。
+        /// 不可执行时必须给出可读理由。
+        /// </summary>
+        public static bool Validate(
+            FarmWorld world,
+            Npc npc,
+            Field field,
+            WorkStep step,
+            string sowSpeciesId,
+            out string reason)
+        {
             if (!field.Can(step, out reason))
             {
                 return false;
@@ -20,9 +35,15 @@ namespace ElysFarm.Core
                 return false;
             }
 
+            if (npc.DistanceTo(field) > Npc.MaxWorkDistance)
+            {
+                reason = "那块地太远了，我不去";
+                return false;
+            }
+
             if (step == WorkStep.Sow)
             {
-                return TryResolveSow(world, npc, out _, out reason);
+                return TryResolveSow(world, npc, sowSpeciesId, out _, out reason);
             }
 
             reason = null;
@@ -32,7 +53,22 @@ namespace ElysFarm.Core
         /// <summary>播种所需的品种与种子校验；通过时给出要播的品种。</summary>
         public static bool TryResolveSow(FarmWorld world, Npc npc, out CropSpecies species, out string reason)
         {
-            if (!CropCatalog.TryGet(npc.PreferredSpeciesId, out species))
+            return TryResolveSow(world, npc, null, out species, out reason);
+        }
+
+        /// <summary>
+        /// 播种所需的品种与种子校验。指定品种优先于 NPC 的当前打算；
+        /// 未知品种与种子不足都给出可读理由。
+        /// </summary>
+        public static bool TryResolveSow(
+            FarmWorld world,
+            Npc npc,
+            string sowSpeciesId,
+            out CropSpecies species,
+            out string reason)
+        {
+            var targetId = string.IsNullOrWhiteSpace(sowSpeciesId) ? npc.PreferredSpeciesId : sowSpeciesId;
+            if (!CropCatalog.TryGet(targetId, out species))
             {
                 reason = "不知道该种什么";
                 return false;

@@ -1,0 +1,16 @@
+{
+    "name": "ElysFarm.Model",
+    "rootNamespace": "ElysFarm.Model",
+    "references": [
+        "ElysFarm"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
