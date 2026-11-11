@@ -8,7 +8,8 @@ namespace ElysFarm.Demo
     /// <summary>
     /// 体块化演示场景的引导器：搭出地块、产出仓与 NPC 的方块替身，
     /// 用真实时间推进 <see cref="FarmWorld"/>，并让 NPC 每个工步都重新跑一遍效用打分。
-    /// 这里不调用任何模型，也不持有领域状态——只读 <see cref="FarmWorld"/> 的快照。
+    /// 玩家输入经 <see cref="IntentRouter"/> 变成工单后，NPC 再按工单执行。
+    /// 引导器不持有领域状态——只读 <see cref="FarmWorld"/> 的快照。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class FarmDemoBootstrap : MonoBehaviour
@@ -50,7 +51,7 @@ namespace ElysFarm.Demo
         public string LastReply { get; private set; } = string.Empty;
 
         /// <summary>最近一次输入被理解成了什么，供 HUD 的「理解成」一行展示。</summary>
-        public string LastUnderstood { get; private set; } = "还没有收到指令";
+        public string LastUnderstood { get; private set; } = "还没有收到玩家的话";
 
         /// <summary>正在等模型回话；此时游戏循环照常推进。</summary>
         public bool IsThinking { get; private set; }
@@ -108,7 +109,7 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            var order = World.OrderOf(NpcId);
+            var order = World.WorkOrderOf(NpcId);
             if (order != null)
             {
                 var next = order.NextStep;
@@ -119,14 +120,8 @@ namespace ElysFarm.Demo
                     return;
                 }
 
-                var orderField = World.GetField(order.FieldId);
-                if (!orderField.Can(next.Value, out var waitReason))
-                {
-                    CurrentIntent = $"等 {order.FieldId} · {FarmDemoText.StepName(next.Value)}（{waitReason}）";
-                    UpdateViews();
-                    return;
-                }
-
+                // 不在这里预判前置条件：走到地里后由 AdvanceWorkOrder 决定
+                // 是执行下一步，还是先做浇水/除草/施肥这类维护。
                 BeginAction(order.FieldId, next.Value);
                 UpdateViews();
                 return;
@@ -220,6 +215,11 @@ namespace ElysFarm.Demo
             IsThinking = false;
             LastReply = result.Reply;
 
+            if (result.Call.Outcome == ModelCallOutcome.Error && !string.IsNullOrWhiteSpace(result.Call.Detail))
+            {
+                Debug.LogWarning($"[Elys] 模型调用失败，已回退本地模板：{result.Call.Detail}");
+            }
+
             if (result.Accepted)
             {
                 LastUnderstood = FarmDemoText.Plan(result.FieldId, result.SpeciesId, result.PlannedSteps);
@@ -227,7 +227,7 @@ namespace ElysFarm.Demo
                 pendingFieldId = null;
                 nextDecisionAt = 0f;
                 AutonomyEnabled = true;
-                CurrentIntent = "按指令开工";
+                CurrentIntent = "按工单开工";
                 LastMessage = $"{Npc.DisplayName}：{result.Reply}";
                 return;
             }
@@ -408,18 +408,19 @@ namespace ElysFarm.Demo
 
             walking = false;
 
-            var order = World.OrderOf(NpcId);
+            var order = World.WorkOrderOf(NpcId);
             var executingOrder = order != null
                 && order.FieldId == pendingFieldId
                 && order.NextStep.HasValue
                 && order.NextStep.Value == pendingWorkStep;
             var result = executingOrder
-                ? World.AdvanceOrder(NpcId)
+                ? World.AdvanceWorkOrder(NpcId)
                 : World.ExecuteStep(NpcId, pendingFieldId, pendingWorkStep);
 
             if (result.Executed)
             {
-                LastMessage = $"第 {World.Clock.Day} 天：{FarmDemoText.StepName(pendingWorkStep)}完成"
+                var executedStep = result.Step ?? pendingWorkStep;
+                LastMessage = $"第 {World.Clock.Day} 天：{FarmDemoText.StepName(executedStep)}完成"
                     + (result.Yield > 0
                         ? $"，收得 {result.Yield} 个{CropCatalog.Radish.DisplayName}"
                         : string.Empty);

@@ -10,8 +10,7 @@ namespace ElysFarm.Core
     internal static class FieldLocator
     {
         public static bool TryResolve(FarmWorld world, Npc npc, string token, out Field field, out string reason)
-        {
-            field = null;
+        {            field = null;
             reason = null;
 
             if (world.Fields.Count == 0)
@@ -23,7 +22,7 @@ namespace ElysFarm.Core
             var text = (token ?? string.Empty).Trim();
             if (text.Length == 0 || IsAny(text))
             {
-                field = Nearest(world, npc, null);
+                field = Nearest(world, npc);
                 return true;
             }
 
@@ -46,12 +45,18 @@ namespace ElysFarm.Core
 
             if (IsNear(text))
             {
-                field = Nearest(world, npc, null);
+                field = Nearest(world, npc);
                 return true;
             }
 
             reason = $"农场里没有「{text}」这块地。";
             return false;
+        }
+
+        /// <summary>指称没有点名具体地块，可以交给效用打分去挑。</summary>
+        public static bool IsImplicit(string token)
+        {
+            return string.IsNullOrWhiteSpace(token) || IsAny(token ?? string.Empty) || IsNear(token ?? string.Empty);
         }
 
         static bool IsAny(string text)
@@ -152,18 +157,13 @@ namespace ElysFarm.Core
             return best;
         }
 
-        static Field Nearest(FarmWorld world, Npc npc, Func<Field, bool> filter)
+        static Field Nearest(FarmWorld world, Npc npc)
         {
             Field best = null;
             var bestDistance = float.PositiveInfinity;
 
             foreach (var candidate in world.Fields)
             {
-                if (filter != null && !filter(candidate))
-                {
-                    continue;
-                }
-
                 var distance = npc.DistanceTo(candidate);
                 if (best == null || distance < bestDistance)
                 {
@@ -173,45 +173,6 @@ namespace ElysFarm.Core
             }
 
             return best;
-        }
-    }
-
-    internal static class SpeciesLocator
-    {
-        public static bool TryResolve(string token, Npc npc, out CropSpecies species, out string reason)
-        {
-            var text = string.IsNullOrWhiteSpace(token) ? npc.PreferredSpeciesId : token.Trim();
-
-            foreach (var candidate in CropCatalog.All)
-            {
-                if (string.Equals(candidate.Id, text, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(candidate.DisplayName, text, StringComparison.Ordinal)
-                    || MatchesAlias(text, candidate.Id))
-                {
-                    species = candidate;
-                    reason = null;
-                    return true;
-                }
-            }
-
-            species = null;
-            reason = $"「{text}」可种不出来，地里只能种萝卜和小麦。";
-            return false;
-        }
-
-        static bool MatchesAlias(string text, string speciesId)
-        {
-            if (speciesId == CropCatalog.RadishId)
-            {
-                return text == "萝卜" || text.Equals("radish", StringComparison.OrdinalIgnoreCase);
-            }
-
-            if (speciesId == CropCatalog.WheatId)
-            {
-                return text == "小麦" || text == "麦子" || text.Equals("wheat", StringComparison.OrdinalIgnoreCase);
-            }
-
-            return false;
         }
     }
 }

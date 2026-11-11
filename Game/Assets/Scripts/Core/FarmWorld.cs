@@ -18,7 +18,7 @@ namespace ElysFarm.Core
         readonly List<WorkLogEntry> log = new List<WorkLogEntry>();
         readonly Dictionary<string, Field> fieldsById = new Dictionary<string, Field>();
         readonly Dictionary<string, Npc> npcsById = new Dictionary<string, Npc>();
-        readonly Dictionary<string, WorkOrder> ordersByNpc = new Dictionary<string, WorkOrder>();
+        readonly Dictionary<string, WorkOrder> workOrdersByNpc = new Dictionary<string, WorkOrder>();
         readonly UtilityScorer scorer = new UtilityScorer();
 
         /// <summary>产出仓的位置；随身物品只有在这里才能移交。</summary>
@@ -238,7 +238,7 @@ namespace ElysFarm.Core
         /// 把一串工步派给某名 NPC。第一个工步必须先通过 <see cref="ActionValidator"/>；
         /// 校验失败时返回 false 且不登记工单，也不改动任何游戏状态。
         /// </summary>
-        public bool TryAssignOrder(
+        public bool TryAssignWorkOrder(
             string npcId,
             string fieldId,
             string speciesId,
@@ -257,30 +257,45 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            var resolvedSpeciesId = string.IsNullOrWhiteSpace(speciesId) ? npc.PreferredSpeciesId : speciesId;
+            var resolvedSpeciesId = steps[0] == WorkStep.Sow
+                ? (string.IsNullOrWhiteSpace(speciesId) ? npc.PreferredSpeciesId : speciesId)
+                : null;
             if (!ActionValidator.Validate(this, npc, field, steps[0], resolvedSpeciesId, out reason))
             {
                 return false;
             }
 
             order = new WorkOrder(npcId, fieldId, resolvedSpeciesId, steps);
-            ordersByNpc[npcId] = order;
+            workOrdersByNpc[npcId] = order;
             return true;
         }
 
         /// <summary>某名 NPC 当前挂着的工单；没有接单时为 null。</summary>
-        public WorkOrder OrderOf(string npcId)
+        public WorkOrder WorkOrderOf(string npcId)
         {
-            return ordersByNpc.TryGetValue(npcId, out var order) ? order : null;
+            return workOrdersByNpc.TryGetValue(npcId, out var order) ? order : null;
         }
+
+        /// <summary>种植类工单在等待成熟时，允许插做的维护工步。</summary>
+        static readonly WorkStep[] MaintenanceSteps =
+        {
+            WorkStep.Water,
+            WorkStep.Weed,
+            WorkStep.Fertilize
+        };
+
+        /// <summary>维护工步的最低需求，避免每天无谓地浇水。</summary>
+        const float MaintenanceNeed = 0.35f;
 
         /// <summary>
         /// 执行工单的下一个工步。前置条件不满足时返回带理由的未执行结果，工单保持原样等待；
+        /// 种植类工单在等待期间会先做最急需的维护（浇水 / 除草 / 施肥），
+        /// 否则小麦这类长周期作物会因为缺水永远等不到收获。
         /// 执行成功后推进工单，全部完成即自动清空。
         /// </summary>
-        public StepResult AdvanceOrder(string npcId)
+        public StepResult AdvanceWorkOrder(string npcId)
         {
-            var order = OrderOf(npcId);
+            var order = WorkOrderOf(npcId);
             if (order == null)
             {
                 return StepResult.None(npcId, "没有接单");
@@ -289,29 +304,58 @@ namespace ElysFarm.Core
             var step = order.NextStep;
             if (!step.HasValue)
             {
-                ordersByNpc.Remove(npcId);
+                workOrdersByNpc.Remove(npcId);
                 return StepResult.None(npcId, "工单已完成");
             }
 
             var result = ExecuteStep(npcId, order.FieldId, step.Value, order.SpeciesId);
-            if (!result.Executed)
+            if (result.Executed)
             {
+                order.Advance();
+                if (order.IsComplete)
+                {
+                    workOrdersByNpc.Remove(npcId);
+                }
+
                 return result;
             }
 
-            order.Advance();
-            if (order.IsComplete)
+            var maintenance = NextMaintenanceStep(npcId, order);
+            if (maintenance.HasValue)
             {
-                ordersByNpc.Remove(npcId);
+                var maintained = ExecuteStep(npcId, order.FieldId, maintenance.Value);
+                if (maintained.Executed)
+                {
+                    return maintained;
+                }
             }
 
             return result;
         }
 
-        /// <summary>取消某名 NPC 的工单；没有工单时返回 false。</summary>
-        public bool CancelOrder(string npcId)
+        WorkStep? NextMaintenanceStep(string npcId, WorkOrder order)
         {
-            return ordersByNpc.Remove(npcId);
+            if (order.Steps[0] != WorkStep.Sow)
+            {
+                return null;
+            }
+
+            var npc = GetNpc(npcId);
+            var field = GetField(order.FieldId);
+            foreach (var step in MaintenanceSteps)
+            {
+                if (field.Need(step) < MaintenanceNeed)
+                {
+                    continue;
+                }
+
+                if (ActionValidator.Validate(this, npc, field, step, null, out _))
+                {
+                    return step;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>NPC 移动；表现层每帧把位置写回领域，保证距离项与移交判定一致。</summary>

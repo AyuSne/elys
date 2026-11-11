@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,22 +12,11 @@ namespace ElysFarm.Core
     /// </summary>
     public sealed class IntentRouter
     {
-        /// <summary>默认硬超时：一句话等 6 秒还没结果就本地降级。</summary>
-        public const float DefaultDeadlineSeconds = 6f;
-
-        static readonly WorkStep[] PlantSteps =
-        {
-            WorkStep.Sow,
-            WorkStep.Water,
-            WorkStep.Fertilize,
-            WorkStep.Weed,
-            WorkStep.Harvest
-        };
-
-        static readonly WorkStep[] WaterSteps = { WorkStep.Water };
-        static readonly WorkStep[] FertilizeSteps = { WorkStep.Fertilize };
-        static readonly WorkStep[] WeedSteps = { WorkStep.Weed };
-        static readonly WorkStep[] HarvestSteps = { WorkStep.Harvest };
+        /// <summary>
+        /// 默认硬超时：一句话等 6 秒还没结果就本地降级。
+        /// 意图解析按对话级预算；规划级 15 秒预算留给日计划（后续票）。
+        /// </summary>
+        public const float DefaultDeadlineSeconds = ChatRequest.DefaultTimeoutSeconds;
 
         readonly IModelClient client;
 
@@ -74,22 +62,22 @@ namespace ElysFarm.Core
             if (LocalIntentParser.TryFindUnknownCrop(text, out var unknownCrop))
             {
                 return Finish(IntentResult.Refuse(
-                    $"「{unknownCrop}」可种不出来，地里只能种萝卜和小麦。",
+                    ActionValidator.UnknownSpeciesReason(unknownCrop),
                     false,
-                    new ModelCallInfo(null, 0d, 0, 0, "guard")));
+                    new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Guard)));
             }
 
             if (client == null || deadlineSeconds <= 0f)
             {
                 return Finish(LocalFallback(text, world, npc, ModelCallInfo.None));
             }
-
             using var timeout = new CancellationTokenSource();
             ChatRequest request;
             Task<ChatResponse> callTask;
             try
             {
                 request = IntentPrompt.Build(world, npc, text);
+                request.TimeoutSeconds = Math.Max(1, (int)Math.Ceiling(deadlineSeconds));
                 callTask = client.CompleteAsync(request, timeout.Token);
             }
             catch (Exception ex)
@@ -98,7 +86,7 @@ namespace ElysFarm.Core
                     text,
                     world,
                     npc,
-                    new ModelCallInfo(null, 0d, 0, 0, "error", ex.Message)));
+                    new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Error, ex.Message)));
             }
 
             var deadlineTask = Task.Delay(TimeSpan.FromSeconds(deadlineSeconds), timeout.Token);
@@ -115,7 +103,7 @@ namespace ElysFarm.Core
                     deadlineSeconds,
                     0,
                     0,
-                    "timeout",
+                    ModelCallOutcome.Timeout,
                     $"等待 {deadlineSeconds:0.#} 秒未返回");
                 return Finish(LocalFallback(text, world, npc, timedOut));
             }
@@ -131,7 +119,7 @@ namespace ElysFarm.Core
                     text,
                     world,
                     npc,
-                    new ModelCallInfo(null, 0d, 0, 0, "error", ex.Message)));
+                    new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Error, ex.Message)));
             }
 
             var call = new ModelCallInfo(
@@ -139,7 +127,7 @@ namespace ElysFarm.Core
                 response.LatencySeconds,
                 response.PromptTokens,
                 response.CompletionTokens,
-                "ok");
+                ModelCallOutcome.Ok);
 
             if (!ModelIntentParser.TryParse(response.Content, out var draft, out _))
             {
@@ -148,7 +136,7 @@ namespace ElysFarm.Core
                     response.LatencySeconds,
                     response.PromptTokens,
                     response.CompletionTokens,
-                    "unusable");
+                    ModelCallOutcome.Unusable);
                 return Finish(LocalFallback(text, world, npc, unusable));
             }
 
@@ -206,7 +194,12 @@ namespace ElysFarm.Core
                 return IntentResult.Refuse("你想让我做什么？", usedFallback, call);
             }
 
-            if (!FieldLocator.TryResolve(world, npc, draft.FieldToken, out var field, out var fieldReason))
+            if (!ActionValidator.TryGetPlan(draft.Goal.Value, out var steps))
+            {
+                return IntentResult.Refuse("这个活我还不会干。", usedFallback, call);
+            }
+
+            if (!TryResolveCommandField(world, npc, draft.FieldToken, steps[0], out var field, out var fieldReason))
             {
                 return IntentResult.Refuse(fieldReason, usedFallback, call);
             }
@@ -214,14 +207,17 @@ namespace ElysFarm.Core
             CropSpecies species = null;
             if (draft.Goal.Value == FarmGoal.Plant)
             {
-                if (!SpeciesLocator.TryResolve(draft.SpeciesToken, npc, out species, out var speciesReason))
+                if (!ActionValidator.TryResolveSpecies(
+                        draft.SpeciesToken,
+                        npc.PreferredSpeciesId,
+                        out species,
+                        out var speciesReason))
                 {
                     return IntentResult.Refuse(speciesReason, usedFallback, call);
                 }
             }
 
-            var steps = StepsFor(draft.Goal.Value);
-            if (!world.TryAssignOrder(npc.Id, field.Id, species?.Id, steps, out var order, out var reason))
+            if (!world.TryAssignWorkOrder(npc.Id, field.Id, species?.Id, steps, out var order, out var reason))
             {
                 return IntentResult.Refuse(reason, usedFallback, call);
             }
@@ -230,33 +226,35 @@ namespace ElysFarm.Core
                 draft.Reply,
                 $"好，我这就去{field.Id}{ActionName(draft.Goal.Value, species)}。");
 
-            return IntentResult.AcceptedCommand(
-                reply,
-                field.Id,
-                species?.Id,
-                steps,
-                order,
-                usedFallback,
-                call);
+            return IntentResult.AcceptedCommand(reply, order, usedFallback, call);
         }
 
-        static IReadOnlyList<WorkStep> StepsFor(FarmGoal goal)
+        /// <summary>
+        /// 没点名地块时让效用打分挑：取该目标工步里分数最高且通过校验的地块。
+        /// 没有有效候选时才退回最近地块，由派单校验给出具体拒绝理由。
+        /// </summary>
+        static bool TryResolveCommandField(
+            FarmWorld world,
+            Npc npc,
+            string token,
+            WorkStep firstStep,
+            out Field field,
+            out string reason)
         {
-            switch (goal)
+            if (FieldLocator.IsImplicit(token))
             {
-                case FarmGoal.Plant:
-                    return PlantSteps;
-                case FarmGoal.Water:
-                    return WaterSteps;
-                case FarmGoal.Fertilize:
-                    return FertilizeSteps;
-                case FarmGoal.Weed:
-                    return WeedSteps;
-                case FarmGoal.Harvest:
-                    return HarvestSteps;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(goal), goal, null);
+                foreach (var candidate in world.RankCandidates(npc.Id))
+                {
+                    if (candidate.IsValid && candidate.Step == firstStep)
+                    {
+                        field = world.GetField(candidate.FieldId);
+                        reason = null;
+                        return true;
+                    }
+                }
             }
+
+            return FieldLocator.TryResolve(world, npc, token, out field, out reason);
         }
 
         static string ActionName(FarmGoal goal, CropSpecies species)

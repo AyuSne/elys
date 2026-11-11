@@ -47,13 +47,11 @@ namespace ElysFarm.Tests
 
             public Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default)
             {
+                Calls++;
                 return onChat(request, cancellationToken);
             }
 
-            public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
-            {
-                return Task.FromResult(Array.Empty<float>());
-            }
+            public int Calls { get; private set; }
         }
 
         [Test]
@@ -73,7 +71,7 @@ namespace ElysFarm.Tests
                 new[] { WorkStep.Sow, WorkStep.Water, WorkStep.Fertilize, WorkStep.Weed, WorkStep.Harvest },
                 result.PlannedSteps,
                 "种满萝卜应排出五个工步");
-            Assert.IsNotNull(result.Order);
+            Assert.IsNotNull(result.AssignedWorkOrder);
             Assert.IsFalse(result.UsedFallback);
             Assert.AreEqual(FieldState.Empty, field.State, "玩家输入不能直接改地块状态");
             Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId), "玩家输入不能直接扣种子");
@@ -94,7 +92,7 @@ namespace ElysFarm.Tests
                 deadlineSeconds: 0.05f);
 
             Assert.IsTrue(result.UsedFallback, "超时后应标记为本地降级");
-            Assert.AreEqual("timeout", result.Call.Outcome);
+            Assert.AreEqual(ModelCallOutcome.Timeout, result.Call.Outcome);
             Assert.AreEqual(IntentOutlet.FarmCommand, result.Outlet);
             Assert.IsTrue(result.Accepted, result.Reply);
             Assert.AreEqual("A1", result.FieldId);
@@ -116,8 +114,8 @@ namespace ElysFarm.Tests
             Assert.AreEqual(IntentOutlet.FarmCommand, result.Outlet);
             Assert.IsFalse(result.Accepted);
             StringAssert.Contains("月亮", result.Reply, "拒绝台词应点名种不出来的东西");
-            Assert.IsNull(result.Order);
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.IsNull(result.AssignedWorkOrder);
+            Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
             Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId));
             Assert.AreEqual(0, world.Log.Count);
@@ -136,7 +134,7 @@ namespace ElysFarm.Tests
             Assert.IsFalse(result.Accepted, "白名单外的动作不能接单");
             StringAssert.Contains("dance", result.Reply);
             Assert.IsFalse(result.UsedFallback, "这是模型语义拒绝，不是离线降级");
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
             Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId));
             Assert.AreEqual(0, world.Log.Count);
@@ -154,7 +152,7 @@ namespace ElysFarm.Tests
 
             Assert.IsFalse(result.Accepted);
             StringAssert.Contains("moon", result.Reply);
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
             Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId));
         }
@@ -168,7 +166,7 @@ namespace ElysFarm.Tests
             var result = await router.RouteAsync("把东边那块地种满萝卜", world, world.GetNpc("ahe"));
 
             Assert.IsTrue(result.UsedFallback, "空格子应按不可用处理并降级");
-            Assert.AreEqual("unusable", result.Call.Outcome);
+            Assert.AreEqual(ModelCallOutcome.Unusable, result.Call.Outcome);
             Assert.IsTrue(result.Accepted, result.Reply);
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
         }
@@ -186,7 +184,7 @@ namespace ElysFarm.Tests
             Assert.IsFalse(string.IsNullOrWhiteSpace(query.Reply));
             Assert.AreEqual(IntentOutlet.Chat, chat.Outlet);
             Assert.IsFalse(string.IsNullOrWhiteSpace(chat.Reply));
-            Assert.IsNull(world.OrderOf("ahe"), "只读出口不能产生工单");
+            Assert.IsNull(world.WorkOrderOf("ahe"), "只读出口不能产生工单");
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
             Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId));
             Assert.AreEqual(0, world.Log.Count);
@@ -200,7 +198,7 @@ namespace ElysFarm.Tests
 
             var first = await router.RouteAsync("把东边那块地种满萝卜", world, world.GetNpc("ahe"));
             Assert.IsTrue(first.Accepted, first.Reply);
-            Assert.IsTrue(world.AdvanceOrder("ahe").Executed, "先播下种，让地块不再空着");
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "先播下种，让地块不再空着");
 
             var seedsAfterSow = world.Ledger.SeedsOf(CropCatalog.RadishId);
             var second = await router.RouteAsync("再种一遍萝卜", world, world.GetNpc("ahe"));
@@ -221,7 +219,7 @@ namespace ElysFarm.Tests
             var result = await router.RouteAsync("把东边那块地种满萝卜", world, world.GetNpc("ahe"));
 
             Assert.IsTrue(result.UsedFallback);
-            Assert.AreEqual("error", result.Call.Outcome);
+            Assert.AreEqual(ModelCallOutcome.Error, result.Call.Outcome);
             Assert.IsTrue(result.Accepted, result.Reply);
         }
 
@@ -237,7 +235,7 @@ namespace ElysFarm.Tests
 
             Assert.IsFalse(result.Accepted);
             StringAssert.Contains("moonbase", result.Reply);
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
             Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId));
         }
@@ -246,13 +244,15 @@ namespace ElysFarm.Tests
         public async Task 模型把去种月亮误判成合法指令时仍按白名单拒绝()
         {
             var world = NewWorld();
-            var router = new IntentRouter(new ScriptedModelClient(PlantRadishJson));
+            var client = new ScriptedModelClient(PlantRadishJson);
+            var router = new IntentRouter(client);
 
             var result = await router.RouteAsync("去种月亮", world, world.GetNpc("ahe"));
 
             Assert.IsFalse(result.Accepted, "白名单外的品种不能被模型的改写绕过去");
             StringAssert.Contains("月亮", result.Reply);
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.AreEqual(0, client.Calls, "白名单拒绝不应把明显非法的品种送去模型");
+            Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
             Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId));
         }
@@ -267,8 +267,61 @@ namespace ElysFarm.Tests
 
             Assert.AreEqual(IntentOutlet.Query, result.Outlet, "追问不能被白名单拦截误判成农事指令");
             Assert.IsFalse(result.Accepted);
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
+        }
+
+        [Test]
+        public async Task 东边那块地按坐标解析成最东边的地块()
+        {
+            var world = NewWorld();
+            world.AddField("A2", new FarmPosition(10f, 2f));
+            var router = new IntentRouter(new ScriptedModelClient(PlantRadishJson));
+
+            var result = await router.RouteAsync("把东边那块地种满萝卜", world, world.GetNpc("ahe"));
+
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A2", result.FieldId, "「东边」应选 x 最大的地块");
+            Assert.AreEqual("A2", result.AssignedWorkOrder.FieldId);
+            Assert.AreEqual(FieldState.Empty, world.GetField("A2").State, "派单不改变地块");
+        }
+
+        [Test]
+        public async Task 常见播种说法不会被白名单误伤()
+        {
+            foreach (var text in new[] { "种植萝卜", "给我种上10棵萝卜" })
+            {
+                var world = NewWorld();
+                var router = new IntentRouter();
+
+                var result = await router.RouteAsync(text, world, world.GetNpc("ahe"));
+
+                Assert.IsTrue(result.Accepted, $"{text} 被误拒：{result.Reply}");
+                Assert.AreEqual("A1", result.FieldId);
+                Assert.AreEqual(CropCatalog.RadishId, result.SpeciesId);
+            }
+        }
+
+        [Test]
+        public async Task 不点名地块时由效用打分挑最该浇的那块()
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(10f, 0f));
+            world.AddField("A2", new FarmPosition(1f, 0f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, 0f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A2", WorkStep.Sow).Executed);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A2", WorkStep.Water).Executed);
+            world.AdvanceDays(1);
+
+            var router = new IntentRouter();
+            var result = await router.RouteAsync("给地浇点水", world, world.GetNpc("ahe"));
+
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A1", result.FieldId, "A1 更缺水，效用应高于更近但刚浇过的 A2");
+            Assert.AreEqual(WorkStep.Water, result.AssignedWorkOrder.NextStep.Value);
         }
 
         [Test]
@@ -282,16 +335,19 @@ namespace ElysFarm.Tests
             Assert.IsTrue(result.Accepted, result.Reply);
 
             var executed = new List<WorkStep>();
-            for (var guard = 0; guard < 400 && result.Order != null && !result.Order.IsComplete; guard++)
+            for (var guard = 0; guard < 400 && result.AssignedWorkOrder != null && !result.AssignedWorkOrder.IsComplete; guard++)
             {
-                var step = world.AdvanceOrder("ahe");
-                if (step.Executed)
+                var before = result.AssignedWorkOrder.CompletedCount;
+                var step = world.AdvanceWorkOrder("ahe");
+                if (result.AssignedWorkOrder.CompletedCount > before)
                 {
-                    executed.Add(step.Step.Value);
-                    continue;
+                    executed.Add(result.AssignedWorkOrder.Steps[before]);
                 }
 
-                world.AdvanceDays(1);
+                if (!step.Executed)
+                {
+                    world.AdvanceDays(1);
+                }
             }
 
             CollectionAssert.AreEqual(
@@ -302,7 +358,7 @@ namespace ElysFarm.Tests
             Assert.AreEqual(9, world.Ledger.SeedsOf(CropCatalog.RadishId));
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId));
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.IsNull(world.WorkOrderOf("ahe"));
         }
 
         [Test]

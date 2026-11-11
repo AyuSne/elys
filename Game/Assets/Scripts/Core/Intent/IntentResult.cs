@@ -5,6 +5,7 @@ namespace ElysFarm.Core
     /// <summary>
     /// 一次玩家输入经过意图出口后的结果。指挥官线的唯一可见产物：
     /// 要么是三个出口之一（其中农事指令可能附带一张工单），要么是一句拒绝。
+    /// 地块、品种与计划工步都从工单读取，不另存一份，避免两处状态漂移。
     /// </summary>
     public sealed class IntentResult
     {
@@ -12,20 +13,14 @@ namespace ElysFarm.Core
             IntentOutlet outlet,
             bool accepted,
             string reply,
-            string fieldId,
-            string speciesId,
-            IReadOnlyList<WorkStep> plannedSteps,
-            WorkOrder order,
+            WorkOrder assignedWorkOrder,
             bool usedFallback,
             ModelCallInfo call)
         {
             Outlet = outlet;
             Accepted = accepted;
             Reply = reply ?? string.Empty;
-            FieldId = fieldId;
-            SpeciesId = speciesId;
-            PlannedSteps = plannedSteps;
-            Order = order;
+            AssignedWorkOrder = assignedWorkOrder;
             UsedFallback = usedFallback;
             Call = call;
         }
@@ -39,17 +34,17 @@ namespace ElysFarm.Core
         /// <summary>NPC 的回应或拒绝台词；必须可读。</summary>
         public string Reply { get; }
 
+        /// <summary>已登记的工单；未接单为 null。</summary>
+        public WorkOrder AssignedWorkOrder { get; }
+
         /// <summary>接单的地块；未接单为 null。</summary>
-        public string FieldId { get; }
+        public string FieldId => AssignedWorkOrder?.FieldId;
 
         /// <summary>播种品种；未接单或非播种为 null。</summary>
-        public string SpeciesId { get; }
+        public string SpeciesId => AssignedWorkOrder?.SpeciesId;
 
         /// <summary>本单计划执行的工步；未接单为空。</summary>
-        public IReadOnlyList<WorkStep> PlannedSteps { get; }
-
-        /// <summary>已登记的工单；未接单为 null。</summary>
-        public WorkOrder Order { get; }
+        public IReadOnlyList<WorkStep> PlannedSteps => AssignedWorkOrder?.Steps;
 
         /// <summary>本次结果是否走了本地降级（模型不可用、超时或输出不可用）。</summary>
         public bool UsedFallback { get; }
@@ -62,10 +57,7 @@ namespace ElysFarm.Core
 
         internal static IntentResult AcceptedCommand(
             string reply,
-            string fieldId,
-            string speciesId,
-            IReadOnlyList<WorkStep> plannedSteps,
-            WorkOrder order,
+            WorkOrder workOrder,
             bool usedFallback,
             ModelCallInfo call)
         {
@@ -73,26 +65,14 @@ namespace ElysFarm.Core
                 IntentOutlet.FarmCommand,
                 true,
                 reply,
-                fieldId,
-                speciesId,
-                plannedSteps,
-                order,
+                workOrder,
                 usedFallback,
                 call);
         }
 
         internal static IntentResult Refuse(string reply, bool usedFallback, ModelCallInfo call)
         {
-            return new IntentResult(
-                IntentOutlet.FarmCommand,
-                false,
-                reply,
-                null,
-                null,
-                null,
-                null,
-                usedFallback,
-                call);
+            return new IntentResult(IntentOutlet.FarmCommand, false, reply, null, usedFallback, call);
         }
 
         internal static IntentResult ReadOnly(
@@ -101,7 +81,7 @@ namespace ElysFarm.Core
             bool usedFallback,
             ModelCallInfo call)
         {
-            return new IntentResult(outlet, false, reply, null, null, null, null, usedFallback, call);
+            return new IntentResult(outlet, false, reply, null, usedFallback, call);
         }
     }
 }

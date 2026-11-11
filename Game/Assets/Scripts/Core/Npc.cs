@@ -11,9 +11,6 @@ namespace ElysFarm.Core
         /// <summary>低于该体力时拒绝任何工步，理由是「太累了」。</summary>
         public const float MinStamina = 0.15f;
 
-        /// <summary>超过该距离的地块拒绝前往，理由是「太远了」。</summary>
-        public const float MaxWorkDistance = 40f;
-
         /// <summary>每执行一个工步消耗的体力。</summary>
         public const float StaminaPerStep = 0.08f;
 

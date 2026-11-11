@@ -17,7 +17,7 @@ namespace ElysFarm.Core
             "为什么", "怎么不去", "什么情况", "状态", "累不累", "渴不渴"
         };
 
-        static readonly char[] CropPrefixNoise = "满上点儿些一亩块片地田都全把给在到去遍次棵株颗粒茬".ToCharArray();
+        static readonly char[] CropPrefixNoise = "满上点儿些一亩块片地田都全把给在到去遍次棵株颗粒茬植".ToCharArray();
         static readonly char[] CropSuffixNoise = "吧了呀哦呢哈".ToCharArray();
 
         public static IntentDraft Parse(string text, FarmWorld world, Npc npc)
@@ -46,7 +46,7 @@ namespace ElysFarm.Core
                 var unknown = FindUnknownCrop(normalized);
                 if (unknown != null)
                 {
-                    return IntentDraft.Refuse($"「{unknown}」可种不出来，地里只能种萝卜和小麦。");
+                    return IntentDraft.Refuse(ActionValidator.UnknownSpeciesReason(unknown));
                 }
             }
 
@@ -219,19 +219,24 @@ namespace ElysFarm.Core
                 return null;
             }
 
-            var rest = text.Substring(index + 1).TrimStart(CropPrefixNoise).TrimEnd(CropSuffixNoise);
-            if (rest.Length == 0)
+            var rest = text.Substring(index + 1);
+
+            // 「种植萝卜」「种上 10 棵萝卜」这类合法说法里，已知品种可能不在开头。
+            if (ContainsKnownSpecies(rest))
             {
                 return null;
             }
 
-            foreach (var species in CropCatalog.All)
+            while (rest.Length > 0
+                && (char.IsDigit(rest[0]) || Array.IndexOf(CropPrefixNoise, rest[0]) >= 0))
             {
-                if (rest.StartsWith(species.DisplayName, StringComparison.Ordinal)
-                    || rest.StartsWith(species.Id, StringComparison.OrdinalIgnoreCase))
-                {
-                    return null;
-                }
+                rest = rest.Substring(1);
+            }
+
+            rest = rest.TrimEnd(CropSuffixNoise);
+            if (rest.Length == 0)
+            {
+                return null;
             }
 
             if (rest.StartsWith("什么") || rest.StartsWith("啥") || rest.StartsWith("地") || rest.StartsWith("田"))
@@ -242,16 +247,30 @@ namespace ElysFarm.Core
             return rest.Length > 6 ? rest.Substring(0, 6) : rest;
         }
 
+        static bool ContainsKnownSpecies(string text)
+        {
+            foreach (var species in CropCatalog.All)
+            {
+                if (text.Contains(species.DisplayName)
+                    || text.IndexOf(species.Id, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return text.Contains("麦子");
+        }
+
         internal static string QueryReply(FarmWorld world, Npc npc)
         {
-            var order = world.OrderOf(npc.Id);
+            var order = world.WorkOrderOf(npc.Id);
             if (order == null)
             {
                 return "我在等下一件该干的活。";
             }
 
             return order.NextStep.HasValue
-                ? $"我正要去{order.FieldId}{StepName(order.NextStep.Value)}。"
+                ? $"我正要去{order.FieldId}干活。"
                 : "我手里的活刚干完。";
         }
 
@@ -259,25 +278,6 @@ namespace ElysFarm.Core
         {
             var replies = new[] { "嗯，我记着呢。", "天不早了，地里的活我盯着。", "你说了算，我听着。" };
             return replies[text.Length % replies.Length];
-        }
-
-        static string StepName(WorkStep step)
-        {
-            switch (step)
-            {
-                case WorkStep.Sow:
-                    return "播种";
-                case WorkStep.Water:
-                    return "浇水";
-                case WorkStep.Fertilize:
-                    return "施肥";
-                case WorkStep.Weed:
-                    return "除草";
-                case WorkStep.Harvest:
-                    return "收获";
-                default:
-                    return step.ToString();
-            }
         }
     }
 }

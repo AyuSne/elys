@@ -2,7 +2,7 @@
 
 Unity 侧直接手写约 200 行的 `UnityWebRequest` + Newtonsoft 客户端，而不是引入 [com.openai.unity](https://github.com/RageAgainstThePixel/com.openai.unity)（598★，MIT，仍在维护）。原因是 DeepSeek 的接口有三处偏离 OpenAI 标准，第三方库包不住：
 
-1. `thinking` 参数必须放在 `extra_body` 里，且**默认开启、默认强度为 high**——游戏内对话必须显式关闭，否则延迟不可接受；
+1. `thinking` 参数在官方 OpenAI SDK 里必须放在 `extra_body` 里，且**默认开启、默认强度为 high**——游戏内对话必须显式关闭，否则延迟不可接受。自写 HTTP 请求没有 `extra_body` 这一层，`thinking` 与 `reasoning_effort` 直接放在请求体顶层（见 `DeepSeekProtocol.BuildChatBody`）。
 2. 响应多一个 `reasoning_content` 字段，带 `tools` 时**必须原样回传**，否则直接 400；
 3. `response_format` 的 JSON 输出失败时**不报错**，而是把内容替换成空格，`finish_reason` 仍是 `stop`。
 

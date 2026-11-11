@@ -86,15 +86,15 @@ namespace ElysFarm.Demo
         {
             switch (call.Outcome)
             {
-                case "ok":
+                case ModelCallOutcome.Ok:
                     return $"{call.Model} · {call.LatencySeconds:0.00}s · {call.PromptTokens}+{call.CompletionTokens} tok";
-                case "timeout":
+                case ModelCallOutcome.Timeout:
                     return "超时，已回退本地模板";
-                case "error":
+                case ModelCallOutcome.Error:
                     return "调用失败，已回退本地模板";
-                case "unusable":
+                case ModelCallOutcome.Unusable:
                     return "返回不可用，已回退本地模板";
-                case "guard":
+                case ModelCallOutcome.Guard:
                     return "本地白名单校验（未调用模型）";
                 default:
                     return "未调用（本地模式）";

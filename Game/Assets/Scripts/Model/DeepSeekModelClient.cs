@@ -9,15 +9,13 @@ using UnityEngine.Networking;
 namespace ElysFarm.Model
 {
     /// <summary>
-    /// 手写的 DeepSeek / 硅基流动客户端（ADR-0003）。只做两个 POST：/chat/completions 与 /embeddings。
+    /// 手写的 DeepSeek 客户端（ADR-0003）。本轮只做 /chat/completions 一个 POST。
     /// 每次请求都带硬超时；超时、断网与协议错误统一抛 <see cref="ModelRequestException"/>，
     /// 调用方捕获后走本地模板，绝不阻塞游戏循环。
-    /// 注意：UnityWebRequest 必须在主线程发起，CompleteAsync / EmbedAsync 也要从主线程调用。
+    /// 注意：UnityWebRequest 必须在主线程发起，CompleteAsync 也要从主线程调用。
     /// </summary>
     public sealed class DeepSeekModelClient : IModelClient
     {
-        const int EmbeddingTimeoutSeconds = 15;
-
         readonly ModelEndpointSettings settings;
 
         public DeepSeekModelClient(ModelEndpointSettings settings)
@@ -57,30 +55,6 @@ namespace ElysFarm.Model
                 cancellationToken);
 
             return DeepSeekProtocol.ParseChatResponse(json, settings.Model, stopwatch.Elapsed.TotalSeconds);
-        }
-
-        /// <summary>把文本编码成向量；没有配置硅基流动密钥时抛出，由调用方降级。</summary>
-        public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                throw new ArgumentException("要编码的文本不能为空", nameof(text));
-            }
-
-            if (!settings.HasEmbeddingKey)
-            {
-                throw new ModelRequestException("没有配置 embedding 密钥");
-            }
-
-            var body = DeepSeekProtocol.BuildEmbeddingBody(settings.EmbeddingModel, text);
-            var json = await PostAsync(
-                Combine(settings.EmbeddingBaseUrl, "/embeddings"),
-                settings.EmbeddingApiKey,
-                body,
-                EmbeddingTimeoutSeconds,
-                cancellationToken);
-
-            return DeepSeekProtocol.ParseEmbedding(json);
         }
 
         static async Task<string> PostAsync(
@@ -137,7 +111,7 @@ namespace ElysFarm.Model
             {
                 var response = request.downloadHandler != null ? request.downloadHandler.text : null;
                 throw new ModelRequestException(
-                    $"模型请求失败（HTTP {request.responseCode}）：{Shorten(response, request.error)}");
+                    $"模型请求失败（HTTP {request.responseCode}）：{DescribeFailure(response, request.error)}");
             }
 
             return request.downloadHandler.text;
@@ -148,7 +122,7 @@ namespace ElysFarm.Model
             return baseUrl.TrimEnd('/') + path;
         }
 
-        static string Shorten(string text, string fallback)
+        static string DescribeFailure(string text, string fallback)
         {
             var value = string.IsNullOrWhiteSpace(text) ? fallback : text.Trim();
             if (string.IsNullOrEmpty(value))

@@ -100,44 +100,5 @@ namespace ElysFarm.Model
                 (int?)usage?["prompt_tokens"] ?? 0,
                 (int?)usage?["completion_tokens"] ?? 0);
         }
-
-        /// <summary>构造 /embeddings 的请求体。</summary>
-        public static string BuildEmbeddingBody(string model, string text)
-        {
-            return new JObject
-            {
-                ["model"] = model,
-                ["input"] = text
-            }.ToString(Formatting.None);
-        }
-
-        /// <summary>解析 /embeddings 的响应，返回第一条向量。</summary>
-        public static float[] ParseEmbedding(string json)
-        {
-            JObject root;
-            try
-            {
-                root = JObject.Parse(json);
-            }
-            catch (Exception ex)
-            {
-                throw new ModelRequestException("embedding 响应不是合法 JSON", ex);
-            }
-
-            var data = root["data"] as JArray;
-            var embedding = data != null && data.Count > 0 ? data[0]["embedding"] as JArray : null;
-            if (embedding == null || embedding.Count == 0)
-            {
-                throw new ModelRequestException("embedding 响应没有向量");
-            }
-
-            var vector = new float[embedding.Count];
-            for (var i = 0; i < embedding.Count; i++)
-            {
-                vector[i] = (float)embedding[i];
-            }
-
-            return vector;
-        }
     }
 }

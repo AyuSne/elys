@@ -41,7 +41,7 @@ namespace ElysFarm.Tests
             var field = world.GetField("A1");
 
             Assert.IsTrue(
-                world.TryAssignOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out var order, out var reason),
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out var order, out var reason),
                 reason);
             CollectionAssert.AreEqual(PlantRadish, order.Steps, "工单应记录完整的五个工步");
             Assert.AreEqual(FieldState.Empty, field.State, "派单本身不改变地块状态");
@@ -51,14 +51,17 @@ namespace ElysFarm.Tests
             var executed = new List<WorkStep>();
             for (var guard = 0; guard < 400 && !order.IsComplete; guard++)
             {
-                var result = world.AdvanceOrder("ahe");
-                if (result.Executed)
+                var before = order.CompletedCount;
+                var result = world.AdvanceWorkOrder("ahe");
+                if (order.CompletedCount > before)
                 {
-                    executed.Add(result.Step.Value);
-                    continue;
+                    executed.Add(order.Steps[before]);
                 }
 
-                world.AdvanceDays(1);
+                if (!result.Executed)
+                {
+                    world.AdvanceDays(1);
+                }
             }
 
             CollectionAssert.AreEqual(PlantRadish, executed, "应按工单顺序执行五个工步");
@@ -66,7 +69,49 @@ namespace ElysFarm.Tests
             Assert.AreEqual(9, world.Ledger.SeedsOf(CropCatalog.RadishId), "播种扣 1 颗种子");
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId), "萝卜每次收获 3 个");
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
-            Assert.IsNull(world.OrderOf("ahe"), "工单完成后应清空");
+            Assert.IsNull(world.WorkOrderOf("ahe"), "工单完成后应清空");
+        }
+
+        [Test]
+        public void 小麦工单会自己补水直到收获()
+        {
+            var world = NewWorld(seeds: 5);
+            world.AddSeeds(CropCatalog.WheatId, 5);
+            var field = world.GetField("A1");
+            var orderSteps = new[]
+            {
+                WorkStep.Sow,
+                WorkStep.Water,
+                WorkStep.Fertilize,
+                WorkStep.Weed,
+                WorkStep.Harvest
+            };
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.WheatId, orderSteps, out var order, out var reason),
+                reason);
+
+            var executed = new List<WorkStep>();
+            for (var guard = 0; guard < 800 && !order.IsComplete; guard++)
+            {
+                var before = order.CompletedCount;
+                var result = world.AdvanceWorkOrder("ahe");
+                if (order.CompletedCount > before)
+                {
+                    executed.Add(order.Steps[before]);
+                }
+
+                if (!result.Executed)
+                {
+                    world.AdvanceDays(1);
+                }
+            }
+
+            CollectionAssert.AreEqual(orderSteps, executed, "等待成熟期间可以插做维护，但五个工步仍按序完成");
+            Assert.AreEqual(FieldState.Harvested, field.State, "长周期作物也要能自己等到收获");
+            Assert.AreEqual(5, world.Ledger.ProduceOf(CropCatalog.WheatId));
+            Assert.AreEqual(3, world.Ledger.SeedsOf(CropCatalog.WheatId), "小麦每次播种消耗 2 颗种子");
+            Assert.IsTrue(world.Ledger.Verify(out var error), error);
         }
 
         [Test]
@@ -76,11 +121,11 @@ namespace ElysFarm.Tests
             var field = world.GetField("A1");
 
             Assert.IsFalse(
-                world.TryAssignOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out var order, out var reason),
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out var order, out var reason),
                 "没有种子不该接单");
             Assert.IsNull(order);
             Assert.AreEqual("种子库里没有萝卜种子了", reason, "拒绝理由应来自动作校验");
-            Assert.IsNull(world.OrderOf("ahe"));
+            Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, field.State, "被拒绝的工单不能改动地块");
             Assert.AreEqual(0, world.Log.Count, "被拒绝的工单不能执行工步");
         }
@@ -92,24 +137,11 @@ namespace ElysFarm.Tests
             var field = world.GetField("A1");
 
             Assert.IsFalse(
-                world.TryAssignOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
                 "空地上不该接浇水的活");
             Assert.AreEqual("地里什么都没种", reason);
             Assert.AreEqual(FieldState.Empty, field.State);
             Assert.AreEqual(0, world.Log.Count);
-        }
-
-        [Test]
-        public void 太远的地块被拒绝且理由可用于拒绝台词()
-        {
-            var world = NewWorld();
-            world.AddField("Far", new FarmPosition(100f, 0f));
-
-            Assert.IsFalse(
-                world.TryAssignOrder("ahe", "Far", CropCatalog.RadishId, PlantRadish, out _, out var reason),
-                "太远的地不该接");
-            Assert.AreEqual("那块地太远了，我不去", reason);
-            Assert.IsNull(world.OrderOf("ahe"));
         }
     }
 }

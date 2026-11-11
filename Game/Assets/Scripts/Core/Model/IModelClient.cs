@@ -5,23 +5,20 @@ using System.Threading.Tasks;
 namespace ElysFarm.Core
 {
     /// <summary>
-    /// 模型调用的统一出口（见规格）：覆盖对话补全与 embedding 两类请求。
-    /// 真实实现走 DeepSeek 与硅基流动；测试一律用假实现，永不联网。
+    /// 模型调用的统一出口（见规格）：本轮只覆盖对话补全，embedding 留给记忆票扩展。
+    /// 真实实现走 DeepSeek；测试一律用假实现，永不联网。
     /// 实现必须带硬超时，失败时抛异常交给调用方走本地降级。
     /// </summary>
     public interface IModelClient
     {
         /// <summary>发起一次对话补全请求。</summary>
         Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default);
-
-        /// <summary>把一段文本编码成向量。</summary>
-        Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default);
     }
 
     /// <summary>对话中的一条消息。</summary>
     public readonly struct ChatMessage
     {
-        /// <summary>角色：system / user / assistant。</summary>
+        /// <summary>消息角色：system / user / assistant。</summary>
         public string Role { get; }
 
         /// <summary>消息正文。</summary>
@@ -37,6 +34,9 @@ namespace ElysFarm.Core
     /// <summary>一次对话补全请求。参数按用途分档（意图解析 / 闲聊）。</summary>
     public sealed class ChatRequest
     {
+        /// <summary>对话补全的默认硬超时（秒）。</summary>
+        public const int DefaultTimeoutSeconds = 6;
+
         public ChatRequest(IReadOnlyList<ChatMessage> messages)
         {
             Messages = messages;
@@ -61,7 +61,7 @@ namespace ElysFarm.Core
         public int MaxTokens { get; set; } = 512;
 
         /// <summary>本次调用的硬超时（秒）。</summary>
-        public int TimeoutSeconds { get; set; } = 6;
+        public int TimeoutSeconds { get; set; } = DefaultTimeoutSeconds;
     }
 
     /// <summary>对话补全的返回结果，附带决策可视化要展示的调用信息。</summary>
@@ -97,19 +97,41 @@ namespace ElysFarm.Core
         public int CompletionTokens { get; }
     }
 
+    /// <summary>一次模型调用的结果类别，供 HUD 与决策可视化层展示。</summary>
+    public enum ModelCallOutcome
+    {
+        /// <summary>没有调用（未配置模型）。</summary>
+        Offline,
+
+        /// <summary>调用成功。</summary>
+        Ok,
+
+        /// <summary>超过硬超时。</summary>
+        Timeout,
+
+        /// <summary>网络或协议错误。</summary>
+        Error,
+
+        /// <summary>模型返回了不可用的内容。</summary>
+        Unusable,
+
+        /// <summary>本地白名单直接拒绝，未调用模型。</summary>
+        Guard
+    }
+
     /// <summary>
     /// 最近一次模型调用的结果摘要（模型名 / 耗时 / token），供 HUD 与决策可视化层展示。
     /// </summary>
     public readonly struct ModelCallInfo
     {
-        public static readonly ModelCallInfo None = new ModelCallInfo(null, 0d, 0, 0, "offline");
+        public static readonly ModelCallInfo None = new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Offline);
 
         public ModelCallInfo(
             string model,
             double latencySeconds,
             int promptTokens,
             int completionTokens,
-            string outcome,
+            ModelCallOutcome outcome,
             string detail = null)
         {
             Model = model;
@@ -132,13 +154,13 @@ namespace ElysFarm.Core
         /// <summary>输出 token 数。</summary>
         public int CompletionTokens { get; }
 
-        /// <summary>ok / timeout / error / unusable / offline。</summary>
-        public string Outcome { get; }
+        /// <summary>调用结果类别。</summary>
+        public ModelCallOutcome Outcome { get; }
 
         /// <summary>失败时的诊断信息；成功或离线时为 null。</summary>
         public string Detail { get; }
 
         /// <summary>结果是否来自一次成功的模型调用。</summary>
-        public bool Succeeded => Outcome == "ok";
+        public bool Succeeded => Outcome == ModelCallOutcome.Ok;
     }
 }

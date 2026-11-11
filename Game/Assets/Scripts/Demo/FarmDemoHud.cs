@@ -5,7 +5,7 @@ namespace ElysFarm.Demo
 {
     /// <summary>
     /// 体块演示场景的 HUD：只读 <see cref="FarmDemoBootstrap"/> 暴露的领域快照，
-    /// 把「第几天、三本账、候选工步与否决理由」摊开给观察者看。
+    /// 把「第几天、三本账、候选工步与否决理由」摊开给观察者看，并提供一句话输入框。
     /// </summary>
     [RequireComponent(typeof(FarmDemoBootstrap))]
     public sealed class FarmDemoHud : MonoBehaviour
@@ -147,16 +147,16 @@ namespace ElysFarm.Demo
         {
             var panelWidth = 400f;
             GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 326f), GUI.skin.box);
+            var order = demo.World.WorkOrderOf(FarmDemoBootstrap.NpcId);
             GUILayout.Label($"{demo.Npc.DisplayName}的决策", titleStyle);
             GUILayout.Label(
-                $"决策来源：本地效用打分 · 模型{(demo.UsingModel ? "在线" : "离线")}",
+                $"决策来源：{(order != null ? "玩家工单 + " : string.Empty)}本地效用打分 · 模型{(demo.UsingModel ? "在线" : "离线")}",
                 smallStyle);
             GUILayout.Label($"最近调用：{FarmDemoText.Call(demo.LastCall)}", smallStyle);
             GUILayout.Label($"当前意图：{demo.CurrentIntent}", labelStyle);
             GUILayout.Label($"上一结果：{demo.LastMessage}", smallStyle);
             GUILayout.Space(6f);
 
-            var order = demo.World.OrderOf(FarmDemoBootstrap.NpcId);
             if (order != null)
             {
                 GUILayout.Label(

@@ -9,7 +9,7 @@ namespace ElysFarm.Demo
 {
     /// <summary>
     /// 演示场景的模型配置读取。密钥来源只有两处：
-    /// 环境变量，或仓库根目录下被 .gitignore 排除的 .secrets.local.json（仓库外/构建产物外）。
+    /// 环境变量，或代码仓根目录下被 .gitignore 排除的 .secrets.local.json（代码仓外/构建产物外）。
     /// 两处都没有时返回 null，演示自动切到本地模板。
     /// </summary>
     internal static class DemoModelSettings
@@ -41,26 +41,14 @@ namespace ElysFarm.Demo
             var secrets = ReadSecretsFile();
             if (secrets != null)
             {
-                settings.BaseUrl = Or((string)secrets["deepseek"]?["baseUrl"], settings.BaseUrl);
-                settings.Model = Or((string)secrets["deepseek"]?["model"], settings.Model);
+                settings.BaseUrl = FirstNonEmpty((string)secrets["deepseek"]?["baseUrl"], settings.BaseUrl);
+                settings.Model = FirstNonEmpty((string)secrets["deepseek"]?["model"], settings.Model);
                 settings.ApiKey = (string)secrets["deepseek"]?["apiKey"];
-                settings.EmbeddingBaseUrl = Or((string)secrets["siliconflow"]?["baseUrl"], settings.EmbeddingBaseUrl);
-                settings.EmbeddingModel = Or((string)secrets["siliconflow"]?["embeddingModel"], settings.EmbeddingModel);
-                settings.EmbeddingApiKey = (string)secrets["siliconflow"]?["apiKey"];
             }
 
-            settings.ApiKey = Or(Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY"), settings.ApiKey);
-            settings.BaseUrl = Or(Environment.GetEnvironmentVariable("DEEPSEEK_BASE_URL"), settings.BaseUrl);
-            settings.Model = Or(Environment.GetEnvironmentVariable("DEEPSEEK_MODEL"), settings.Model);
-            settings.EmbeddingApiKey = Or(
-                Environment.GetEnvironmentVariable("SILICONFLOW_API_KEY"),
-                settings.EmbeddingApiKey);
-            settings.EmbeddingBaseUrl = Or(
-                Environment.GetEnvironmentVariable("SILICONFLOW_BASE_URL"),
-                settings.EmbeddingBaseUrl);
-            settings.EmbeddingModel = Or(
-                Environment.GetEnvironmentVariable("SILICONFLOW_EMBEDDING_MODEL"),
-                settings.EmbeddingModel);
+            settings.ApiKey = FirstNonEmpty(Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY"), settings.ApiKey);
+            settings.BaseUrl = FirstNonEmpty(Environment.GetEnvironmentVariable("DEEPSEEK_BASE_URL"), settings.BaseUrl);
+            settings.Model = FirstNonEmpty(Environment.GetEnvironmentVariable("DEEPSEEK_MODEL"), settings.Model);
 
             return settings;
         }
@@ -82,7 +70,7 @@ namespace ElysFarm.Demo
             return JObject.Parse(File.ReadAllText(path));
         }
 
-        static string Or(string value, string fallback)
+        static string FirstNonEmpty(string value, string fallback)
         {
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
         }

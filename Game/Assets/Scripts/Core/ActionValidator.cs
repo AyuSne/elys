@@ -1,11 +1,27 @@
+using System.Collections.Generic;
+
 namespace ElysFarm.Core
 {
     /// <summary>
     /// 动作白名单与前置条件校验的唯一实现处（见 ADR-0001）。
     /// 被否决时必须产出一句可读理由，该理由同时用于拒绝台词与决策可视化的否决原因。
+    /// 合法目标（Goal）到工步序列的映射也放在这里，避免提示词、模型解析与路由器各存一份。
     /// </summary>
     public static class ActionValidator
     {
+        static readonly WorkStep[] PlantSteps =
+        {
+            WorkStep.Sow,
+            WorkStep.Water,
+            WorkStep.Fertilize,
+            WorkStep.Weed,
+            WorkStep.Harvest
+        };
+
+        static readonly WorkStep[] WaterSteps = { WorkStep.Water };
+        static readonly WorkStep[] FertilizeSteps = { WorkStep.Fertilize };
+        static readonly WorkStep[] WeedSteps = { WorkStep.Weed };
+        static readonly WorkStep[] HarvestSteps = { WorkStep.Harvest };
         /// <summary>校验工步此刻是否可执行；不可执行时必须给出可读理由。</summary>
         public static bool Validate(FarmWorld world, Npc npc, Field field, WorkStep step, out string reason)
         {
@@ -35,12 +51,6 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            if (npc.DistanceTo(field) > Npc.MaxWorkDistance)
-            {
-                reason = "那块地太远了，我不去";
-                return false;
-            }
-
             if (step == WorkStep.Sow)
             {
                 return TryResolveSow(world, npc, sowSpeciesId, out _, out reason);
@@ -67,10 +77,8 @@ namespace ElysFarm.Core
             out CropSpecies species,
             out string reason)
         {
-            var targetId = string.IsNullOrWhiteSpace(sowSpeciesId) ? npc.PreferredSpeciesId : sowSpeciesId;
-            if (!CropCatalog.TryGet(targetId, out species))
+            if (!TryResolveSpecies(sowSpeciesId, npc.PreferredSpeciesId, out species, out reason))
             {
-                reason = "不知道该种什么";
                 return false;
             }
 
@@ -82,6 +90,110 @@ namespace ElysFarm.Core
 
             reason = null;
             return true;
+        }
+
+        /// <summary>
+        /// 品种白名单的唯一实现处：把 id、展示名或别名解析成品种。
+        /// 未知品种给出一句可读理由，所有调用方共用这同一句话。
+        /// </summary>
+        public static bool TryResolveSpecies(
+            string token,
+            string defaultSpeciesId,
+            out CropSpecies species,
+            out string reason)
+        {
+            var text = string.IsNullOrWhiteSpace(token) ? defaultSpeciesId : token.Trim();
+
+            foreach (var candidate in CropCatalog.All)
+            {
+                if (string.Equals(candidate.Id, text, System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(candidate.DisplayName, text, System.StringComparison.Ordinal)
+                    || MatchesAlias(text, candidate.Id))
+                {
+                    species = candidate;
+                    reason = null;
+                    return true;
+                }
+            }
+
+            species = null;
+            reason = UnknownSpeciesReason(text);
+            return false;
+        }
+
+        /// <summary>品种不在白名单时的统一可读理由。</summary>
+        public static string UnknownSpeciesReason(string token)
+        {
+            var text = string.IsNullOrWhiteSpace(token) ? "这个" : token.Trim();
+            return $"「{text}」可种不出来，地里只能种萝卜和小麦。";
+        }
+
+        static bool MatchesAlias(string text, string speciesId)
+        {
+            if (speciesId == CropCatalog.RadishId)
+            {
+                return text == "萝卜" || text.Equals("radish", System.StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (speciesId == CropCatalog.WheatId)
+            {
+                return text == "小麦" || text == "麦子" || text.Equals("wheat", System.StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        /// <summary>把模型返回的 wire token 解析成合法目标；白名单之外返回 false。</summary>
+        public static bool TryParseGoal(string token, out FarmGoal goal)
+        {
+            switch (token)
+            {
+                case "plant":
+                case "sow":
+                    goal = FarmGoal.Plant;
+                    return true;
+                case "water":
+                    goal = FarmGoal.Water;
+                    return true;
+                case "fertilize":
+                    goal = FarmGoal.Fertilize;
+                    return true;
+                case "weed":
+                    goal = FarmGoal.Weed;
+                    return true;
+                case "harvest":
+                    goal = FarmGoal.Harvest;
+                    return true;
+                default:
+                    goal = default;
+                    return false;
+            }
+        }
+
+        /// <summary>合法目标对应的工步序列；所有调用方共用这一份计划。</summary>
+        public static bool TryGetPlan(FarmGoal goal, out IReadOnlyList<WorkStep> steps)
+        {
+            switch (goal)
+            {
+                case FarmGoal.Plant:
+                    steps = PlantSteps;
+                    return true;
+                case FarmGoal.Water:
+                    steps = WaterSteps;
+                    return true;
+                case FarmGoal.Fertilize:
+                    steps = FertilizeSteps;
+                    return true;
+                case FarmGoal.Weed:
+                    steps = WeedSteps;
+                    return true;
+                case FarmGoal.Harvest:
+                    steps = HarvestSteps;
+                    return true;
+                default:
+                    steps = null;
+                    return false;
+            }
         }
 
         /// <summary>种子不足时的统一可读理由。</summary>

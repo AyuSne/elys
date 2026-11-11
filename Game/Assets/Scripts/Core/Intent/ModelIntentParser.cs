@@ -112,7 +112,7 @@ namespace ElysFarm.Core
                 return true;
             }
 
-            if (!TryMapGoal(goalText, out var goal))
+            if (!ActionValidator.TryParseGoal(goalText, out var goal))
             {
                 draft = IntentDraft.Refuse($"「{goalText}」这个活我还不会干。");
                 return true;
@@ -130,32 +130,6 @@ namespace ElysFarm.Core
             }
 
             return value == "none" || value == "null" ? null : value.Trim();
-        }
-
-        public static bool TryMapGoal(string text, out FarmGoal goal)
-        {
-            switch (text)
-            {
-                case "plant":
-                case "sow":
-                    goal = FarmGoal.Plant;
-                    return true;
-                case "water":
-                    goal = FarmGoal.Water;
-                    return true;
-                case "fertilize":
-                    goal = FarmGoal.Fertilize;
-                    return true;
-                case "weed":
-                    goal = FarmGoal.Weed;
-                    return true;
-                case "harvest":
-                    goal = FarmGoal.Harvest;
-                    return true;
-                default:
-                    goal = default;
-                    return false;
-            }
         }
     }
 }
