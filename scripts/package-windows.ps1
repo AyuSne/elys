@@ -75,7 +75,12 @@ if (Test-Path $provenancePath) {
     $provenance = Get-Content $provenancePath -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
-$commit = (& git -C $repoRoot rev-parse HEAD).Trim()
+$headCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
+$commit = if ($provenance -and $null -ne $provenance.source -and $provenance.source.revision) {
+    [string]$provenance.source.revision
+} else {
+    $headCommit
+}
 $shortCommit = $commit.Substring(0, 7)
 $buildDirty = if ($provenance -and $null -ne $provenance.source) { [bool]$provenance.source.dirty } else { $sourceDirty }
 $zipHash = ''
