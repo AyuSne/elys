@@ -5,80 +5,128 @@ using UnityEngine;
 namespace ElysFarm.Demo
 {
     /// <summary>
-    /// 体块演示场景的 HUD：只读 <see cref="FarmDemoBootstrap"/> 暴露的领域快照，
-    /// 把「第几天、三本账、三名 NPC 的体力与意图、候选工步的分项权重」摊开给观察者看，
-    /// 并提供一句话输入框与指挥对象切换。它不是 #6 的决策可视化层。
+    /// 羊皮纸风格的常驻 HUD：顶部一条（第几天 / 当天进度 / 倍速）、左上三人卡、
+    /// 左下背包条、底部对话框；决策可视化退到 <c>Tab</c> 召唤的右侧抽屉。
+    /// 只读 <see cref="FarmDemoBootstrap"/> 与 <see cref="FarmWorld"/> 的快照，
+    /// 不推进时钟、不扣体力、不写记忆。
     /// </summary>
     [RequireComponent(typeof(FarmDemoBootstrap))]
     public sealed class FarmDemoHud : MonoBehaviour
     {
-        static readonly Color StaminaColor = new Color(0.45f, 0.8f, 0.4f);
-        static readonly Color RestColor = new Color(0.9f, 0.65f, 0.25f);
-        static readonly Color MoodColor = new Color(0.45f, 0.68f, 0.95f);
-        static readonly Color HungerColor = new Color(0.92f, 0.62f, 0.28f);
-        static readonly Color MemoryColor = new Color(0.62f, 0.78f, 0.95f);
+        const string CommandControl = "ElysCommandInput";
 
-        const float PanelMargin = 12f;
-        const float PanelTop = 8f;
-        const float LeftPanelWidth = 372f;
-        const float DecisionPanelWidth = 400f;
-        const float InspectorPanelWidth = 412f;
-        const float StatusPanelHeight = 326f;
+        const float Margin = 16f;
+        const float TopBarWidth = 376f;
+        const float TopBarY = 10f;
+        const float TopBarHeight = 44f;
+        const float CardX = Margin;
+        const float CardY = 62f;
+        const float CardWidth = 280f;
+        const float CardHeight = 200f;
+        const float HeaderHeight = 38f;
+        const float RowHeight = 50f;
+        const float DialogueX = 24f;
+        const float DialogueHeight = 168f;
+        const float DialogueGap = 16f;
+        const float BagSlot = 52f;
+        const float BagGap = 6f;
+        const float DrawerWidth = 420f;
+
+        static readonly string[] Examples =
+        {
+            "把东边这块种满萝卜",
+            "听说阿芽偷懒了",
+            "去种月亮"
+        };
 
         FarmDemoBootstrap demo;
-        Font font;
-        GUIStyle titleStyle;
-        GUIStyle labelStyle;
-        GUIStyle smallStyle;
-        GUIStyle boldStyle;
-        GUIStyle inputStyle;
-        GUIStyle buttonStyle;
-        bool stylesReady;
+        HudSkin skin;
         bool inspectorOpen;
         string commandInput = string.Empty;
+        Vector2 drawerScroll;
 
         void Start()
         {
             demo = GetComponent<FarmDemoBootstrap>();
-            font = Font.CreateDynamicFontFromOSFont(
-                new[] { "Microsoft YaHei", "SimHei", "Noto Sans CJK SC", "Arial" },
-                15);
+            skin = new HudSkin();
+        }
+
+        void OnDestroy()
+        {
+            skin?.Dispose();
+            skin = null;
         }
 
         void OnGUI()
         {
-            if (demo == null)
+            if (demo == null || demo.World == null)
             {
                 return;
             }
 
-            if (font != null)
+            if (skin == null)
             {
-                GUI.skin.font = font;
+                skin = new HudSkin();
             }
 
-            if (!stylesReady)
+            skin.Apply();
+            HandleKeys();
+            DrawTopBar();
+            if (!inspectorOpen)
             {
-                InitStyles();
-                stylesReady = true;
+                DrawTopControls();
             }
 
-            HandleCameraKeys();
-            DrawStatusPanel();
-            DrawCameraBar();
-            DrawDecisionPanel();
-            DrawLogPanel();
-            DrawCommandPanel();
+            DrawNpcCard();
+            DrawBag();
+            DrawDialogue();
+            if (inspectorOpen)
+            {
+                DrawDrawer();
+            }
         }
 
         /// <summary>
-        /// 键盘兜底：窗口太窄、顶部镜头条放不下时，仍能切机位。
-        /// 输入框获得焦点（keyboardControl ≠ 0）时不抢按键。
+        /// 键盘兜底：Tab 开关抽屉，Esc 关抽屉；输入框有焦点时回车发送，
+        /// 镜头快捷键只在没有控件抢键盘时生效。
         /// </summary>
-        void HandleCameraKeys()
+        void HandleKeys()
         {
             var current = Event.current;
-            if (current.type != EventType.KeyDown || GUIUtility.keyboardControl != 0)
+            if (current.type != EventType.KeyDown)
+            {
+                return;
+            }
+
+            if (current.keyCode == KeyCode.Tab)
+            {
+                inspectorOpen = !inspectorOpen;
+                current.Use();
+                return;
+            }
+
+            if (current.keyCode == KeyCode.Escape)
+            {
+                if (inspectorOpen)
+                {
+                    inspectorOpen = false;
+                    current.Use();
+                }
+
+                return;
+            }
+
+            if (GUI.GetNameOfFocusedControl() == CommandControl)
+            {
+                if ((current.keyCode == KeyCode.Return || current.keyCode == KeyCode.KeypadEnter) && Submit())
+                {
+                    current.Use();
+                }
+
+                return;
+            }
+
+            if (GUIUtility.keyboardControl != 0)
             {
                 return;
             }
@@ -110,361 +158,362 @@ namespace ElysFarm.Demo
             demo.FollowCamera(npcId);
         }
 
-        /// <summary>
-        /// 镜头与素材开关。放在左右面板之间的顶部：俯视时两侧面板都开，
-        /// 跟拍时右侧面板与流水收起，把画面让给 NPC。
-        /// </summary>
-        void DrawCameraBar()
+        bool Submit()
         {
-            var leftEdge = PanelMargin + LeftPanelWidth;
-            var rightEdge = Screen.width - PanelMargin - InspectorPanelWidth;
-            var gap = rightEdge - leftEdge;
-            var width = Mathf.Min(520f, gap);
-            if (width < 280f)
+            if (demo.IsThinking || string.IsNullOrWhiteSpace(commandInput))
             {
-                return;
+                return false;
             }
 
-            var x = leftEdge + (gap - width) * 0.5f;
-            GUILayout.BeginArea(new Rect(x, PanelTop, width, 76f), GUI.skin.box);
-            GUILayout.Label(
-                demo.IsOverheadCamera ? "镜头 · 俯视 3×" : $"镜头 · 跟拍 4× {FollowedName()}",
-                smallStyle);
+            demo.SubmitPlayerText(commandInput);
+            commandInput = string.Empty;
+            return true;
+        }
 
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button(demo.IsOverheadCamera ? "●俯视" : "俯视", buttonStyle, GUILayout.Width(58f)))
+        void DrawTopBar()
+        {
+            var rect = new Rect(Mathf.Round((Screen.width - TopBarWidth) * 0.5f), TopBarY, TopBarWidth, TopBarHeight);
+            skin.DrawPanel(rect, skin.Panel);
+
+            var clock = demo.World.Clock;
+            GUI.Label(new Rect(rect.x + 18f, rect.y, 100f, rect.height), $"第 {clock.Day} 天", skin.Title);
+            GUI.Label(new Rect(rect.x + 112f, rect.y, 110f, rect.height), $"当天 {clock.DayProgress:P0}", skin.Body);
+
+            var speeds = FarmClock.AllowedSpeeds;
+            const float pillWidth = 44f;
+            const float pillGap = 8f;
+            var total = speeds.Count * pillWidth + (speeds.Count - 1) * pillGap;
+            var x = rect.xMax - 4f - total;
+            var y = rect.y + (rect.height - 28f) * 0.5f;
+
+            for (var i = 0; i < speeds.Count; i++)
+            {
+                var speed = speeds[i];
+                var selected = Mathf.Approximately(clock.Speed, speed);
+                if (GUI.Button(
+                        new Rect(x + i * (pillWidth + pillGap), y, pillWidth, 28f),
+                        $"{speed:0}x",
+                        selected ? skin.SpeedPillSelected : skin.SpeedPill))
+                {
+                    // 演示用的时间控制，不是自然语言输入；文本输入仍只经 IntentRouter。
+                    clock.Speed = speed;
+                }
+            }
+        }
+
+        /// <summary>右上角：镜头档位、观察对象与素材开关；抽屉打开时让位给抽屉。</summary>
+        void DrawTopControls()
+        {
+            const float width = 46f;
+            const float gap = 8f;
+            var count = 2 + demo.World.Npcs.Count;
+            var total = count * width + (count - 1) * gap;
+            var x = Screen.width - 36f - total;
+            const float y = 16f;
+            var index = 0;
+
+            if (GUI.Button(PillRect(x, y, width, gap, ref index), "俯视", demo.IsOverheadCamera ? skin.PillSelected : skin.Pill))
             {
                 demo.UseOverheadCamera();
             }
 
             foreach (var npc in demo.World.Npcs)
             {
-                var label = demo.IsFollowing(npc.Id) ? $"●{npc.DisplayName}" : npc.DisplayName;
-                if (GUILayout.Button(label, buttonStyle, GUILayout.Width(58f)))
+                var selected = demo.IsFollowing(npc.Id);
+                if (GUI.Button(PillRect(x, y, width, gap, ref index), npc.DisplayName, selected ? skin.PillSelected : skin.Pill))
                 {
                     Follow(npc.Id);
                 }
             }
 
-            if (GUILayout.Button(demo.UsingArt ? "素材开" : "素材关", buttonStyle, GUILayout.Width(58f)))
+            if (GUI.Button(PillRect(x, y, width, gap, ref index), "素材", skin.Pill))
             {
                 demo.ToggleArt();
             }
 
-            GUILayout.EndHorizontal();
-            GUILayout.Label("快捷键：C 俯视 · 1/2/3 跟拍", smallStyle);
-            GUILayout.EndArea();
+            GUI.Label(new Rect(x, y + 30f, total, 22f), "Tab 决策可视化 · 流水", skin.SmallInk);
         }
 
-        string FollowedName()
+        static Rect PillRect(float x, float y, float width, float gap, ref int index)
         {
-            var followed = demo.FollowedNpcId;
-            if (string.IsNullOrEmpty(followed))
-            {
-                return string.Empty;
-            }
+            var rect = new Rect(x + index * (width + gap), y, width, 30f);
+            index++;
+            return rect;
+        }
 
+        void DrawNpcCard()
+        {
+            var rect = new Rect(CardX, CardY, CardWidth, CardHeight);
+            skin.DrawPanel(rect, skin.Panel);
+            GUI.Label(new Rect(rect.x + 18f, rect.y + 6f, 160f, 30f), "三名 NPC", skin.Title);
+            GUI.Label(
+                new Rect(rect.xMax - 100f, rect.y + 14f, 84f, 22f),
+                demo.AutonomyEnabled ? "自主中" : "待命",
+                skin.SmallRight);
+
+            var y = rect.y + HeaderHeight;
             foreach (var npc in demo.World.Npcs)
             {
-                if (npc.Id == followed)
-                {
-                    return npc.DisplayName;
-                }
-            }
-
-            return string.Empty;
-        }
-
-        void InitStyles()
-        {
-            titleStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 17,
-                fontStyle = FontStyle.Bold,
-                normal = { textColor = Color.white }
-            };
-
-            labelStyle = new GUIStyle(GUI.skin.label)
-            {
-                fontSize = 13,
-                normal = { textColor = new Color(0.92f, 0.95f, 0.9f) }
-            };
-
-            smallStyle = new GUIStyle(labelStyle)
-            {
-                fontSize = 12,
-                normal = { textColor = new Color(0.73f, 0.79f, 0.73f) }
-            };
-
-            boldStyle = new GUIStyle(labelStyle)
-            {
-                fontStyle = FontStyle.Bold
-            };
-
-            inputStyle = new GUIStyle(GUI.skin.textField)
-            {
-                fontSize = 14,
-                padding = new RectOffset(6, 6, 4, 4)
-            };
-
-            buttonStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontSize = 12,
-                padding = new RectOffset(6, 6, 2, 2)
-            };
-
-            if (font != null)
-            {
-                titleStyle.font = font;
-                labelStyle.font = font;
-                smallStyle.font = font;
-                boldStyle.font = font;
-                inputStyle.font = font;
-                buttonStyle.font = font;
+                DrawNpcRow(new Rect(rect.x + 8f, y, rect.width - 16f, RowHeight), npc);
+                y += RowHeight;
             }
         }
 
-        void DrawStatusPanel()
+        void DrawNpcRow(Rect row, Npc npc)
         {
-            var clock = demo.World.Clock;
-            var ledger = demo.World.Ledger;
-            var radish = CropCatalog.RadishId;
-            var wheat = CropCatalog.WheatId;
-
-            GUILayout.BeginArea(new Rect(PanelMargin, PanelTop, LeftPanelWidth, StatusPanelHeight), GUI.skin.box);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Elys · 三名 NPC", titleStyle);
-            if (GUILayout.Button(inspectorOpen ? "关闭可视化" : "决策可视化", buttonStyle, GUILayout.Width(86f)))
+            if (npc == demo.SelectedNpc)
             {
-                inspectorOpen = !inspectorOpen;
+                var previous = GUI.color;
+                GUI.color = HudSkin.Green;
+                GUI.DrawTexture(new Rect(row.x - 4f, row.y + 6f, 3f, 38f), skin.White);
+                GUI.color = previous;
             }
 
-            GUILayout.EndHorizontal();
-            GUILayout.Label(
-                $"第 {clock.Day} 天 · 当天已过 {clock.DayProgress:P0} · 自主{(demo.AutonomyEnabled ? "开" : "关")}",
-                labelStyle);
-            DrawProgressBar(clock.DayProgress, StaminaColor);
-            GUILayout.Space(4f);
-
-            GUILayout.BeginHorizontal();
-            foreach (var speed in FarmClock.AllowedSpeeds)
-            {
-                var label = speed == clock.Speed ? $"[{speed:0}x]" : $"{speed:0}x";
-                if (GUILayout.Button(label, buttonStyle, GUILayout.Width(42f)))
-                {
-                    // 演示用的时间控制，不是自然语言输入；文本输入仍只经 IntentRouter。
-                    clock.Speed = speed;
-                }
-            }
-
-            if (GUILayout.Button(demo.AutonomyEnabled ? "暂停自主" : "开始自主", buttonStyle, GUILayout.Width(74f)))
-            {
-                demo.ToggleAutonomy();
-            }
-
-            GUILayout.EndHorizontal();
-            GUILayout.Space(4f);
-
-            GUILayout.Label(
-                $"种子 萝卜×{ledger.SeedsOf(radish)} 小麦×{ledger.SeedsOf(wheat)} · 产出 萝卜×{ledger.ProduceOf(radish)} 小麦×{ledger.ProduceOf(wheat)}",
-                smallStyle);
-            GUILayout.Space(4f);
-
-            foreach (var npc in demo.World.Npcs)
-            {
-                DrawNpcRow(npc);
-            }
-
-            GUILayout.Space(4f);
-            GUILayout.BeginHorizontal();
-            foreach (var field in demo.World.Fields)
-            {
-                GUILayout.Label(FieldLine(field), smallStyle, GUILayout.Width(120f));
-            }
-
-            GUILayout.EndHorizontal();
-
-            GUILayout.Label($"账本自检：{(ledger.Verify(out var error) ? "入账 − 出账 = 持有 ✓" : error)}", smallStyle);
-            GUILayout.EndArea();
-        }
-
-        static string FieldLine(Field field)
-        {
-            if (!field.IsSown)
-            {
-                return $"{field.Id} {FarmDemoText.StateName(field.State)}";
-            }
-
-            var growth = field.State == FieldState.Mature ? "熟" : $"生{field.Growth * 100f:0}";
-            return $"{field.Id} {growth} 水{field.Water * 100f:0} 草{field.Weeds * 100f:0}";
-        }
-
-        void DrawNpcRow(Npc npc)
-        {
-            var selected = npc == demo.SelectedNpc;
-            var name = selected ? $"▶{npc.DisplayName}" : npc.DisplayName;
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button(name, buttonStyle, GUILayout.Width(58f)))
+            if (GUI.Button(row, GUIContent.none, GUIStyle.none))
             {
                 demo.SelectNpc(npc.Id);
             }
 
-            GUILayout.Label($"{npc.Stamina:P0}", selected ? boldStyle : labelStyle, GUILayout.Width(38f));
-            DrawBar(npc.Stamina, 64f, npc.IsResting ? RestColor : StaminaColor);
+            var frame = new Rect(row.x, row.y, 36f, 36f);
+            GUI.Box(frame, GUIContent.none, skin.Slot);
+            DrawFace(new Rect(frame.x + 2f, frame.y + 2f, 32f, 32f), npc);
 
-            var state = RowState(npc, selected);
-            GUILayout.Label(state, smallStyle);
-            GUILayout.EndHorizontal();
+            GUI.Label(new Rect(row.x + 48f, row.y + 12f, 150f, 26f), npc.DisplayName, skin.BodyBold);
+            GUI.Label(new Rect(row.xMax - 56f, row.y + 14f, 56f, 22f), $"{npc.Stamina:P0}", skin.SmallRight);
+            DrawBar(
+                new Rect(row.x + 48f, row.y + 34f, 146f, 8f),
+                npc.Stamina,
+                npc.IsResting ? HudSkin.GreenActive : HudSkin.Green);
+            GUI.Label(
+                new Rect(row.x + 48f, row.y + 42f, row.width - 48f, 16f),
+                IntentLine(npc),
+                skin.Small);
         }
 
-        /// <summary>
-        /// 左侧一行的状态文案。决策可视化打开时，选中行改用与面板相同的领域意图，
-        /// 避免观察者在同一屏里看到两个不同的「当前意图」。
-        /// </summary>
-        string RowState(Npc npc, bool selected)
+        string IntentLine(Npc npc)
         {
-            if (inspectorOpen && selected)
+            var text = npc.IsResting
+                ? $"歇着（还剩 {npc.RestSecondsRemaining:0} 秒）"
+                : demo.IntentOf(npc.Id);
+            return FarmDemoText.Shorten(text, 18);
+        }
+
+        /// <summary>左下背包条：四格图标 + 数量；数字直接读三本账，不另存一份。</summary>
+        void DrawBag()
+        {
+            var ledger = demo.World.Ledger;
+            var y = DialogueTop() - 56f - BagSlot;
+            var x = Margin;
+            var radish = CropCatalog.RadishId;
+            var wheat = CropCatalog.WheatId;
+
+            DrawBagSlot(new Rect(x, y, BagSlot, BagSlot), PixelArt.RadishSeedIcon, ledger.SeedsOf(radish));
+            DrawBagSlot(new Rect(x + (BagSlot + BagGap), y, BagSlot, BagSlot), PixelArt.WheatSeedIcon, ledger.SeedsOf(wheat));
+            DrawBagSlot(new Rect(x + (BagSlot + BagGap) * 2f, y, BagSlot, BagSlot), PixelArt.RadishIcon, ledger.ProduceOf(radish));
+            DrawBagSlot(new Rect(x + (BagSlot + BagGap) * 3f, y, BagSlot, BagSlot), PixelArt.WheatIcon, ledger.ProduceOf(wheat));
+
+            var label = ledger.HeldTotal > 0 ? $"随身 {ledger.HeldTotal}" : "随身 0";
+            GUI.Label(
+                new Rect(x + (BagSlot + BagGap) * 4f, y + BagSlot - 20f, 70f, 18f),
+                label,
+                skin.Small);
+        }
+
+        void DrawBagSlot(Rect rect, int itemId, int count)
+        {
+            GUI.Box(rect, GUIContent.none, skin.Slot);
+
+            var sprite = PixelArt.LoadItem(itemId);
+            if (sprite != null)
             {
-                return FarmDemoText.Shorten(demo.World.IntentOf(npc.Id), 15);
+                DrawSprite(new Rect(rect.x + 10f, rect.y + 8f, 32f, 32f), sprite);
             }
 
-            return npc.IsResting
-                ? $"休息 {npc.RestSecondsRemaining:0}s"
-                : FarmDemoText.Shorten(demo.IntentOf(npc.Id), 15);
+            GUI.Label(new Rect(rect.x, rect.yMax - 20f, rect.width - 5f, 18f), count.ToString(), skin.Count);
         }
 
-        void DrawDecisionPanel()
+        void DrawDialogue()
         {
-            if (!demo.IsOverheadCamera)
+            var box = new Rect(DialogueX, DialogueTop(), Screen.width - DialogueX * 2f, DialogueHeight);
+            skin.DrawPanel(box, skin.Panel);
+
+            var tag = new Rect(box.x + 160f, box.y - 30f, 76f, 32f);
+            skin.DrawPanel(tag, skin.Panel);
+            GUI.Label(tag, SpeakerName(), skin.TagText);
+
+            var frame = new Rect(box.x + 4f, box.y + 4f, 136f, 136f);
+            GUI.Box(frame, GUIContent.none, skin.PortraitFrame);
+            DrawFace(new Rect(frame.x + 4f, frame.y + 4f, 128f, 128f), Speaker());
+
+            var textX = box.x + 160f;
+            var textWidth = box.width - 160f - 140f;
+            GUI.Label(new Rect(textX, box.y + 12f, textWidth, 27f), DialogueLine(), skin.Body);
+            GUI.Label(new Rect(textX, box.y + 42f, textWidth, 22f), DialogueHint(), skin.Small);
+
+            var chipX = textX;
+            const float chipY = 80f;
+            foreach (var example in Examples)
+            {
+                var chipWidth = skin.Chip.CalcSize(new GUIContent(example)).x + 22f;
+                if (GUI.Button(new Rect(chipX, box.y + chipY, chipWidth, 20f), example, skin.Chip))
+                {
+                    commandInput = example;
+                    Submit();
+                }
+
+                chipX += chipWidth + 8f;
+            }
+
+            var inputRect = new Rect(
+                box.x + 164f,
+                box.y + 106f,
+                box.width - 164f - 128f - 14f,
+                46f);
+            GUI.SetNextControlName(CommandControl);
+            commandInput = GUI.TextField(inputRect, commandInput ?? string.Empty, 120, skin.Input);
+            if (string.IsNullOrEmpty(commandInput) && GUI.GetNameOfFocusedControl() != CommandControl)
+            {
+                // TextField 会把光标色留在 GUI.color 里；占位文字显式用不透明颜色画，免得被冲淡。
+                var previousColor = GUI.color;
+                var previousContent = GUI.contentColor;
+                GUI.color = Color.white;
+                GUI.contentColor = Color.white;
+                GUI.Label(
+                    new Rect(inputRect.x + 14f, inputRect.y, inputRect.width - 20f, inputRect.height),
+                    $"对 {SpeakerName()} 说…",
+                    skin.SmallInk);
+                GUI.contentColor = previousContent;
+                GUI.color = previousColor;
+            }
+
+            var send = new Rect(box.xMax - 128f, box.y + 108f, 94f, 42f);
+            GUI.enabled = !demo.IsThinking;
+            if (GUI.Button(send, "下达", skin.Send))
+            {
+                Submit();
+            }
+
+            GUI.enabled = true;
+        }
+
+        string DialogueLine()
+        {
+            if (demo.IsThinking)
+            {
+                return "……（正在理解你这句话）";
+            }
+
+            return string.IsNullOrWhiteSpace(demo.LastReply) ? demo.LastMessage : demo.LastReply;
+        }
+
+        string DialogueHint()
+        {
+            if (demo.IsThinking)
+            {
+                return "等模型回话…（游戏没有暂停）";
+            }
+
+            if (string.IsNullOrWhiteSpace(demo.LastPlayerText))
+            {
+                return "先说句话，或者按「开始自主」看她们自己找活。";
+            }
+
+            return $"你：{FarmDemoText.Shorten(demo.LastPlayerText, 18)} · {demo.LastUnderstood}";
+        }
+
+        Npc Speaker()
+        {
+            foreach (var npc in demo.World.Npcs)
+            {
+                if (npc.Id == demo.SpeakerId)
+                {
+                    return npc;
+                }
+            }
+
+            return demo.SelectedNpc;
+        }
+
+        string SpeakerName()
+        {
+            var speaker = Speaker();
+            return speaker != null ? speaker.DisplayName : "NPC";
+        }
+
+        void DrawFace(Rect rect, Npc npc)
+        {
+            if (npc == null)
             {
                 return;
             }
 
-            if (inspectorOpen)
+            var sprite = PixelArt.LoadPortrait(npc.Id, EmotionOf(npc.Id));
+            if (sprite != null)
             {
-                DrawInspectorPanel();
+                DrawSprite(rect, sprite);
                 return;
             }
 
-            GUILayout.BeginArea(
-                new Rect(
-                    Screen.width - DecisionPanelWidth - PanelMargin,
-                    PanelTop,
-                    DecisionPanelWidth,
-                    StatusPanelHeight),
-                GUI.skin.box);
-
-            var npc = demo.SelectedNpc;
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"{npc.DisplayName}的决策", titleStyle);
-            foreach (var each in demo.World.Npcs)
-            {
-                if (each == npc)
-                {
-                    continue;
-                }
-
-                if (GUILayout.Button(each.DisplayName, buttonStyle, GUILayout.Width(46f)))
-                {
-                    demo.SelectNpc(each.Id);
-                }
-            }
-
-            if (GUILayout.Button("决策可视化", buttonStyle, GUILayout.Width(86f)))
-            {
-                inspectorOpen = true;
-            }
-
-            GUILayout.EndHorizontal();
-
-            GUILayout.Label(
-                $"{FarmDemoText.PersonaNote(npc.Persona.Id)} · 决定间隔 {npc.Persona.DecisionSeconds:0.0}s · 每步体力 -{npc.Persona.ExertionPerStep:0.00}",
-                smallStyle);
-            GUILayout.Label($"当前意图：{demo.IntentOf(npc.Id)}", labelStyle);
-            GUILayout.Label($"上一结果：{FarmDemoText.Shorten(demo.LastMessage, 34)}", smallStyle);
-            GUILayout.Label(
-                $"本地效用打分 · 模型{(demo.UsingModel ? "在线" : "离线")} · 最近调用：{FarmDemoText.Call(demo.LastCall)}",
-                smallStyle);
-
-            var order = demo.World.WorkOrderOf(npc.Id);
-            if (order != null)
-            {
-                GUILayout.Label(
-                    $"工单：{order.FieldId} · {order.CompletedCount}/{order.Steps.Count} 步"
-                    + (order.NextStep.HasValue
-                        ? $" · 下一步 {FarmDemoText.StepName(order.NextStep.Value)}"
-                        : string.Empty),
-                    boldStyle);
-            }
-
-            GUILayout.Label("候选工步：分数 = 需求 × 人设 × 体力 − 距离", boldStyle);
-
-            var candidates = demo.World.RankCandidates(npc.Id);
-            var shown = 0;
-            foreach (var candidate in candidates)
-            {
-                if (shown++ >= 4)
-                {
-                    break;
-                }
-
-                var name = $"{FarmDemoText.StepName(candidate.Step)} {candidate.FieldId}";
-                if (candidate.IsValid)
-                {
-                    GUILayout.Label(
-                        $"{name}  {candidate.Score:0.00}  ({candidate.Need:0.00}×{candidate.PersonaWeight:0.00}×{candidate.StaminaFactor:0.00}−{candidate.DistancePenalty:0.00})",
-                        smallStyle);
-                }
-                else
-                {
-                    GUILayout.Label($"{name}  ✕ {candidate.RejectionReason}", smallStyle);
-                }
-            }
-
-            GUILayout.EndArea();
+            var previous = GUI.color;
+            GUI.color = npc == demo.SelectedNpc ? HudSkin.Green : HudSkin.Shade;
+            GUI.DrawTexture(rect, skin.White);
+            GUI.color = previous;
+            GUI.Label(rect, npc.DisplayName.Substring(0, 1), skin.TagText);
         }
 
-        /// <summary>
-        /// 决策可视化层（#6）：只呈现五项，数据全部来自 <see cref="FarmWorld.Inspect"/> 的只读快照。
-        /// 关闭时这个分支不会执行；临时状态面板与流水照旧。
-        /// </summary>
-        void DrawInspectorPanel()
+        /// <summary>卡片里只有正在说话的人用最近一次出口，其余人保持平常脸。</summary>
+        FaceEmotion EmotionOf(string npcId)
         {
-            GUILayout.BeginArea(
-                new Rect(
-                    Screen.width - InspectorPanelWidth - PanelMargin,
-                    PanelTop,
-                    InspectorPanelWidth,
-                    406f),
-                GUI.skin.box);
+            var outlet = npcId == demo.SpeakerId ? demo.LastOutlet : IntentOutlet.Query;
+            var accepted = npcId == demo.SpeakerId && demo.LastAccepted;
+            return PortraitFace.Of(outlet, accepted, demo.FaceConditionOf(npcId));
+        }
+
+        void DrawDrawer()
+        {
+            var height = DialogueTop() - DialogueGap;
+            var rect = new Rect(Screen.width - DrawerWidth, 0f, DrawerWidth, height);
+            skin.DrawPanel(rect, skin.Panel);
+
+            GUI.Label(new Rect(rect.x + 16f, rect.y + 8f, 220f, 30f), "决策可视化", skin.Title);
+            if (GUI.Button(new Rect(rect.xMax - 88f, rect.y + 12f, 72f, 26f), "关闭", skin.Chip))
+            {
+                inspectorOpen = false;
+            }
+
+            GUI.Label(new Rect(rect.x + 16f, rect.y + 42f, rect.width - 32f, 22f), "Tab 开关 · 只读快照", skin.Small);
+
+            var content = new Rect(rect.x + 16f, rect.y + 68f, rect.width - 32f, rect.height - 80f);
+            GUILayout.BeginArea(content);
+            drawerScroll = GUILayout.BeginScrollView(drawerScroll, false, false);
 
             var snapshot = demo.World.Inspect(demo.SelectedNpc.Id, demo.LastCall);
-
             DrawMemories(snapshot.Memories);
             DrawIntent(snapshot.NpcName, snapshot.Intent);
             DrawCandidates(snapshot.Candidates);
             DrawModelCall(snapshot.ModelCall);
             DrawStatus(snapshot.Status);
+            DrawLog();
 
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
         void DrawMemories(IReadOnlyList<MemoryHit> memories)
         {
-            GUILayout.Label("① 检索命中的记忆", boldStyle);
+            GUILayout.Label("① 检索命中的记忆", skin.BodyBold);
             if (memories.Count == 0)
             {
-                GUILayout.Label("还没有记忆，干点活就会留下。", smallStyle);
+                GUILayout.Label("还没有记忆，干点活就会留下。", skin.Small);
                 return;
             }
 
             foreach (var hit in memories)
             {
                 GUILayout.BeginHorizontal();
-                DrawBar(hit.Weight, 52f, MemoryColor);
-                GUILayout.Label($"{hit.Weight:0.00}", smallStyle, GUILayout.Width(34f));
-                GUILayout.Label($"第 {hit.Day} 天 · {FarmDemoText.Shorten(hit.Text, 20)}", smallStyle);
+                DrawBar(GUILayoutUtility.GetRect(48f, 8f), hit.Weight, HudSkin.Green);
+                GUILayout.Label($"{hit.Weight:0.00}", skin.Small, GUILayout.Width(38f));
+                GUILayout.Label($"第 {hit.Day} 天 · {FarmDemoText.Shorten(hit.Text, 18)}", skin.Small);
                 GUILayout.EndHorizontal();
             }
         }
@@ -472,21 +521,18 @@ namespace ElysFarm.Demo
         void DrawIntent(string npcName, string intent)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label("②", boldStyle, GUILayout.Width(18f));
-            GUILayout.Label($"{npcName}的当前意图：{intent}", labelStyle);
+            GUILayout.Label("②", skin.BodyBold, GUILayout.Width(20f));
+            GUILayout.Label($"{npcName}的当前意图：{intent}", skin.Body);
             GUILayout.EndHorizontal();
         }
 
         void DrawCandidates(IReadOnlyList<StepCandidate> candidates)
         {
-            GUILayout.Space(2f);
-            GUILayout.Label($"③ 候选动作与否决原因（共 {candidates.Count} 条，最多展示 3 条）", boldStyle);
+            GUILayout.Space(4f);
+            GUILayout.Label($"③ 候选动作与否决原因（共 {candidates.Count} 条，最多展示 3 条）", skin.BodyBold);
 
             var validShown = 0;
             var rejectedShown = 0;
-
-            // 临时面板按排名展示前四名（含分项）；这里只挑少量有效与否决候选做对照，
-            // 两处的展示目的不同，不共用这段筛选。
             foreach (var candidate in candidates)
             {
                 if (validShown + rejectedShown >= 3)
@@ -499,179 +545,108 @@ namespace ElysFarm.Demo
                     validShown++;
                     GUILayout.Label(
                         $"✓ {FarmDemoText.StepName(candidate.Step)} {candidate.FieldId}  {candidate.Score:0.00}",
-                        smallStyle);
+                        skin.Small);
                 }
                 else if (!candidate.IsValid && rejectedShown < 2)
                 {
                     rejectedShown++;
                     GUILayout.Label(
                         $"✕ {FarmDemoText.StepName(candidate.Step)} {candidate.FieldId} · {candidate.RejectionReason}",
-                        smallStyle);
+                        skin.Small);
                 }
             }
         }
 
         void DrawModelCall(ModelCallInfo call)
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("④", boldStyle, GUILayout.Width(18f));
-            GUILayout.Label($"最近一次模型调用：{FarmDemoText.Call(call)}", smallStyle);
-            GUILayout.EndHorizontal();
+            GUILayout.Space(4f);
+            GUILayout.Label("④ 最近一次模型调用", skin.BodyBold);
+            GUILayout.Label(FarmDemoText.Call(call), skin.Small);
         }
 
         void DrawStatus(NpcStatus status)
         {
-            GUILayout.Space(2f);
-            GUILayout.Label("⑤ 状态", boldStyle);
-            DrawStatusBar("体力", status.Stamina, StaminaColor);
-            DrawStatusBar("心情", status.Mood, MoodColor);
-            DrawStatusBar("饥饿", status.Hunger, HungerColor);
+            GUILayout.Space(4f);
+            GUILayout.Label("⑤ 状态", skin.BodyBold);
+            DrawStatusBar("体力", status.Stamina, HudSkin.Green);
+            DrawStatusBar("心情", status.Mood, new Color(0.45f, 0.68f, 0.95f));
+            DrawStatusBar("饥饿", status.Hunger, new Color(0.92f, 0.62f, 0.28f));
         }
 
         void DrawStatusBar(string name, float value, Color color)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(name, smallStyle, GUILayout.Width(30f));
-            DrawBar(value, 150f, color);
-            GUILayout.Label($"{value:P0}", smallStyle, GUILayout.Width(40f));
+            GUILayout.Label(name, skin.Small, GUILayout.Width(32f));
+            DrawBar(GUILayoutUtility.GetRect(150f, 8f), value, color);
+            GUILayout.Label($"{value:P0}", skin.Small, GUILayout.Width(44f));
             GUILayout.EndHorizontal();
         }
 
-        void DrawLogPanel()
+        void DrawLog()
         {
-            if (inspectorOpen || !demo.IsOverheadCamera)
+            GUILayout.Space(8f);
+            GUILayout.Label("流水", skin.BodyBold);
+            var log = demo.World.Log;
+            if (log.Count == 0)
             {
+                GUILayout.Label("还没有执行过工步。", skin.Small);
                 return;
             }
 
-            GUILayout.BeginArea(
-                new Rect(PanelMargin, Screen.height - 208f, Screen.width - PanelMargin * 2f, 76f),
-                GUI.skin.box);
-            GUILayout.Label("已执行的工步（流水）", boldStyle);
-
-            var log = demo.World.Log;
-            var first = Mathf.Max(0, log.Count - 2);
-            if (first == log.Count)
-            {
-                GUILayout.Label("还没有执行过工步。", smallStyle);
-            }
-
-            for (var i = first; i < log.Count; i++)
+            for (var i = Mathf.Max(0, log.Count - 4); i < log.Count; i++)
             {
                 var entry = log[i];
                 var yieldText = entry.Yield > 0 ? $" +{entry.Yield} 产出" : string.Empty;
                 var actor = demo.World.GetNpc(entry.NpcId).DisplayName;
                 GUILayout.Label(
                     $"第 {entry.Day} 天 · {actor} · {FarmDemoText.StepName(entry.Step)} {entry.FieldId}{yieldText}",
-                    labelStyle);
+                    skin.Small);
             }
-
-            GUILayout.EndArea();
         }
 
-        void DrawCommandPanel()
+        float DialogueTop()
         {
-            GUILayout.BeginArea(
-                new Rect(PanelMargin, Screen.height - 128f, Screen.width - PanelMargin * 2f, 120f),
-                GUI.skin.box);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"玩家说（对 {demo.SelectedNpc.DisplayName}）：", boldStyle, GUILayout.Width(140f));
-            commandInput = GUILayout.TextField(commandInput ?? string.Empty, 120, inputStyle, GUILayout.MinWidth(240f));
-
-            GUI.enabled = !demo.IsThinking;
-            if (GUILayout.Button("下达", buttonStyle, GUILayout.Width(52f)))
-            {
-                Submit();
-            }
-
-            if (GUILayout.Button("除草", buttonStyle, GUILayout.Width(82f)))
-            {
-                commandInput = "去东边那块地除草";
-                Submit();
-            }
-
-            if (GUILayout.Button("去种月亮", buttonStyle, GUILayout.Width(82f)))
-            {
-                commandInput = "去种月亮";
-                Submit();
-            }
-
-            if (GUILayout.Button("听说阿芽偷懒", buttonStyle, GUILayout.Width(104f)))
-            {
-                commandInput = "听说阿芽今天偷懒了";
-                Submit();
-            }
-
-            if (GUILayout.Button("你在干什么", buttonStyle, GUILayout.Width(82f)))
-            {
-                commandInput = "你在干什么";
-                Submit();
-            }
-
-            if (GUILayout.Button("怎么不去干活", buttonStyle, GUILayout.Width(96f)))
-            {
-                commandInput = "你怎么不去干活";
-                Submit();
-            }
-
-            GUI.enabled = true;
-            GUILayout.EndHorizontal();
-
-            if (Event.current.type == EventType.KeyDown
-                && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter)
-                && !demo.IsThinking
-                && !string.IsNullOrWhiteSpace(commandInput))
-            {
-                Submit();
-                Event.current.Use();
-            }
-
-            var status = demo.IsThinking
-                ? "等模型回话…（游戏没有暂停）"
-                : demo.AutonomyEnabled
-                    ? "模型" + (demo.UsingModel ? "在线" : "离线") + " · 三人自主中，点名字可换观察对象"
-                    : "模型" + (demo.UsingModel ? "在线" : "离线") + " · 三人待命";
-            GUILayout.Label($"上一句：{demo.LastPlayerText}　（{status}）", smallStyle);
-            GUILayout.Label($"NPC：{demo.LastReply}", labelStyle);
-            GUILayout.Label(demo.LastUnderstood, smallStyle);
-            GUILayout.EndArea();
+            return Screen.height - DialogueHeight;
         }
 
-        void Submit()
+        void DrawBar(Rect rect, float value, Color color)
         {
-            if (demo.IsThinking || string.IsNullOrWhiteSpace(commandInput))
+            GUI.DrawTexture(
+                rect,
+                skin.White,
+                ScaleMode.StretchToFill,
+                true,
+                0f,
+                HudSkin.BarTrough,
+                0f,
+                0f);
+
+            var fill = new Rect(
+                rect.x + 1f,
+                rect.y + 1f,
+                Mathf.Max(0f, rect.width - 2f) * Mathf.Clamp01(value),
+                Mathf.Max(0f, rect.height - 2f));
+            GUI.DrawTexture(fill, skin.White, ScaleMode.StretchToFill, true, 0f, color, 0f, 0f);
+        }
+
+        static void DrawSprite(Rect rect, Sprite sprite)
+        {
+            var texture = sprite.texture;
+            if (texture == null)
             {
                 return;
             }
 
-            demo.SubmitPlayerText(commandInput);
-            commandInput = string.Empty;
-        }
-
-        void DrawProgressBar(float progress, Color color)
-        {
-            DrawBarRect(GUILayoutUtility.GetRect(1f, 12f, GUILayout.ExpandWidth(true)), progress, color, 2f);
-        }
-
-        void DrawBar(float value, float width, Color color)
-        {
-            DrawBarRect(GUILayoutUtility.GetRect(width, 9f), value, color, 1f);
-        }
-
-        static void DrawBarRect(Rect rect, float value, Color color, float inset)
-        {
-            GUI.Box(rect, GUIContent.none);
-
-            var fill = new Rect(
-                rect.x + inset,
-                rect.y + inset,
-                Mathf.Max(0f, rect.width - inset * 2f) * Mathf.Clamp01(value),
-                Mathf.Max(0f, rect.height - inset * 2f));
-
-            var previous = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(fill, Texture2D.whiteTexture);
-            GUI.color = previous;
+            var source = sprite.rect;
+            GUI.DrawTextureWithTexCoords(
+                rect,
+                texture,
+                new Rect(
+                    source.x / texture.width,
+                    source.y / texture.height,
+                    source.width / texture.width,
+                    source.height / texture.height),
+                true);
         }
     }
 }

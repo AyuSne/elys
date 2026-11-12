@@ -51,6 +51,25 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 物品图标按二十四列切格()
+        {
+            Assert.AreEqual(new SpriteCell(8, 15, 16, 16), PixelArt.ItemCell(PixelArt.RadishSeedIcon), "萝卜种子");
+            Assert.AreEqual(new SpriteCell(9, 15, 16, 16), PixelArt.ItemCell(PixelArt.WheatSeedIcon), "小麦种子");
+            Assert.AreEqual(new SpriteCell(20, 11, 16, 16), PixelArt.ItemCell(PixelArt.RadishIcon), "萝卜");
+            Assert.AreEqual(new SpriteCell(22, 10, 16, 16), PixelArt.ItemCell(PixelArt.WheatIcon), "小麦");
+
+            Assert.IsFalse(PixelArt.ItemCell(-1).IsValid, "物品序号不能为负");
+        }
+
+        [Test]
+        public void 头像取图未知NPC与无效格位回退为空()
+        {
+            Assert.IsNull(
+                PixelArt.LoadPortrait("nobody", FaceEmotion.Neutral),
+                "未知 NPC 没有头像，应回退而不是抛异常");
+        }
+
+        [Test]
         public void 角色图按四方向四帧切格()
         {
             Assert.AreEqual(new SpriteCell(0, 0, 16, 32), PixelArt.CharacterCell(Facing.Down, 0));

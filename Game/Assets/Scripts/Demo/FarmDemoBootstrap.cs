@@ -56,7 +56,7 @@ namespace ElysFarm.Demo
         public Npc SelectedNpc { get; private set; }
 
         /// <summary>最近一次工步的结果或跨日提示。</summary>
-        public string LastMessage { get; private set; } = "第 1 天，三名 NPC 在产出仓旁待命";
+        public string LastMessage { get; private set; } = "第 1 天，三名 NPC 在产出仓旁待命。";
 
         /// <summary>玩家最近一次输入。</summary>
         public string LastPlayerText { get; private set; } = string.Empty;
@@ -66,6 +66,15 @@ namespace ElysFarm.Demo
 
         /// <summary>最近一次输入被理解成了什么，供 HUD 的「理解成」一行展示。</summary>
         public string LastUnderstood { get; private set; } = "还没有收到玩家的话";
+
+        /// <summary>对话框里此刻说话的人；开局是默认指挥对象。</summary>
+        public string SpeakerId { get; private set; } = DefaultNpcId;
+
+        /// <summary>最近一次对话的出口；头像表情由它加上此刻的状态决定。</summary>
+        public IntentOutlet LastOutlet { get; private set; } = IntentOutlet.Query;
+
+        /// <summary>最近一次农事指令是否接单；只影响表现层，不改变领域状态。</summary>
+        public bool LastAccepted { get; private set; }
 
         /// <summary>正在等模型回话；此时游戏循环照常推进。</summary>
         public bool IsThinking { get; private set; }
@@ -141,6 +150,28 @@ namespace ElysFarm.Demo
         {
             var view = ViewOf(npcId);
             return view != null ? view.Intent : string.Empty;
+        }
+
+        /// <summary>
+        /// 某名 NPC 此刻适合作头像表情的状态：休息与等模型优先于出口，
+        /// 这样「刚接单但已经累到去休息」不会还挂着一张得意的脸。
+        /// </summary>
+        public FaceCondition FaceConditionOf(string npcId)
+        {
+            var view = ViewOf(npcId);
+            if (view == null)
+            {
+                return FaceCondition.Idle;
+            }
+
+            if (view.Npc.IsResting)
+            {
+                return FaceCondition.Resting;
+            }
+
+            return IsThinking && SelectedNpc != null && SelectedNpc.Id == npcId
+                ? FaceCondition.Thinking
+                : FaceCondition.Idle;
         }
 
         /// <summary>切换 HUD 的观察与指挥对象；不影响任何 NPC 的自主行为。</summary>
@@ -223,6 +254,7 @@ namespace ElysFarm.Demo
             LastUnderstood = "正在理解…";
             IsThinking = true;
             var target = SelectedNpc;
+            SpeakerId = target.Id;
             var view = ViewOf(target.Id);
             if (view != null)
             {
@@ -252,6 +284,9 @@ namespace ElysFarm.Demo
                 }
 
                 IsThinking = false;
+                SpeakerId = target.Id;
+                LastOutlet = IntentOutlet.Query;
+                LastAccepted = false;
                 LastReply = "我脑子卡了一下，先按本地规矩干活。";
                 LastMessage = LastReply;
                 var view = ViewOf(target.Id);
@@ -267,6 +302,9 @@ namespace ElysFarm.Demo
         void ApplyIntent(IntentResult result, Npc target)
         {
             IsThinking = false;
+            SpeakerId = target.Id;
+            LastOutlet = result.Outlet;
+            LastAccepted = result.Accepted;
             LastReply = result.Reply;
 
             if (result.Call.Outcome == ModelCallOutcome.Error && !string.IsNullOrWhiteSpace(result.Call.Detail))
@@ -351,7 +389,8 @@ namespace ElysFarm.Demo
             World.DaySettled += day => LastMessage = $"第 {day} 天开始，作物结算完毕";
             AutonomyEnabled = false;
             LastMessage = "第 1 天，三名 NPC 在产出仓旁待命"
-                + (UsingModel ? "（模型在线）" : "（本地模板）");
+                + (UsingModel ? "（模型在线）" : "（本地模板）")
+                + "。";
 
             foreach (var spawn in FarmLayout.NpcSpawns)
             {
@@ -610,6 +649,9 @@ namespace ElysFarm.Demo
                 var line = retold.Line;
                 speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
                 listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
+                SpeakerId = speaker.Npc.Id;
+                LastOutlet = IntentOutlet.Chat;
+                LastAccepted = false;
                 speaker.NextActionAt = Time.time + ChatHold;
                 listener.NextActionAt = Time.time + ChatHold;
                 LastMessage = $"第 {World.Clock.Day} 天 · "

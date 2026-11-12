@@ -115,6 +115,22 @@ namespace ElysFarm.Demo
 
         public const string HoeDirtAtlasPath = "Tiles/hoeDirt";
 
+        public const string ItemAtlasPath = "Items/objects";
+
+        /// <summary>物品图集是 24 列、每格 16×16；物品序号按行优先排布。</summary>
+        public const int ItemColumns = 24;
+
+        public const int ItemFrameSize = 16;
+
+        /// <summary>背包条用的四件东西在图集里的序号：两包种子 + 两件产出。</summary>
+        public const int RadishSeedIcon = 368;
+
+        public const int WheatSeedIcon = 369;
+
+        public const int RadishIcon = 284;
+
+        public const int WheatIcon = 262;
+
         /// <summary>
         /// 立在地面上的东西（地标、树、草丛、角色）的落点：底边中点。
         /// 落点就是排序基准，换成中心会让「谁挡谁」和脚底位置一起偏。
@@ -127,6 +143,8 @@ namespace ElysFarm.Demo
         static readonly Vector2 Center = new Vector2(0.5f, 0.5f);
         static readonly Dictionary<string, Texture2D> Textures = new Dictionary<string, Texture2D>();
         static readonly Dictionary<string, Sprite> Sprites = new Dictionary<string, Sprite>();
+        static readonly Dictionary<string, Texture2D> UiTextures = new Dictionary<string, Texture2D>();
+        static readonly Dictionary<string, Sprite> UiSprites = new Dictionary<string, Sprite>();
 
         /// <summary>给演示启动时调用：环境变量要求体块时关掉素材。测试不调用，保持确定性。</summary>
         public static void ApplyEnvironmentOverride()
@@ -141,7 +159,17 @@ namespace ElysFarm.Demo
         /// <summary>清掉贴图与精灵缓存；只在测试或重新导入素材后调用。</summary>
         public static void ClearCache()
         {
-            foreach (var sprite in Sprites.Values)
+            DestroySprites(Sprites);
+            DestroySprites(UiSprites);
+            Sprites.Clear();
+            Textures.Clear();
+            UiSprites.Clear();
+            UiTextures.Clear();
+        }
+
+        static void DestroySprites(Dictionary<string, Sprite> sprites)
+        {
+            foreach (var sprite in sprites.Values)
             {
                 if (sprite == null)
                 {
@@ -157,9 +185,6 @@ namespace ElysFarm.Demo
                     UnityEngine.Object.DestroyImmediate(sprite);
                 }
             }
-
-            Sprites.Clear();
-            Textures.Clear();
         }
 
         /// <summary>按名字加载一张图；关掉素材、名字为空或图不存在时返回 null。</summary>
@@ -219,6 +244,69 @@ namespace ElysFarm.Demo
                 SpriteMeshType.FullRect);
             sprite.name = $"{name} {cell}";
             Sprites[key] = sprite;
+            return sprite;
+        }
+
+        /// <summary>
+        /// 加载 UI 素材（头像、物品图标）。UI 不受「素材开/关」影响：
+        /// 关掉素材只是把农场退回体块，HUD 不该跟着变空。
+        /// </summary>
+        public static Texture2D LoadUiTexture(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            if (UiTextures.TryGetValue(name, out var cached))
+            {
+                return cached;
+            }
+
+            try
+            {
+                var texture = Resources.Load<Texture2D>(Root + name);
+                UiTextures[name] = texture;
+                return texture;
+            }
+            catch (Exception ex)
+            {
+                // 素材缺失是常规路径，HUD 退回文字/占位，不把演示带崩。
+                Debug.LogWarning($"[Elys] UI 图加载失败：{name} · {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>按格位切出一张 UI 精灵；缺失时返回 null。</summary>
+        public static Sprite LoadUiSprite(string name, SpriteCell cell, Vector2 pivot)
+        {
+            if (string.IsNullOrEmpty(name) || !cell.IsValid)
+            {
+                return null;
+            }
+
+            var texture = LoadUiTexture(name);
+            if (texture == null || texture.width < cell.Column * cell.Width + cell.Width
+                || texture.height < cell.Row * cell.Height + cell.Height)
+            {
+                return null;
+            }
+
+            var key = $"{name}|{cell}|{pivot.x:0.###}|{pivot.y:0.###}";
+            if (UiSprites.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            var sprite = Sprite.Create(
+                texture,
+                cell.RectIn(texture.height),
+                pivot,
+                PixelsPerTile,
+                0,
+                SpriteMeshType.FullRect);
+            sprite.name = $"{name} {cell}";
+            UiSprites[key] = sprite;
             return sprite;
         }
 
@@ -289,6 +377,38 @@ namespace ElysFarm.Demo
         {
             var cell = CropStages.CellOf(speciesId, stage);
             return cell.IsValid ? LoadSprite(CropAtlasPath, cell, GroundPivot) : null;
+        }
+
+        /// <summary>物品图集里的格位；序号越界（负数）返回无效格位。</summary>
+        public static SpriteCell ItemCell(int itemId)
+        {
+            if (itemId < 0)
+            {
+                return default;
+            }
+
+            return new SpriteCell(
+                itemId % ItemColumns,
+                itemId / ItemColumns,
+                ItemFrameSize,
+                ItemFrameSize);
+        }
+
+        /// <summary>切出一件物品的图标；缺失时返回 null，由 HUD 跳过或回退。</summary>
+        public static Sprite LoadItem(int itemId)
+        {
+            var cell = ItemCell(itemId);
+            return cell.IsValid ? LoadUiSprite(ItemAtlasPath, cell, Center) : null;
+        }
+
+        /// <summary>切出某名 NPC 的某档表情头像；未知 NPC 或无效格位返回 null。</summary>
+        public static Sprite LoadPortrait(string npcId, FaceEmotion emotion)
+        {
+            var atlas = PortraitFace.AtlasOf(npcId);
+            var cell = PortraitFace.CellOf(npcId, emotion);
+            return string.IsNullOrEmpty(atlas) || !cell.IsValid
+                ? null
+                : LoadUiSprite(atlas, cell, Center);
         }
 
         /// <summary>切一块 16×16 的室外瓦片；用于生成地面 Tilemap。</summary>
