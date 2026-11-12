@@ -70,6 +70,8 @@ namespace ElysFarm.Demo
             Title = Label(18, Ink, FontStyle.Bold, TextAnchor.MiddleLeft);
             Body = Label(15, Ink, FontStyle.Normal, TextAnchor.MiddleLeft);
             BodyBold = Label(15, Ink, FontStyle.Bold, TextAnchor.MiddleLeft);
+            BodyWrap = Label(15, Ink, FontStyle.Normal, TextAnchor.UpperLeft);
+            BodyWrap.wordWrap = true;
             Small = Label(12, MutedInk, FontStyle.Normal, TextAnchor.MiddleLeft);
             SmallInk = Label(12, Ink, FontStyle.Normal, TextAnchor.MiddleLeft);
             SmallRight = Label(12, MutedInk, FontStyle.Normal, TextAnchor.UpperRight);
@@ -100,6 +102,9 @@ namespace ElysFarm.Demo
         public GUIStyle Body { get; }
 
         public GUIStyle BodyBold { get; }
+
+        /// <summary>对话框正文：允许换行，最多由调用方留两行的高度。</summary>
+        public GUIStyle BodyWrap { get; }
 
         public GUIStyle Small { get; }
 

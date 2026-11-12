@@ -10,7 +10,7 @@ namespace ElysFarm.Demo
     [DisallowMultipleComponent]
     public sealed class NpcEmote : MonoBehaviour
     {
-        /// <summary>角色一帧 16×32 = 2 世界单位高；表情底边贴在头顶上方一点。</summary>
+        /// <summary>角色一帧 16×32 = 2 世界单位高；气泡底边取 1.95，让尾巴咬进发梢而不是悬空。</summary>
         public const float HeadHeight = 1.95f;
 
         /// <summary>16px 的表情按 2× 放大到 32px（2 世界单位）。</summary>

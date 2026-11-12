@@ -130,8 +130,9 @@
 - **`GUI.TextField` 会把光标色留在 `GUI.color` 里**。紧接着画的占位文字会被冲淡成接近背景色；画占位文字前显式 `GUI.color = Color.white`，画完再还原。
 - **UI 素材不受「素材开/关」影响**：头像与物品图标走 `PixelArt.LoadUiTexture` / `LoadUiSprite`（独立缓存），不经过 `UseArt` 判断；关掉素材只让农场退回体块，HUD 仍要有头像和图标。头顶表情是农场反馈，走 `LoadSprite`，关掉素材就不画。
 - **`HudSkin` 只能在 `OnGUI` 里构造。** 它的 `Box` / `Label` / `Button` 要读 `GUI.skin`，在 `Start` 里 `new HudSkin()` 会抛 `ArgumentException: You can only call GUI functions from inside OnGUI`（#14 遗留，每次进 Play 都有；#15 改成 `OnGUI` 懒初始化，后来者别把构造搬回 `Start`）。
-- **对话框正文只留一行**：本地追问的回答能到 80+ 字，直接用 `GUI.Label` + `Clip` 会在右边硬切。走 `FarmDemoText.Shorten(..., ReplyLimit=56)` 加省略号；要显示全文就得重排对话框，别只把高度调大。
-- **2.5 秒的表情要截图就尽快**：`script eval` 提交指令 → 等模型 → 再 `capture` 往往已经超过 2.5 秒；用离线 `IntentRouter` 让 `ApplyIntent` 同步完成，或在同一帧里直接 `EmoteBoard.Post` 再立刻 `capture`。验证可见性用 `script eval` 读 `NpcEmote` 的 `SpriteRenderer.enabled`，比截图可靠。
+- **对话框正文最多两行**：本地追问的回答能到 80+ 字，直接用 `GUI.Label` + `Clip` 会在右边硬切。用 `skin.BodyWrap` + `CalcHeight` 在 27–52px 之间取高：一行时保持锚点布局，两行时把「你：…」、chips 与输入框下移并收紧行距（`Mathf.Lerp`），168 高的框仍装得下发送按钮；`Shorten(..., ReplyLimit=110)` 只兜底极端长句，别把正文截到一句。
+- **验证头顶表情的可见性**：用 `script eval` 读 `NpcEmote` 的 `SpriteRenderer.enabled` 比截图可靠（截不到“没画”）。跟拍一名 NPC、把另外两人挪到 (100,100)，应看到被跟拍者 `enabled=True`、屏外两人 `enabled=False sprite=True`；纯函数 `OverheadEmotes.IsVisible` 只判四边与相机前后，别拿 `renderer.isVisible` 代替。
+- **2.5 秒的表情要截图就尽快**：`script eval` 提交指令 → 等模型 → 再 `capture` 往往已经超过 2.5 秒；用离线 `IntentRouter` 让 `ApplyIntent` 同步完成，或在同一帧里直接 `EmoteBoard.Post` 再立刻 `capture`。
 
 - `Game/Temp/` 会被 Unity 启动时清空；`script eval --file` 的临时文件要在 Editor 打开后重写。
 

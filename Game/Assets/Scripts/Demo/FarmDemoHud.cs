@@ -32,8 +32,8 @@ namespace ElysFarm.Demo
         const float BagGap = 6f;
         const float DrawerWidth = 420f;
 
-        /// <summary>对话框正文只留一行；本地追问的回答可能很长，超出就省略，不能硬切在边外。</summary>
-        const int ReplyLimit = 56;
+        /// <summary>对话框正文最多两行；本地追问的回答可能到 80+ 字，超出就省略，不能硬切在边外。</summary>
+        const int ReplyLimit = 110;
 
         static readonly string[] Examples =
         {
@@ -360,15 +360,25 @@ namespace ElysFarm.Demo
 
             var textX = box.x + 160f;
             var textWidth = box.width - 160f - 140f;
-            GUI.Label(new Rect(textX, box.y + 12f, textWidth, 27f), DialogueLine(), skin.Body);
-            GUI.Label(new Rect(textX, box.y + 42f, textWidth, 22f), DialogueHint(), skin.Small);
+            var reply = DialogueLine();
+            var replyHeight = Mathf.Clamp(
+                skin.BodyWrap.CalcHeight(new GUIContent(reply), textWidth),
+                27f,
+                52f);
+            GUI.Label(new Rect(textX, box.y + 12f, textWidth, replyHeight), reply, skin.BodyWrap);
+
+            // 一行回答时保持锚点布局；两行时把「你：…」与 chips / 输入框往下让，
+            // 同时收紧两处行距，保证 168 高的对话框仍装得下发送按钮。
+            var extra = replyHeight - 27f;
+            var hintY = box.y + 42f + extra;
+            GUI.Label(new Rect(textX, hintY, textWidth, 22f), DialogueHint(), skin.Small);
 
             var chipX = textX;
-            const float chipY = 80f;
+            var chipY = hintY + 22f + Mathf.Lerp(16f, 2f, extra / 25f);
             foreach (var example in Examples)
             {
                 var chipWidth = skin.Chip.CalcSize(new GUIContent(example)).x + 22f;
-                if (GUI.Button(new Rect(chipX, box.y + chipY, chipWidth, 20f), example, skin.Chip))
+                if (GUI.Button(new Rect(chipX, chipY, chipWidth, 20f), example, skin.Chip))
                 {
                     commandInput = example;
                     Submit();
@@ -377,9 +387,10 @@ namespace ElysFarm.Demo
                 chipX += chipWidth + 8f;
             }
 
+            var inputY = chipY + 20f + Mathf.Lerp(6f, 4f, extra / 25f);
             var inputRect = new Rect(
                 box.x + 164f,
-                box.y + 106f,
+                inputY,
                 box.width - 164f - 128f - 14f,
                 46f);
             GUI.SetNextControlName(CommandControl);
@@ -399,7 +410,7 @@ namespace ElysFarm.Demo
                 GUI.color = previousColor;
             }
 
-            var send = new Rect(box.xMax - 128f, box.y + 108f, 94f, 42f);
+            var send = new Rect(box.xMax - 128f, inputY + 2f, 94f, 42f);
             GUI.enabled = !demo.IsThinking;
             if (GUI.Button(send, "下达", skin.Send))
             {
@@ -437,7 +448,7 @@ namespace ElysFarm.Demo
                 return "先说句话；卡片右上角可以切换她们自己找活。";
             }
 
-            return $"你：{FarmDemoText.Shorten(demo.LastPlayerText, 18)} · {demo.LastUnderstood}";
+            return $"你：{FarmDemoText.Shorten(demo.LastPlayerText, 32)} · {demo.LastUnderstood}";
         }
 
         Npc Speaker()

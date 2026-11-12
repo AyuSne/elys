@@ -70,6 +70,8 @@ namespace ElysFarm.Tests
 
             var reached = new HashSet<FaceEmotion>();
             var combinations = 0;
+            var outlets = Enum.GetValues(typeof(IntentOutlet)).Length;
+            var conditions = Enum.GetValues(typeof(FaceCondition)).Length;
             foreach (IntentOutlet outlet in Enum.GetValues(typeof(IntentOutlet)))
             {
                 foreach (var accepted in new[] { true, false })
@@ -91,7 +93,10 @@ namespace ElysFarm.Tests
                 }
             }
 
-            Assert.AreEqual(18, combinations, "出口 3 × 接单 2 × 状态 3 = 18 种组合");
+            Assert.AreEqual(
+                outlets * 2 * conditions,
+                combinations,
+                "每一种出口 × 接单与否 × 状态都要走一遍");
             Assert.AreEqual(
                 Enum.GetValues(typeof(FaceEmotion)).Length,
                 reached.Count,

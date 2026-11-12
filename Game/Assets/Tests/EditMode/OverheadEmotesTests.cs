@@ -53,15 +53,21 @@ namespace ElysFarm.Tests
             var ids = new[] { "a", "b", "c", "d" };
             for (var i = 0; i < ids.Length; i++)
             {
-                board.Post(ids[i], AllEvents[i % AllEvents.Length], i);
+                // 四次都落在 2.5 秒窗口内，否则最先那张会先过期，测不到「挤掉」。
+                board.Post(ids[i], AllEvents[i % AllEvents.Length], i * 0.5f);
             }
 
-            var active = board.ActiveAt(3f);
+            const float now = 1.5f;
+            var active = board.ActiveAt(now);
             Assert.AreEqual(OverheadEmotes.MaxConcurrent, active.Count, "同时最多三个");
             Assert.AreEqual("b", active[0].NpcId, "最早的那张先被挤掉");
             Assert.AreEqual("d", active[active.Count - 1].NpcId, "最新的那张留着");
-            Assert.IsFalse(board.TryGet("a", 3f, out _), "被挤掉的人不再有表情");
-            Assert.IsTrue(board.TryGet("d", 3f, out var newest));
+            Assert.Less(
+                now - active[0].StartedAt,
+                OverheadEmotes.Duration,
+                "被挤掉是因为超过上限，不是因为它先过期");
+            Assert.IsFalse(board.TryGet("a", now, out _), "被挤掉的人不再有表情");
+            Assert.IsTrue(board.TryGet("d", now, out var newest));
             Assert.AreEqual(EmoteEvent.Retelling, newest.Event);
         }
 
