@@ -5,6 +5,11 @@
 > 模型不可用时整条链路自动回退本地模板，演示不会卡死。
 > 三名 NPC 在同一批地块上各自用效用打分决定此刻做什么，行为差异来自人设与体力，而不是台词。
 
+> **分支说明（2026-11-12）**：`main` 仍是 #9 的 3D 可交付版本；`feature/2d-presentation` 正在把表现层
+> 换成 2D 像素农场（#12 起，见 [docs/spec/2d-presentation.md](docs/spec/2d-presentation.md) 与
+> [ADR-0005](docs/adr/0005-2d-pixel-presentation.md)）。下面关于 3D 素材、截图与测试的描述属于 `main`；
+> 2D 分支的 README 收口在 T5（#16）。
+
 ![俯视 45° 的农场：三名 NPC 在农场里，三块地分别处在萝卜幼苗、萝卜生长中与成熟小麦的阶段，农舍、风车、水井、树木与自然物件都换成了 Quaternius 素材](docs/images/art-overview.png)
 
 这是 #9 之后的状态：农场换成了 Quaternius 的低模素材，作物按五个生长阶段换模型，
@@ -296,6 +301,10 @@ $env:ELYS_SECRETS_FILE = 'D:\keys\elys.json'
 8. 一个游戏日等于 5 分钟真实时间。萝卜 3 个游戏日成熟，想快点看收获就切 16x。
 
 ## 素材与许可
+
+> 2D 分支新增的像素素材来自《星露谷物语》原图集，**仅用于本仓库的私有演示，不随演示包对外分发**。
+> 下面关于 CC0 的结论只适用于 3D 旧素材（Quaternius），不适用于这些像素图（见
+> [ADR-0005](docs/adr/0005-2d-pixel-presentation.md) 与 `Game/Assets/Resources/PixelArt/README.md`）。
 
 农场里的模型全部来自 [Quaternius](https://quaternius.com)，许可为
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)。仓库只提交了演示要用的子集

@@ -45,7 +45,7 @@ namespace ElysFarm.Demo
         public static FarmPosition RestSpot =>
             FarmLayout.ToFarmPosition(FarmLayout.TileCenter(FarmLayout.RestSpotTile));
 
-        /// <summary>产出仓的标记点；NPC 走到这里就算到了仓库。</summary>
+        /// <summary>产出仓的标记点；NPC 走到这里就算到了产出仓。</summary>
         public static FarmPosition ProduceStoreSpot =>
             FarmLayout.ToFarmPosition(FarmLayout.TileCenter(FarmLayout.ProduceStoreTile));
 
@@ -86,7 +86,7 @@ namespace ElysFarm.Demo
         public bool UsingArt => PixelArt.UseArt;
 
         /// <summary>当前是否俯视机位。</summary>
-        public bool IsOverheadCamera => cameraDirector == null || cameraDirector.Mode == CameraMode.Overview;
+        public bool IsOverheadCamera => cameraDirector == null || cameraDirector.Mode == CameraMode.Overhead;
 
         Transform visualRoot;
         Transform npcRoot;
@@ -321,9 +321,9 @@ namespace ElysFarm.Demo
         {
             World = new FarmWorld(new FarmClock());
 
-            foreach (var plot in FarmLayout.Fields)
+            foreach (var footprint in FarmLayout.Fields)
             {
-                World.AddField(plot.Id, FarmLayout.ToFarmPosition(plot.Center), 0.3f);
+                World.AddField(footprint.Id, FarmLayout.ToFarmPosition(footprint.Center), 0.3f);
             }
 
             foreach (var spawn in FarmLayout.NpcSpawns)
@@ -359,7 +359,7 @@ namespace ElysFarm.Demo
 
             if (visualRoot != null)
             {
-                DestroyObject(visualRoot.gameObject);
+                DemoMaterials.DestroyObject(visualRoot.gameObject);
             }
 
             visualRoot = new GameObject("Farm Visuals").transform;
@@ -463,23 +463,6 @@ namespace ElysFarm.Demo
             }
         }
 
-        static void DestroyObject(UnityEngine.Object target)
-        {
-            if (target == null)
-            {
-                return;
-            }
-
-            if (Application.isPlaying)
-            {
-                UnityEngine.Object.Destroy(target);
-            }
-            else
-            {
-                UnityEngine.Object.DestroyImmediate(target);
-            }
-        }
-
         /// <summary>行走速度是表现层参数，不进领域人设；只影响观感，不影响效用打分。</summary>
         static float WalkSpeedOf(string npcId)
         {
@@ -499,7 +482,7 @@ namespace ElysFarm.Demo
         /// <summary>把相机摆到俯视 3× 的演示机位；场景生成器与运行时共用同一组数值。</summary>
         public static void ApplyCameraPose(Camera camera)
         {
-            DemoCamera.ApplyOverviewTo(camera);
+            DemoCamera.ApplyOverheadTo(camera);
         }
 
         void UpdateNpc(NpcView view)
@@ -639,13 +622,13 @@ namespace ElysFarm.Demo
         /// <summary>走到地块南侧、离地一格的位置；三个站位横向错开，避免三个人叠在一起。</summary>
         public static Vector2 FieldStandPoint(string fieldId, int slot)
         {
-            if (!FarmLayout.TryGetField(fieldId, out var plot))
+            if (!FarmLayout.TryGetField(fieldId, out var footprint))
             {
-                return FarmLayout.OverviewCenter;
+                return FarmLayout.OverheadCenter;
             }
 
-            var center = FarmLayout.TileCenter(plot.Tiles);
-            return new Vector2(center.x + (slot - 1) * 0.8f, plot.Tiles.y - 0.5f);
+            var center = FarmLayout.TileCenter(footprint.Tiles);
+            return new Vector2(center.x + (slot - 1) * 0.8f, footprint.Tiles.y - 0.5f);
         }
 
         void BeginWalk(NpcView view, Vector2 target, string intent)
@@ -659,7 +642,7 @@ namespace ElysFarm.Demo
 
         Vector2 RestTargetOf(NpcView view)
         {
-            var spot = FarmLayout.TileCenter(FarmLayout.RestSpotTile);
+            var spot = FarmLayout.ToWorld(RestSpot);
             return new Vector2(spot.x + (view.Slot - 1) * 0.8f, spot.y);
         }
 

@@ -29,9 +29,9 @@
 
 - 需要 `await` 的 EditMode 测试直接写 `[Test] public async Task ...`，不需要 `[UnityTest]` 协程。用 `Task.WhenAny` + 很小的 deadline 测超时，别用 `.Result` / `.Wait()` 阻塞主线程。
 - 测试程序集 `overrideReferences: true` 时，引用新 asmdef（例如 `ElysFarm.Model`）要显式加进 `references`；想在测试里直接用 Newtonsoft 还要加 `precompiledReferences`，否则编译不到。
-- 全套 132 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
-- #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。
-- 素材测试用 `Resources.Load` 读 `Assets/Resources/Quaternius`：FBX 没导入/被移走时会红。`ArtMaterialTests` 扫 FBX 子资产材质，重导入后必须仍是 URP。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
+- 全套 130+ 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
+- #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。2D 的纯逻辑测试（`CameraRig`、`CropStages`、`PixelArt`、`FarmLayout`、`SortingOrder`）同样只引这个程序集。
+- 2D 的素材测试不 `Resources.Load` 真实 PNG（贴图被移走就红）；切格与四方向都用纯函数断言，素材本身由 Play Mode 截图验收。3D 版本（`main`）仍用 `Resources/Quaternius` 与 `ArtMaterialTests`。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
 
 ## 驱动 Editor 与验证演示
 
@@ -55,10 +55,11 @@
   ```
 
   生成后提交场景与 `.meta`。
-- 场景相机与运行时共用 `DemoCamera.ApplyPoseTo`（场景生成器经 `FarmDemoBootstrap.ApplyCameraPose` 调它，姿态来自 `CameraRig.OverheadPose`）；改了机位要重新生成场景，否则提交的场景与运行时不一致。
-- URP 里 `GameObject.CreatePrimitive` 的默认材质属于内置管线（粉色）。运行时建块必须显式赋 `Universal Render Pipeline/Lit`。
+- 场景相机与运行时共用 `DemoCamera.ApplyOverheadTo`（场景生成器经 `FarmDemoBootstrap.ApplyCameraPose` 调它，位置来自 `FarmLayout.OverheadCenter`、倍率来自 `CameraRig.OverheadZoom`）；改了机位要重新生成场景，否则提交的场景与运行时不一致。
+- 体块回退用 `Universal Render Pipeline/Unlit`（`DemoMaterials.BlockShaderName`），不参与光照；URP 里 `GameObject.CreatePrimitive` 的默认材质属于内置管线（粉色），必须显式赋 shader。
 - 本工程 `activeInputHandler: 1`（只启用新 Input System），`Input.GetKeyDown` 会在运行时抛异常。演示输入用 IMGUI 按钮或新 Input System。
 - 新建场景会生成 `ProjectSettings/SceneTemplateSettings.json`；不属于本次功能，别顺手提交。
+- **以下四条是 `main` 上 3D 版本（Quaternius FBX）的坑；2D 分支已不用 FBX，保留作历史参考。**
 - **Quaternius 的 FBX 自带 Blender 场景的相机与灯。** 不关掉的话，每实例化一个模型就多一个 `depth=0`、`clear=Skybox` 的相机，Game 视图会变成纯背景色（HUD 却照常刷新，很容易误判成相机或 URP 坏了）。在 `AssetPostprocessor.OnPreprocessModel` 里设 `importCameras = false`、`importLights = false`，并在 `ModelPlacement.Spawn` 里删一遍兜底；改完要 `AssetDatabase.ImportAsset(..., ForceUpdate)` 重导入全部 FBX。`FindObjectsByType<Camera>()` 里莫名多出 20+ 个 `Camera` 就是这个。
 - **Nature pack vol.3 是白模。** 树、灌木、草、石头的材质全是接近白色，靠使用方染色；`ModelPlacement.Tint` 用 MaterialPropertyBlock 给树四种绿、石头灰、草绿。不染会得到一片白色树石。
 - **模型 pivot 不统一。** 有的在脚底、有的在中心，有的带 270° X 轴校正（作物/农舍）而角色没有。落位统一用 `ModelPlacement.SnapToGround` 按渲染器世界包围盒水平居中、底部贴地；不要直接 `transform.position = target` 后 `localRotation = identity`（会把作物的 Z-up 校正转掉，作物全躺在地上）。

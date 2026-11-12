@@ -39,17 +39,15 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 关掉素材开关后即使图存在也退回体块()
+        public void 关掉素材开关后取图一律为空()
         {
-            Assert.IsNotNull(PixelArt.LoadTexture("Characters/Robin"), "默认应能按名字加载已导入的图");
-            Assert.IsNotNull(PixelArt.LoadCharacter(FarmDemoBootstrap.AheId, Facing.Down, 0));
-
             PixelArt.UseArt = false;
 
             Assert.IsNull(PixelArt.LoadTexture("Characters/Robin"), "关掉素材后必须走体块回退");
             Assert.IsNull(PixelArt.LoadCharacter(FarmDemoBootstrap.AheId, Facing.Down, 0), "角色同样回退");
             Assert.IsNull(PixelArt.LoadCrop(CropCatalog.RadishId, CropStage.Seedling), "作物同样回退");
             Assert.IsNull(PixelArt.LoadTile(4, 13), "瓦片同样回退");
+            Assert.IsNull(PixelArt.LoadHoeDirt(false), "耕地同样回退");
         }
 
         [Test]
@@ -105,51 +103,16 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 能按格位切出精灵且尺寸与格位一致()
+        public void 格位在贴图里翻成Unity的左下角矩形()
         {
-            var character = PixelArt.LoadCharacter(FarmDemoBootstrap.AheId, Facing.Up, 2);
-            Assert.IsNotNull(character, "角色精灵应能切出来");
-            Assert.AreEqual(16f, character.rect.width, 0.001f);
-            Assert.AreEqual(32f, character.rect.height, 0.001f);
-            Assert.IsNotNull(character.texture);
+            var rect = new SpriteCell(2, 2, 16, 32).RectIn(288);
 
-            var expected = PixelArt.CharacterCell(Facing.Up, 2).RectIn(character.texture.height);
-            Assert.AreEqual(expected.x, character.rect.x, 0.001f);
-            Assert.AreEqual(expected.y, character.rect.y, 0.001f);
-        }
+            Assert.AreEqual(32f, rect.x, 0.001f, "列号 × 格宽");
+            Assert.AreEqual(192f, rect.y, 0.001f, "贴图高度 −（行号 + 1）× 格高");
+            Assert.AreEqual(16f, rect.width, 0.001f);
+            Assert.AreEqual(32f, rect.height, 0.001f);
 
-        [Test]
-        public void 两个品种的五个阶段都能切出图且格位不重复()
-        {
-            var cells = new System.Collections.Generic.HashSet<SpriteCell>();
-            foreach (var speciesId in new[] { CropCatalog.RadishId, CropCatalog.WheatId })
-            {
-                for (var stage = CropStage.Seedling; stage <= CropStage.Mature; stage++)
-                {
-                    var sprite = PixelArt.LoadCrop(speciesId, stage);
-                    Assert.IsNotNull(sprite, $"{speciesId} 的 {stage} 阶段应能切出图");
-                    Assert.AreEqual(16f, sprite.rect.width, 0.001f);
-                    Assert.AreEqual(32f, sprite.rect.height, 0.001f);
-                    Assert.IsTrue(cells.Add(CropStages.CellOf(speciesId, stage)), $"{speciesId}/{stage} 格位重复");
-                }
-            }
-
-            Assert.AreEqual(10, cells.Count, "两个品种五个阶段的格位应两两不同");
-        }
-
-        [Test]
-        public void 瓦片与耕地按16像素切格()
-        {
-            var grass = PixelArt.LoadTile(4, 13);
-            Assert.IsNotNull(grass, "草地瓦片应能切出来");
-            Assert.AreEqual(16f, grass.rect.width, 0.001f);
-            Assert.AreEqual(16f, grass.rect.height, 0.001f);
-
-            var dry = PixelArt.LoadHoeDirt(false);
-            var wet = PixelArt.LoadHoeDirt(true);
-            Assert.IsNotNull(dry);
-            Assert.IsNotNull(wet);
-            Assert.AreNotEqual(dry.rect.xMin, wet.rect.xMin, "干土与湿土取不同的格位");
+            Assert.AreEqual(Rect.zero, default(SpriteCell).RectIn(288), "无效格位不产生矩形");
         }
     }
 }

@@ -1,7 +1,7 @@
 # ALIGNMENT — 对齐文档
 
 > 面试实践题「AI 小世界里的模拟经营」的实施共识。**这份文档是双方理解一致的证据**，任何后续偏离都应先改这里。
-> 最后更新：2026-11-11
+> 最后更新：2026-11-12（2D 表现层切换见 ADR-0005）
 
 ## 一、题目要求与验收方式
 
@@ -22,7 +22,7 @@
 | 1 | 交付物：Windows 可运行包 + 源码仓 + 2–3 分钟录屏 |
 | 2 | 无硬期限；先按 **7 天**做一个能交的版本，之后每步都是净赚 |
 | 3 | **可交付切点在第 3 天结束**——那天之后每天都只是加分 |
-| 4 | 仓库保持**私有**（Quaternius QAL v1.0 禁止再分发素材本身） |
+| 4 | 仓库保持**私有**（Quaternius QAL v1.0 与星露谷原画都禁止再分发素材本身） |
 
 ### 产品
 
@@ -31,7 +31,7 @@
 | 5 | 玩家**只指挥 + 观察 + 干预**（下指令、取消/改派、看面板、追问），不手动种地 |
 | 6 | 输入支持三类：**农事指令** + **追问状态** + **闲聊**，由同一条管道分类。追问与闲聊**不改变任何游戏状态**，但闲聊写回记忆（importance 由模型打分） |
 | 7 | **3 个 NPC**，支持两人对话与信息传播；不做 5–8 个 |
-| 8 | 视角：**俯视 45° 为主**，可切到任一 NPC 的第三人称跟拍 |
+| 8 | 视角：**俯视 3× 正交为主**（一格 48px），可切到任一 NPC 的 **4× 跟随**（见 ADR-0005） |
 | 9 | 亮点：**决策可视化调试层**（仅五项，见 §四） |
 | 10 | 验收剧本：3 分钟固定流程跑三遍（全流程 / 拒绝与抱怨 / 记忆体现） |
 
@@ -64,8 +64,8 @@
 | 23 | Embedding：硅基流动 `BAAI/bge-m3`（8192 token、1024 维） |
 | 24 | **自写 HTTP 客户端**（UnityWebRequest + Newtonsoft），不用 C# SDK（见 ADR-0003） |
 | 25 | 其他依赖：UniTask、Unity 官方 AI Navigation / uGUI / TextMeshPro |
-| 26 | 渲染管线：**URP** + 导入后自动转换材质的编辑器脚本 |
-| 27 | 素材：**全 Quaternius**（Ultimate Crops / Farm Buildings / Nature pack vol.3 / Ultimate Animated Character，均 CC0），仓库只提交演示子集（约 5 MB，`Assets/Resources/Quaternius`），来源与许可见 README；Google Drive 的 `gdown --folder` 因限流未采用，改用 OpenGameArt / itch.io 镜像。`Universal Base Characters` 的 glTF + UAL2 重定向留作后续，不阻塞本票 |
+| 26 | 渲染管线：**URP**；2D 表现层用正交相机 + 运行时 Tilemap/Sprite，不再依赖 FBX 与材质转换（见 ADR-0005） |
+| 27 | 素材：3D 旧版为 **全 Quaternius**（CC0）；2D 表现层改用原作游戏图集（**仅演示、仓库私有，不随包外分发**）。仓库只提交演示子集（`Assets/Resources/PixelArt`），来源与许可见 README 的「素材与许可」与 ADR-0005 |
 
 ## 三、架构
 

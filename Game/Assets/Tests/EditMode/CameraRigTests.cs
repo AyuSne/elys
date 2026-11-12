@@ -15,11 +15,11 @@ namespace ElysFarm.Tests
         {
             var rig = new CameraRig();
 
-            Assert.AreEqual(CameraMode.Overview, rig.Mode, "开局应是俯视");
+            Assert.AreEqual(CameraMode.Overhead, rig.Mode, "开局应是俯视");
             Assert.IsNull(rig.FollowNpcId, "俯视时不跟拍任何人");
             Assert.AreEqual(3f, rig.Zoom, 0.0001f, "俯视固定 3×");
             Assert.AreEqual(48f, rig.TileScreenPixels, 0.0001f, "一格 16px × 3 = 48 屏幕像素");
-            Assert.AreEqual(FarmLayout.OverviewCenter, rig.Center, "俯视看向农场中心");
+            Assert.AreEqual(FarmLayout.OverheadCenter, rig.Center, "俯视看向农场中心");
             Assert.AreEqual(7.5f, rig.OrthographicSize(720), 0.0001f, "720 高、48px/格时正交半高 7.5 格");
             Assert.AreEqual(11.25f, rig.OrthographicSize(1080), 0.0001f);
         }
@@ -50,7 +50,7 @@ namespace ElysFarm.Tests
             var rig = new CameraRig();
 
             Assert.IsFalse(rig.Follow("nobody"), "未知 NPC 不应进入跟拍");
-            Assert.AreEqual(CameraMode.Overview, rig.Mode);
+            Assert.AreEqual(CameraMode.Overhead, rig.Mode);
             Assert.AreEqual(3f, rig.Zoom, 0.0001f);
 
             Assert.IsTrue(rig.Follow(FarmDemoBootstrap.AyaId));
@@ -70,12 +70,12 @@ namespace ElysFarm.Tests
             Assert.IsFalse(rig.IsFollowing(FarmDemoBootstrap.AheId), "跟拍对象应只剩一个");
 
             rig.Track(new Vector2(9f, 9f));
-            rig.Overview();
+            rig.Overhead();
 
-            Assert.AreEqual(CameraMode.Overview, rig.Mode);
+            Assert.AreEqual(CameraMode.Overhead, rig.Mode);
             Assert.IsNull(rig.FollowNpcId);
             Assert.AreEqual(3f, rig.Zoom, 0.0001f, "切回俯视应回到 3×");
-            Assert.AreEqual(FarmLayout.OverviewCenter, rig.Center, "切回俯视应回到农场中心");
+            Assert.AreEqual(FarmLayout.OverheadCenter, rig.Center, "切回俯视应回到农场中心");
         }
 
         [Test]

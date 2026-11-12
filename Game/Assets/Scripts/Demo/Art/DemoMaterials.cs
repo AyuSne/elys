@@ -66,16 +66,6 @@ namespace ElysFarm.Demo
             return Primitive(PrimitiveType.Cube, name, parent, position, scale, color);
         }
 
-        public static GameObject Cylinder(
-            string name,
-            Transform parent,
-            Vector3 position,
-            Vector3 scale,
-            Color color)
-        {
-            return Primitive(PrimitiveType.Cylinder, name, parent, position, scale, color);
-        }
-
         static GameObject Primitive(
             PrimitiveType type,
             string name,

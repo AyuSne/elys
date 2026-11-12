@@ -6,7 +6,7 @@ namespace ElysFarm.Demo
 {
     /// <summary>
     /// 场景的底：俯视时用运行时 Tilemap 铺满草地，素材关掉或缺失时退回一整块绿色体块。
-    /// 本票只做地面；建筑、土路、树木与 Y 排序留给 T2。
+    /// 本票只做地面与按 Y 的绘制顺序；建筑、土路与树木留给 T2。
     /// </summary>
     public static class FarmDressing
     {

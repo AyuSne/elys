@@ -5,7 +5,7 @@ namespace ElysFarm.Demo
     /// <summary>相机档位：俯视看全局，跟拍看一名 NPC 的细节。</summary>
     public enum CameraMode
     {
-        Overview,
+        Overhead,
         Follow
     }
 
@@ -18,24 +18,24 @@ namespace ElysFarm.Demo
     public sealed class CameraRig
     {
         /// <summary>俯视倍率：一格 16px 显示为 48 屏幕像素。</summary>
-        public const float OverviewZoom = 3f;
+        public const float OverheadZoom = 3f;
 
         /// <summary>跟拍倍率：一格 16px 显示为 64 屏幕像素。</summary>
         public const float FollowZoom = 4f;
 
-        public CameraMode Mode { get; private set; } = CameraMode.Overview;
+        public CameraMode Mode { get; private set; } = CameraMode.Overhead;
 
         /// <summary>正在跟拍的 NPC；俯视时为 null。</summary>
         public string FollowNpcId { get; private set; }
 
         /// <summary>当前倍率：俯视 3×、跟拍 4×。</summary>
-        public float Zoom => Mode == CameraMode.Follow ? FollowZoom : OverviewZoom;
+        public float Zoom => Mode == CameraMode.Follow ? FollowZoom : OverheadZoom;
 
         /// <summary>一格在当前倍率下的屏幕像素数。</summary>
         public float TileScreenPixels => FarmLayout.PixelsPerTile * Zoom;
 
         /// <summary>相机在世界里的观察中心（x 右、y 上）。</summary>
-        public Vector2 Center { get; private set; } = FarmLayout.OverviewCenter;
+        public Vector2 Center { get; private set; } = FarmLayout.OverheadCenter;
 
         public bool IsFollowing(string npcId)
         {
@@ -43,11 +43,11 @@ namespace ElysFarm.Demo
                 && string.Equals(FollowNpcId, npcId, System.StringComparison.Ordinal);
         }
 
-        public void Overview()
+        public void Overhead()
         {
-            Mode = CameraMode.Overview;
+            Mode = CameraMode.Overhead;
             FollowNpcId = null;
-            Center = FarmLayout.OverviewCenter;
+            Center = FarmLayout.OverheadCenter;
         }
 
         /// <summary>锁定一名已知 NPC 并切到 4×；未知 id 返回 false 且不改动当前档位。</summary>

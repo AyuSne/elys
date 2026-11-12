@@ -7,9 +7,9 @@ using UnityEngine;
 namespace ElysFarm.Demo
 {
     /// <summary>一块地在瓦片网格上的占位与中心点。</summary>
-    public readonly struct FieldPlot
+    public readonly struct FieldFootprint
     {
-        public FieldPlot(string id, RectInt tiles)
+        public FieldFootprint(string id, RectInt tiles)
         {
             Id = id;
             Tiles = tiles;
@@ -51,21 +51,21 @@ namespace ElysFarm.Demo
         /// <summary>一块地是 3×3 瓦片，正好放下九株作物。</summary>
         public const int FieldTiles = 3;
 
-        /// <summary>可走范围：相机在俯视 3× 下看得见的一整块地面。</summary>
+        /// <summary>可走范围：比俯视 3× 的可见范围略大，地面与最外侧一格都有余量。</summary>
         public static readonly RectInt Walkable = new RectInt(-13, -7, 27, 15);
 
         /// <summary>俯视机位的观察中心。</summary>
-        public static readonly Vector2 OverviewCenter = Vector2.zero;
+        public static readonly Vector2 OverheadCenter = Vector2.zero;
 
         public static readonly Vector2Int ProduceStoreTile = new Vector2Int(-4, -3);
 
         public static readonly Vector2Int RestSpotTile = new Vector2Int(2, -3);
 
-        static readonly FieldPlot[] FieldPlotArray =
+        static readonly FieldFootprint[] FieldFootprintArray =
         {
-            new FieldPlot(FarmDemoBootstrap.FieldA1, new RectInt(-6, 1, FieldTiles, FieldTiles)),
-            new FieldPlot(FarmDemoBootstrap.FieldA2, new RectInt(-2, 1, FieldTiles, FieldTiles)),
-            new FieldPlot(FarmDemoBootstrap.FieldA3, new RectInt(2, 1, FieldTiles, FieldTiles))
+            new FieldFootprint(FarmDemoBootstrap.FieldA1, new RectInt(-6, 1, FieldTiles, FieldTiles)),
+            new FieldFootprint(FarmDemoBootstrap.FieldA2, new RectInt(-2, 1, FieldTiles, FieldTiles)),
+            new FieldFootprint(FarmDemoBootstrap.FieldA3, new RectInt(2, 1, FieldTiles, FieldTiles))
         };
 
         static readonly NpcSpawn[] NpcSpawnArray =
@@ -75,31 +75,31 @@ namespace ElysFarm.Demo
             new NpcSpawn(FarmDemoBootstrap.AtuId, new Vector2Int(2, -1))
         };
 
-        static readonly ReadOnlyCollection<FieldPlot> FieldPlotList =
-            new ReadOnlyCollection<FieldPlot>(FieldPlotArray);
+        static readonly ReadOnlyCollection<FieldFootprint> FieldFootprintList =
+            new ReadOnlyCollection<FieldFootprint>(FieldFootprintArray);
 
         static readonly ReadOnlyCollection<NpcSpawn> NpcSpawnList =
             new ReadOnlyCollection<NpcSpawn>(NpcSpawnArray);
 
-        public static IReadOnlyList<FieldPlot> Fields => FieldPlotList;
+        public static IReadOnlyList<FieldFootprint> Fields => FieldFootprintList;
 
         public static IReadOnlyList<NpcSpawn> NpcSpawns => NpcSpawnList;
 
-        public static bool TryGetField(string fieldId, out FieldPlot plot)
+        public static bool TryGetField(string fieldId, out FieldFootprint footprint)
         {
             if (!string.IsNullOrEmpty(fieldId))
             {
-                foreach (var candidate in FieldPlotArray)
+                foreach (var candidate in FieldFootprintArray)
                 {
                     if (string.Equals(candidate.Id, fieldId, StringComparison.Ordinal))
                     {
-                        plot = candidate;
+                        footprint = candidate;
                         return true;
                     }
                 }
             }
 
-            plot = default;
+            footprint = default;
             return false;
         }
 
@@ -143,12 +143,6 @@ namespace ElysFarm.Demo
         public static Vector2 ToWorld(FarmPosition position)
         {
             return new Vector2(position.X, position.Z);
-        }
-
-        /// <summary>瓦片矩形覆盖的世界范围，便于画地面或判断是否出界。</summary>
-        public static Rect WorldRect(RectInt tiles)
-        {
-            return new Rect(tiles.x, tiles.y, tiles.width, tiles.height);
         }
     }
 }

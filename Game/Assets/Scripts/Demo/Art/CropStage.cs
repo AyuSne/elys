@@ -31,7 +31,8 @@ namespace ElysFarm.Demo
     /// <summary>
     /// 生长进度到阶段、再到图集格位的映射。
     /// 原作作物图集把每个品种排成一条 8 格的横条：两个品种共用一行，各占 8 列。
-    /// 这里只取其中五格，让五个阶段两两可区分；成熟取整条的最后格（带果实/金黄那一格）。
+    /// 这里只取其中五格，让五个阶段两两可区分；成熟取每个品种带果实/金黄的那一格
+    /// （萝卜第 6 格、小麦第 5 格，最后一格留给留茬再生）。
     /// </summary>
     public static class CropStages
     {
@@ -108,7 +109,7 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>某品种的五个阶段取横条上的第几格。萝卜与小麦的成熟格不同。</summary>
-        public static int PhaseColumnOf(string speciesId, CropStage stage)
+        static int PhaseColumnOf(string speciesId, CropStage stage)
         {
             var wheat = speciesId == CropCatalog.WheatId;
             switch (stage)

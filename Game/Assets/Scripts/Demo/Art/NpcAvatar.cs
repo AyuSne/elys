@@ -52,11 +52,12 @@ namespace ElysFarm.Demo
             var shadowSprite = PixelArt.LoadShadow();
             if (shadowSprite != null)
             {
-                shadow = CreateSprite("Shadow", transform, shadowSprite, new Vector2(0f, 0.06f), SortingOrder.At(0f, 1));
+                shadow = SpriteObject.Create("Shadow", transform, shadowSprite, SortingOrder.At(0f, 1));
+                shadow.transform.localPosition = new Vector3(0f, 0.06f, 0f);
                 shadow.color = new Color(1f, 1f, 1f, 0.45f);
             }
 
-            body = CreateSprite("Body", transform, sprite, Vector2.zero, SortingOrder.At(0f, 5));
+            body = SpriteObject.Create("Body", transform, sprite, SortingOrder.At(0f, 5));
         }
 
         void BuildBlocks(Color fallbackColor)
@@ -198,23 +199,6 @@ namespace ElysFarm.Demo
                 default:
                     return new Vector3(0f, BlockHeight * 0.55f, BlockZ - 0.25f);
             }
-        }
-
-        static SpriteRenderer CreateSprite(
-            string name,
-            Transform parent,
-            Sprite sprite,
-            Vector2 localPosition,
-            int sortingOrder)
-        {
-            var gameObject = new GameObject(name);
-            gameObject.transform.SetParent(parent, false);
-            gameObject.transform.localPosition = new Vector3(localPosition.x, localPosition.y, 0f);
-
-            var renderer = gameObject.AddComponent<SpriteRenderer>();
-            renderer.sprite = sprite;
-            renderer.sortingOrder = sortingOrder;
-            return renderer;
         }
     }
 }

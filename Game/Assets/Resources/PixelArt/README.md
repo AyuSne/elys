@@ -8,9 +8,9 @@
 | 文件 | 用途 |
 | --- | --- |
 | `Characters/Robin.png`、`Haley.png`、`Gus.png` | 三名 NPC 的四方向行走图（16×32/帧，4 列 × 4 行） |
-| `Crops/crops.png` | 作物五阶段图集（每个品种 8 个阶段的横条，见 `PixelArt`） |
+| `Crops/crops.png` | 作物图集：每个品种 8 格横条（本演示取其中 5 个阶段，见 `CropStages`） |
 | `Tiles/spring_outdoors.png` | 春季室外瓦片（16×16/格） |
-| `Tiles/hoeDirt.png` | 耕地土块（干/湿各四列） |
+| `Tiles/hoeDirt.png` | 耕地土块（干/湿各四列；代码取干土第 3 列、湿土第 7 列，即 2/6） |
 | `LooseSprites/shadow.png` | 角色脚下的影子 |
 
 导入规则在 `Assets/Editor/PixelArtImportPostprocessor.cs`：点采样、无压缩、无 mipmap。

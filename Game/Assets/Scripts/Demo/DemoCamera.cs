@@ -31,7 +31,7 @@ namespace ElysFarm.Demo
         public string FollowNpcId => Rig.FollowNpcId;
 
         /// <summary>场景生成器与运行时共用：把相机摆成俯视 3× 的初始状态。</summary>
-        public static void ApplyOverviewTo(Camera camera)
+        public static void ApplyOverheadTo(Camera camera)
         {
             if (camera == null)
             {
@@ -39,12 +39,13 @@ namespace ElysFarm.Demo
             }
 
             camera.orthographic = true;
-            camera.orthographicSize = CameraRig.OrthographicSizeFor(CameraRig.OverviewZoom, 720);
+            camera.orthographicSize = CameraRig.OrthographicSizeFor(CameraRig.OverheadZoom, 720);
             camera.transform.SetPositionAndRotation(
-                new Vector3(FarmLayout.OverviewCenter.x, FarmLayout.OverviewCenter.y, -10f),
+                new Vector3(FarmLayout.OverheadCenter.x, FarmLayout.OverheadCenter.y, -10f),
                 Quaternion.identity);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = BackgroundColor;
+            ApplySorting(camera);
         }
 
         public void Configure(Camera camera)
@@ -55,17 +56,17 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            Rig.Overview();
-            center = FarmLayout.OverviewCenter;
+            Rig.Overhead();
+            center = FarmLayout.OverheadCenter;
             snapNextPose = true;
             ApplyCamera();
         }
 
         public void SetOverhead()
         {
-            Rig.Overview();
+            Rig.Overhead();
             followTarget = null;
-            center = FarmLayout.OverviewCenter;
+            center = FarmLayout.OverheadCenter;
             snapNextPose = true;
             ApplyCamera();
         }
@@ -125,7 +126,7 @@ namespace ElysFarm.Demo
                 return new Vector2(position.x, position.y + FollowLookHeight);
             }
 
-            return FarmLayout.OverviewCenter;
+            return FarmLayout.OverheadCenter;
         }
 
         void ApplyCamera()
@@ -142,6 +143,17 @@ namespace ElysFarm.Demo
                 Quaternion.identity);
             targetCamera.clearFlags = CameraClearFlags.SolidColor;
             targetCamera.backgroundColor = BackgroundColor;
+            ApplySorting(targetCamera);
+        }
+
+        /// <summary>
+        /// 规范要求的按 Y 排序：自定义轴 (0,1,0)。SpriteRenderer 另有 sortingOrder，
+        /// 体块回退与将来的建筑/树共用这套轴。
+        /// </summary>
+        static void ApplySorting(Camera camera)
+        {
+            camera.transparencySortMode = TransparencySortMode.CustomAxis;
+            camera.transparencySortAxis = new Vector3(0f, 1f, 0f);
         }
     }
 }

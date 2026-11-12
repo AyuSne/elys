@@ -79,19 +79,22 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 产出仓与休息点不压在地块上()
+        public void 地标之间两两不重叠()
         {
             foreach (var field in FarmLayout.Fields)
             {
                 Assert.IsFalse(field.Tiles.Contains(FarmLayout.ProduceStoreTile), "产出仓不应在地块里");
                 Assert.IsFalse(field.Tiles.Contains(FarmLayout.RestSpotTile), "休息点不应在地块里");
+
+                foreach (var spawn in FarmLayout.NpcSpawns)
+                {
+                    Assert.IsFalse(field.Tiles.Contains(spawn.Tile), $"{spawn.Id} 的起点不应落在地块里");
+                    Assert.AreNotEqual(spawn.Tile, FarmLayout.ProduceStoreTile);
+                    Assert.AreNotEqual(spawn.Tile, FarmLayout.RestSpotTile);
+                }
             }
 
-            foreach (var spawn in FarmLayout.NpcSpawns)
-            {
-                Assert.AreNotEqual(spawn.Tile, FarmLayout.ProduceStoreTile);
-                Assert.AreNotEqual(spawn.Tile, FarmLayout.RestSpotTile);
-            }
+            Assert.AreNotEqual(FarmLayout.ProduceStoreTile, FarmLayout.RestSpotTile);
         }
 
         [Test]

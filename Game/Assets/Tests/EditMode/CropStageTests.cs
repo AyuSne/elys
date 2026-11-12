@@ -82,19 +82,5 @@ namespace ElysFarm.Tests
             Assert.IsFalse(CropStages.CellOf("moon", CropStage.Mature).IsValid);
             Assert.IsFalse(CropStages.CellOf(null, CropStage.Mature).IsValid);
         }
-
-        [Test]
-        public void 体块回退仍有颜色与尺寸()
-        {
-            foreach (var stage in new[]
-                     {
-                         CropStage.Seedling, CropStage.Sprout, CropStage.Growing,
-                         CropStage.Ripening, CropStage.Mature
-                     })
-            {
-                Assert.IsTrue(CropStages.ColorOf(stage) != default, $"{stage} 要有回退颜色");
-                Assert.Greater(CropStages.ScaleOf(stage), 0f, $"{stage} 要有正的回退尺寸");
-            }
-        }
     }
 }

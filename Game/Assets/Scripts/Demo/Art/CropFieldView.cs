@@ -9,6 +9,9 @@ namespace ElysFarm.Demo
     /// </summary>
     public sealed class CropFieldView
     {
+        /// <summary>水分高于此值就换成湿土图；两边用同一个阈值，避免土色和作物阶段打架。</summary>
+        const float WetWaterThreshold = 0.05f;
+
         readonly Field field;
         Transform root;
         Transform cropRoot;
@@ -30,9 +33,9 @@ namespace ElysFarm.Demo
             root = new GameObject($"Field {field.Id}").transform;
             root.SetParent(parent, false);
 
-            if (FarmLayout.TryGetField(field.Id, out var plot))
+            if (FarmLayout.TryGetField(field.Id, out var footprint))
             {
-                tiles = plot.Tiles;
+                tiles = footprint.Tiles;
             }
             else
             {
@@ -60,7 +63,7 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            var wetNow = field.Water >= 0.05f;
+            var wetNow = field.Water >= WetWaterThreshold;
             if (wetNow != watered)
             {
                 watered = wetNow;
@@ -91,12 +94,13 @@ namespace ElysFarm.Demo
                     for (var x = 0; x < tiles.width; x++)
                     {
                         var position = FarmLayout.TileCenter(new Vector2Int(tiles.x + x, tiles.y + y));
-                        soilTiles[index++] = CreateSprite(
+                        var soil = SpriteObject.Create(
                             $"Soil {tiles.x + x},{tiles.y + y}",
                             root,
-                            PixelArt.LoadHoeDirt(field.Water >= 0.05f),
-                            position,
+                            PixelArt.LoadHoeDirt(field.Water >= WetWaterThreshold),
                             SortingOrder.Soil);
+                        soil.transform.position = new Vector3(position.x, position.y, 0f);
+                        soilTiles[index++] = soil;
                     }
                 }
 
@@ -151,12 +155,12 @@ namespace ElysFarm.Demo
                     for (var x = 0; x < tiles.width; x++)
                     {
                         var position = FarmLayout.TileCenter(new Vector2Int(tiles.x + x, tiles.y + y));
-                        CreateSprite(
+                        var crop = SpriteObject.Create(
                             $"Crop {field.Id} {tiles.x + x},{tiles.y + y}",
                             cropRoot,
                             sprite,
-                            position,
                             SortingOrder.At(position.y, 1));
+                        crop.transform.position = new Vector3(position.x, position.y, 0f);
                     }
                 }
 
@@ -179,22 +183,6 @@ namespace ElysFarm.Demo
                         color);
                 }
             }
-        }
-
-        static SpriteRenderer CreateSprite(
-            string name,
-            Transform parent,
-            Sprite sprite,
-            Vector2 position,
-            int sortingOrder)
-        {
-            var gameObject = new GameObject(name);
-            gameObject.transform.SetParent(parent, false);
-            gameObject.transform.position = new Vector3(position.x, position.y, 0f);
-            var renderer = gameObject.AddComponent<SpriteRenderer>();
-            renderer.sprite = sprite;
-            renderer.sortingOrder = sortingOrder;
-            return renderer;
         }
 
         static void ClearChildren(Transform parent)
