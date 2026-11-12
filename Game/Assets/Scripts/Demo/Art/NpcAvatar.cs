@@ -1,96 +1,99 @@
-using System.Collections.Generic;
 using ElysFarm.Core;
 using UnityEngine;
 
 namespace ElysFarm.Demo
 {
     /// <summary>
-    /// 一名 NPC 的替身：优先用 Quaternius 的角色模型与 Idle/Walk 动画，
-    /// 素材缺失时退回原来的胶囊体。根节点始终在脚底（y=0），移动与转身只动根节点。
+    /// 一名 NPC 的替身：像素素材下按朝向与行走帧换四方向行走图，停下回到该方向第一帧；
+    /// 素材缺失或关掉时退回「胶囊体 + 朝向鼻子」的体块。根节点始终在脚底，移动只动根节点。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class NpcAvatar : MonoBehaviour
     {
-        /// <summary>角色模型约 3.3 个单位高，缩到 0.55 后约 1.8 米。</summary>
-        public const float ModelScale = 0.55f;
+        const float BlockZ = -0.2f;
+        const float BlockHeight = 1.4f;
 
-        static List<AnimationClip> allClips;
-
-        GameObject modelInstance;
-        AnimationClip idleClip;
-        AnimationClip walkClip;
-        AnimationClip playingClip;
-        float clipTime;
+        Npc npc;
+        SpriteRenderer body;
+        SpriteRenderer shadow;
+        bool art;
+        Facing facing = Facing.Down;
         bool walking;
+        float walkTime;
+        int lastFrame = -1;
+        Transform nose;
+
+        /// <summary>脚底的世界坐标；走路与相机跟拍都读它。</summary>
+        public Vector2 Feet => new Vector2(transform.position.x, transform.position.y);
 
         public static NpcAvatar Create(Npc npc, Transform parent, Color fallbackColor)
         {
-            var go = new GameObject($"NPC {npc.DisplayName}");
-            go.transform.SetParent(parent, false);
-            go.transform.position = new Vector3(npc.Position.X, 0f, npc.Position.Z);
+            var gameObject = new GameObject($"NPC {npc.DisplayName}");
+            gameObject.transform.SetParent(parent, false);
 
-            var avatar = go.AddComponent<NpcAvatar>();
+            var avatar = gameObject.AddComponent<NpcAvatar>();
             avatar.Build(npc, fallbackColor);
             return avatar;
         }
 
         void Build(Npc npc, Color fallbackColor)
         {
-            // 脚下的圆盘让俯视时也能分清三个人，同时标出跟拍对象。
-            DemoMaterials.Cylinder(
-                "Footprint",
-                transform,
-                new Vector3(transform.position.x, 0.02f, transform.position.z),
-                new Vector3(1.05f, 0.02f, 1.05f),
-                fallbackColor);
+            this.npc = npc;
 
-            var model = QuaterniusArt.LoadCharacter(npc.Id);
-            if (model == null)
+            var sprite = PixelArt.LoadCharacter(npc.Id, facing, 0);
+            if (sprite == null)
             {
-                BuildFallback(fallbackColor, npc.DisplayName);
+                BuildBlocks(fallbackColor);
                 return;
             }
 
-            modelInstance = ModelPlacement.Spawn(model, transform, transform.position, ModelScale);
-            if (modelInstance == null)
+            art = true;
+
+            var shadowSprite = PixelArt.LoadShadow();
+            if (shadowSprite != null)
             {
-                BuildFallback(fallbackColor, npc.DisplayName);
-                return;
+                shadow = CreateSprite("Shadow", transform, shadowSprite, new Vector2(0f, 0.06f), SortingOrder.At(0f, 1));
+                shadow.color = new Color(1f, 1f, 1f, 0.45f);
             }
 
-            if (allClips == null)
-            {
-                allClips = new List<AnimationClip>(Resources.LoadAll<AnimationClip>("Quaternius/Characters"));
-            }
-
-            idleClip = FindClip("|Idle");
-            walkClip = FindClip("|Walk");
-            if (idleClip != null)
-            {
-                playingClip = idleClip;
-                idleClip.SampleAnimation(modelInstance, 0f);
-            }
+            body = CreateSprite("Body", transform, sprite, Vector2.zero, SortingOrder.At(0f, 5));
         }
 
-        void BuildFallback(Color color, string displayName)
+        void BuildBlocks(Color fallbackColor)
         {
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.name = "Body";
-            body.transform.SetParent(transform, false);
-            body.transform.localPosition = new Vector3(0f, 0.8f, 0f);
-            body.transform.localScale = new Vector3(0.65f, 0.8f, 0.65f);
-            body.GetComponent<Renderer>().sharedMaterial = DemoMaterials.Create($"Npc {displayName}", color);
+            var root = new GameObject("Body");
+            root.transform.SetParent(transform, false);
 
-            var nose = DemoMaterials.Block(
+            var bodyBlock = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            bodyBlock.name = "Torso";
+            bodyBlock.transform.SetParent(root.transform, false);
+            bodyBlock.transform.localPosition = new Vector3(0f, BlockHeight * 0.5f, BlockZ);
+            bodyBlock.transform.localScale = new Vector3(0.55f, BlockHeight * 0.5f, 0.4f);
+            bodyBlock.GetComponent<Renderer>().sharedMaterial = DemoMaterials.Create($"Npc {npc.Id}", fallbackColor);
+            var collider = bodyBlock.GetComponent<Collider>();
+            if (collider != null)
+            {
+                DemoMaterials.DestroyObject(collider);
+            }
+
+            var block = DemoMaterials.Block(
                 "Nose",
-                body.transform,
+                root.transform,
                 Vector3.zero,
-                new Vector3(0.22f, 0.22f, 0.4f),
+                new Vector3(0.2f, 0.2f, 0.2f),
                 new Color(0.92f, 0.85f, 0.7f));
-            nose.transform.localPosition = new Vector3(0f, 0.45f, 0.5f);
+            nose = block.transform;
+            nose.localPosition = NoseOffset(facing);
         }
 
-        /// <summary>在走路与待机之间切换；切换时从第一帧开始播，避免跑步循环跳帧。</summary>
+        /// <summary>把脚底放到世界坐标；排序随 y 更新。</summary>
+        public void SetFeet(Vector2 feet)
+        {
+            transform.position = new Vector3(feet.x, feet.y, 0f);
+            UpdateSorting();
+        }
+
+        /// <summary>行走状态；停下时锁回该方向第一帧。</summary>
         public void SetWalking(bool value)
         {
             if (walking == value)
@@ -99,36 +102,119 @@ namespace ElysFarm.Demo
             }
 
             walking = value;
-            var next = value ? walkClip ?? idleClip : idleClip;
-            if (next != playingClip)
+            if (!walking)
             {
-                playingClip = next;
-                clipTime = 0f;
+                walkTime = 0f;
+                lastFrame = -1;
             }
+
+            UpdateArt();
         }
 
-        void Update()
+        /// <summary>用速度方向更新朝向；主分量决定四方向之一。</summary>
+        public void SetVelocity(Vector2 velocity)
         {
-            if (modelInstance == null || playingClip == null)
+            var next = PixelArt.FacingOf(velocity, facing);
+            if (next == facing)
             {
                 return;
             }
 
-            clipTime = Mathf.Repeat(clipTime + Time.deltaTime, Mathf.Max(0.0001f, playingClip.length));
-            playingClip.SampleAnimation(modelInstance, clipTime);
+            facing = next;
+            lastFrame = -1;
+            if (nose != null)
+            {
+                nose.localPosition = NoseOffset(facing);
+            }
+
+            UpdateArt();
         }
 
-        static AnimationClip FindClip(string suffix)
+        void Update()
         {
-            foreach (var clip in allClips)
+            if (!art)
             {
-                if (clip.name.EndsWith(suffix, System.StringComparison.Ordinal))
+                return;
+            }
+
+            if (walking)
+            {
+                walkTime += Time.deltaTime;
+            }
+
+            UpdateArt();
+        }
+
+        void UpdateArt()
+        {
+            if (!art || body == null)
+            {
+                return;
+            }
+
+            var frame = PixelArt.WalkFrame(walking, walkTime);
+            if (frame != lastFrame)
+            {
+                var sprite = PixelArt.LoadCharacter(npc.Id, facing, frame);
+                if (sprite != null)
                 {
-                    return clip;
+                    body.sprite = sprite;
+                    lastFrame = frame;
                 }
             }
 
-            return null;
+            UpdateSorting();
+        }
+
+        void UpdateSorting()
+        {
+            if (!art)
+            {
+                return;
+            }
+
+            var feetY = transform.position.y;
+            if (body != null)
+            {
+                body.sortingOrder = SortingOrder.At(feetY, 5);
+            }
+
+            if (shadow != null)
+            {
+                shadow.sortingOrder = SortingOrder.At(feetY, 1);
+            }
+        }
+
+        static Vector3 NoseOffset(Facing facing)
+        {
+            switch (facing)
+            {
+                case Facing.Right:
+                    return new Vector3(0.34f, BlockHeight * 0.62f, BlockZ - 0.25f);
+                case Facing.Left:
+                    return new Vector3(-0.34f, BlockHeight * 0.62f, BlockZ - 0.25f);
+                case Facing.Up:
+                    return new Vector3(0f, BlockHeight * 0.8f, BlockZ + 0.12f);
+                default:
+                    return new Vector3(0f, BlockHeight * 0.55f, BlockZ - 0.25f);
+            }
+        }
+
+        static SpriteRenderer CreateSprite(
+            string name,
+            Transform parent,
+            Sprite sprite,
+            Vector2 localPosition,
+            int sortingOrder)
+        {
+            var gameObject = new GameObject(name);
+            gameObject.transform.SetParent(parent, false);
+            gameObject.transform.localPosition = new Vector3(localPosition.x, localPosition.y, 0f);
+
+            var renderer = gameObject.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.sortingOrder = sortingOrder;
+            return renderer;
         }
     }
 }

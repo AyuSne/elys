@@ -5,7 +5,7 @@ namespace ElysFarm.Demo
 {
     /// <summary>
     /// 作物的五个生长阶段（表现层）。领域只给 0..1 的生长进度，
-    /// 是哪一阶段、用哪个模型是表现层的决定。
+    /// 是哪一阶段、用图集里的哪一格是表现层的决定。
     /// </summary>
     public enum CropStage
     {
@@ -29,38 +29,23 @@ namespace ElysFarm.Demo
     }
 
     /// <summary>
-    /// 一个生长阶段实际长什么样：模型、染色、尺寸与每个作物的株数。
-    /// 表现层按它生成模型或体块；测试也按它断言五个阶段确实两两不同。
-    /// </summary>
-    public readonly struct CropLook
-    {
-        public CropLook(string modelName, Color tint, float scale, int copies, bool useModelTint)
-        {
-            ModelName = modelName;
-            Tint = tint;
-            Scale = scale;
-            Copies = copies;
-            UseModelTint = useModelTint;
-        }
-
-        public string ModelName { get; }
-
-        public Color Tint { get; }
-
-        public float Scale { get; }
-
-        /// <summary>每个作物位放几株；成熟小麦用一簇三株拉开与第四阶段的剪影。</summary>
-        public int Copies { get; }
-
-        /// <summary>是否要给模型本身染色（只有成熟小麦需要）。</summary>
-        public bool UseModelTint { get; }
-    }
-
-    /// <summary>
-    /// 生长进度到阶段的映射。
+    /// 生长进度到阶段、再到图集格位的映射。
+    /// 原作作物图集把每个品种排成一条 8 格的横条：两个品种共用一行，各占 8 列。
+    /// 这里只取其中五格，让五个阶段两两可区分；成熟取整条的最后格（带果实/金黄那一格）。
     /// </summary>
     public static class CropStages
     {
+        /// <summary>萝卜在原作图集里的行号（rowInSpriteSheet）；奇数行在右半边。</summary>
+        public const int RadishRowInSheet = 7;
+
+        /// <summary>小麦在原作图集里的行号；奇数行在右半边。</summary>
+        public const int WheatRowInSheet = 11;
+
+        /// <summary>一条作物横条的像素尺寸。</summary>
+        public const int CellWidth = 16;
+
+        public const int CellHeight = 32;
+
         public static CropStage Of(FieldState state, float growth)
         {
             if (state == FieldState.Empty || state == FieldState.Harvested)
@@ -91,7 +76,59 @@ namespace ElysFarm.Demo
             return CropStage.Ripening;
         }
 
-        /// <summary>体块回退时该阶段的颜色，也是决策面板之外唯一用到的「阶段色」。</summary>
+        /// <summary>
+        /// 品种与阶段对应的图集格位。原作横条有 8 格，但每个品种的最后一格不一定有图：
+        /// 萝卜的成熟格是第 6 格（大红根，第 7 格留给留茬再生、原作里是空的），
+        /// 小麦的成熟格是第 5 格（密金色麦穗，第 6/7 格为空）。
+        /// 未知品种或空阶段返回无效格位，调用方退回体块。
+        /// </summary>
+        public static SpriteCell CellOf(string speciesId, CropStage stage)
+        {
+            if (stage == CropStage.None || string.IsNullOrEmpty(speciesId))
+            {
+                return default;
+            }
+
+            int rowInSheet;
+            if (speciesId == CropCatalog.RadishId)
+            {
+                rowInSheet = RadishRowInSheet;
+            }
+            else if (speciesId == CropCatalog.WheatId)
+            {
+                rowInSheet = WheatRowInSheet;
+            }
+            else
+            {
+                return default;
+            }
+
+            var column = rowInSheet % 2 == 0 ? 0 : 8;
+            return new SpriteCell(column + PhaseColumnOf(speciesId, stage), rowInSheet / 2, CellWidth, CellHeight);
+        }
+
+        /// <summary>某品种的五个阶段取横条上的第几格。萝卜与小麦的成熟格不同。</summary>
+        public static int PhaseColumnOf(string speciesId, CropStage stage)
+        {
+            var wheat = speciesId == CropCatalog.WheatId;
+            switch (stage)
+            {
+                case CropStage.Seedling:
+                    return 0;
+                case CropStage.Sprout:
+                    return 2;
+                case CropStage.Growing:
+                    return 3;
+                case CropStage.Ripening:
+                    return wheat ? 4 : 5;
+                case CropStage.Mature:
+                    return wheat ? 5 : 6;
+                default:
+                    return -1;
+            }
+        }
+
+        /// <summary>体块回退时该阶段的颜色，也是素材缺失时唯一能用的「阶段色」。</summary>
         public static Color ColorOf(CropStage stage)
         {
             switch (stage)
@@ -111,7 +148,7 @@ namespace ElysFarm.Demo
             }
         }
 
-        /// <summary>该阶段的作物相对尺寸；体块回退与成品模型都按它缩放。</summary>
+        /// <summary>体块回退时该阶段的作物相对高度；像素素材不乘这个尺寸。</summary>
         public static float ScaleOf(CropStage stage)
         {
             switch (stage)
@@ -129,33 +166,6 @@ namespace ElysFarm.Demo
                 default:
                     return 0f;
             }
-        }
-
-        /// <summary>
-        /// 成品模型自带生长比例（越往后越高），所以模型不再乘 <see cref="ScaleOf"/>；
-        /// 统一放大到能在 3 米见方的地里看清，成熟期再略高一点。
-        /// 成熟小麦额外加高到 1.35 并用一簇三株，避免与第四阶段只差一点高度和颜色。
-        /// </summary>
-        public static CropLook LookOf(string speciesId, CropStage stage)
-        {
-            var modelName = QuaterniusArt.CropModelName(speciesId, stage);
-            if (stage == CropStage.None || string.IsNullOrEmpty(modelName))
-            {
-                return default;
-            }
-
-            var matureWheat = stage == CropStage.Mature && speciesId == CropCatalog.WheatId;
-            return new CropLook(
-                modelName,
-                ColorOf(stage),
-                matureWheat ? 1.35f : ModelScaleOf(stage),
-                matureWheat ? 3 : 1,
-                matureWheat);
-        }
-
-        static float ModelScaleOf(CropStage stage)
-        {
-            return stage == CropStage.Mature ? 1.25f : 1.20f;
         }
     }
 }

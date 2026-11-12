@@ -1,13 +1,12 @@
 using ElysFarm.Core;
 using ElysFarm.Demo;
 using NUnit.Framework;
-using UnityEngine;
 
 namespace ElysFarm.Tests
 {
     /// <summary>
-    /// #9 五个生长阶段：领域只给生长进度与地块状态，表现层把它映射成五个可区分的阶段。
-    /// 测试打 <see cref="CropStages"/> 这条表现层接缝，不打开场景，也不检查网格。
+    /// #12 五个生长阶段：领域只给生长进度与地块状态，表现层把它映射成五个阶段与图集格位。
+    /// 测试打 <see cref="CropStages"/> 这条表现层接缝，不打开场景，也不检查渲染结果。
     /// </summary>
     public class CropStageTests
     {
@@ -39,32 +38,7 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 五个阶段的颜色与尺寸两两可区分()
-        {
-            var stages = new[]
-            {
-                CropStage.Seedling, CropStage.Sprout, CropStage.Growing, CropStage.Ripening, CropStage.Mature
-            };
-
-            for (var i = 0; i < stages.Length; i++)
-            {
-                Assert.IsTrue(CropStages.ColorOf(stages[i]) != default, $"{stages[i]} 要有可用的回退颜色");
-                Assert.Greater(CropStages.ScaleOf(stages[i]), 0f, $"{stages[i]} 要有正的尺寸");
-
-                for (var j = i + 1; j < stages.Length; j++)
-                {
-                    var colorGap = Vector4.Distance(
-                        (Vector4)CropStages.ColorOf(stages[i]),
-                        (Vector4)CropStages.ColorOf(stages[j]));
-                    Assert.Greater(colorGap, 0.04f, $"{stages[i]} 与 {stages[j]} 的颜色要拉得开");
-
-                    var scaleGap = Mathf.Abs(CropStages.ScaleOf(stages[i]) - CropStages.ScaleOf(stages[j]));
-                    Assert.Greater(scaleGap, 0.02f, $"{stages[i]} 与 {stages[j]} 的尺寸要拉得开");
-                }
-            }
-        }
-        [Test]
-        public void 两个品种的五个阶段外观参数两两不同()
+        public void 五个阶段对应五个互不相同的图集格位()
         {
             foreach (var speciesId in new[] { CropCatalog.RadishId, CropCatalog.WheatId })
             {
@@ -74,28 +48,53 @@ namespace ElysFarm.Tests
                     CropStage.Ripening, CropStage.Mature
                 };
 
-                for (var i = 0; i < stages.Length; i++)
+                var previousColumn = -1;
+                foreach (var stage in stages)
                 {
-                    var look = CropStages.LookOf(speciesId, stages[i]);
-                    Assert.IsNotNull(look.ModelName, $"{speciesId} 的 {stages[i]} 需要有模型");
-                    Assert.Greater(look.Scale, 0f);
-                    Assert.GreaterOrEqual(look.Copies, 1);
+                    var cell = CropStages.CellOf(speciesId, stage);
+                    Assert.IsTrue(cell.IsValid, $"{speciesId} 的 {stage} 需要图集格位");
+                    Assert.AreEqual(16, cell.Width, "作物格宽 16px");
+                    Assert.AreEqual(32, cell.Height, "作物格高 32px");
+                    Assert.Greater(cell.Column, previousColumn, "阶段越靠后，格位应越靠右（不会回退）");
+                    previousColumn = cell.Column;
+                }
 
-                    for (var j = i + 1; j < stages.Length; j++)
-                    {
-                        var other = CropStages.LookOf(speciesId, stages[j]);
-                        var key = $"{look.ModelName}|{look.Scale:0.00}|{look.Copies}|{look.UseModelTint}|"
-                            + ColorUtility.ToHtmlStringRGB(look.Tint);
-                        var otherKey = $"{other.ModelName}|{other.Scale:0.00}|{other.Copies}|{other.UseModelTint}|"
-                            + ColorUtility.ToHtmlStringRGB(other.Tint);
-                        Assert.AreNotEqual(key, otherKey, $"{speciesId} 的 {stages[i]} 与 {stages[j]} 剪影/颜色要有区别");
-                    }
+                var mature = CropStages.CellOf(speciesId, CropStage.Mature);
+                for (var stage = CropStage.Seedling; stage < CropStage.Mature; stage++)
+                {
+                    Assert.AreNotEqual(
+                        mature,
+                        CropStages.CellOf(speciesId, stage),
+                        $"{speciesId} 的成熟格位不能与 {stage} 共用");
                 }
             }
 
-            var matureWheat = CropStages.LookOf(CropCatalog.WheatId, CropStage.Mature);
-            Assert.AreEqual(3, matureWheat.Copies, "成熟小麦要成簇，不能和第四阶段一样是单株");
-            Assert.IsTrue(matureWheat.UseModelTint, "成熟小麦要染成麦金色");
+            Assert.AreNotEqual(
+                CropStages.CellOf(CropCatalog.RadishId, CropStage.Mature),
+                CropStages.CellOf(CropCatalog.WheatId, CropStage.Mature),
+                "两个品种的成熟外观不能共用同一格");
+        }
+
+        [Test]
+        public void 空阶段与未知品种没有格位()
+        {
+            Assert.IsFalse(CropStages.CellOf(CropCatalog.RadishId, CropStage.None).IsValid);
+            Assert.IsFalse(CropStages.CellOf("moon", CropStage.Mature).IsValid);
+            Assert.IsFalse(CropStages.CellOf(null, CropStage.Mature).IsValid);
+        }
+
+        [Test]
+        public void 体块回退仍有颜色与尺寸()
+        {
+            foreach (var stage in new[]
+                     {
+                         CropStage.Seedling, CropStage.Sprout, CropStage.Growing,
+                         CropStage.Ripening, CropStage.Mature
+                     })
+            {
+                Assert.IsTrue(CropStages.ColorOf(stage) != default, $"{stage} 要有回退颜色");
+                Assert.Greater(CropStages.ScaleOf(stage), 0f, $"{stage} 要有正的回退尺寸");
+            }
         }
     }
 }

@@ -67,6 +67,10 @@
 - `--source camera` 的 IMGUI 叠层按渲染分辨率合成，右侧决策面板会被裁或错位（真实 Game 窗口里没有这个问题）；文档截图优先用 `--source screen` 并先 `editor focus`。
 - **演示层截图前先清掉临时对象。** `script eval` 里创建的相机/灯如果不 parent 到临时 root 并 `DestroyImmediate(root)`，会留在打开的场景里、被带进 Play（例如作物展示台的 `Showcase Camera` 会盖住主相机）。重建 `FarmDemo.unity` 能清掉。
 - 顶部「镜头」条放在左右面板之间的空档（`PanelMargin + LeftPanelWidth` 到 `Screen.width - PanelMargin - InspectorPanelWidth`），547 高度下五个按钮刚好放下；窗口再窄时顶部条会隐藏，用键盘 `C` 俯视、`1/2/3` 跟拍兜底。跟拍时右侧决策面板与流水收起，靠 `demo.IsOverheadCamera` 判断，不要用 `SelectedNpc` 判断跟拍对象（观察对象和跟拍对象可以不同）。
+- **像素素材**：`Assets/Resources/PixelArt` 的 PNG 走 `PixelArtImportPostprocessor`（点采样、无压缩、无 mipmap）。切图在 `PixelArt` 里按 `SpriteCell` 运行时创建，别把 PNG 改成 Sprite 资产，否则 `Resources.Load<Texture2D>` 与切格测试都会变。
+- **排序**：`Renderer.sortingOrder` 是 16 位有符号整数；`100000 - y*100` 会回绕成负数，被地面盖住。用 `SortingOrder.At`（`-y*100 + bias`）：地面 Tilemap -10000、耕地 -9000，作物与角色按 y。
+- **作物图集**：每个品种是一条 8 格横条；行号是 `rowInSpriteSheet / 2`，奇数行占右半边（列再 +8）。成熟格因品种不同：萝卜第 6 格、小麦第 5 格；最后一格常是空的（留茬再生用），别把 7 当成熟。
+- **Play 截图**：`capture game_view --source camera --overlay false` 不画 IMGUI，能单独看像素场景；`--source screen` 会叠上旧 HUD，旧 HUD 仍在时别拿它判断「场景没画出来」。
 
 ## 领域与规格
 

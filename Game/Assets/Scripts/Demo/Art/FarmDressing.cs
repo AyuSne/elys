@@ -1,259 +1,119 @@
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering;
-using UnityEngine.Rendering.Universal;
+using UnityEngine.Tilemaps;
 
 namespace ElysFarm.Demo
 {
     /// <summary>
-    /// 场景装饰：地面、草垛、农舍、风车、水塔、树木与杂草，以及光照与后处理。
-    /// 每个模型都走 <see cref="QuaterniusArt"/>；缺失时跳过装饰，作物与 NPC 的体块回退在各自的表现类里。
-    /// 场景其余部分照常搭起来——素材没拉下来也能演示。
+    /// 场景的底：俯视时用运行时 Tilemap 铺满草地，素材关掉或缺失时退回一整块绿色体块。
+    /// 本票只做地面；建筑、土路、树木与 Y 排序留给 T2。
     /// </summary>
     public static class FarmDressing
     {
-        static readonly Color GrassColor = new Color(0.32f, 0.46f, 0.26f);
-        static readonly Color HayColor = new Color(0.82f, 0.70f, 0.30f);
-        static readonly Color BarnFallback = new Color(0.58f, 0.38f, 0.22f);
-        static readonly Color[] TreeGreens =
+        static readonly Color GrassFallback = new Color(0.28f, 0.42f, 0.22f);
+
+        /// <summary>草地瓦片在室外图集里的格位；只用亮度接近、铺开不显接缝的几个。</summary>
+        static readonly Vector2Int[] GrassCells =
         {
-            new Color(0.24f, 0.44f, 0.22f),
-            new Color(0.31f, 0.52f, 0.26f),
-            new Color(0.20f, 0.38f, 0.20f),
-            new Color(0.36f, 0.56f, 0.30f)
+            new Vector2Int(4, 13),
+            new Vector2Int(7, 13),
+            new Vector2Int(7, 15),
+            new Vector2Int(5, 15)
         };
 
-        static readonly Color BushGreen = new Color(0.30f, 0.52f, 0.24f);
-        static readonly Color RockGrey = new Color(0.55f, 0.54f, 0.50f);
-        static readonly Color GrassTuft = new Color(0.42f, 0.60f, 0.28f);
+        static readonly List<Tile> CreatedTiles = new List<Tile>();
 
-        /// <summary>
-        /// 自然包的模型是白模（材质全白，靠使用方染色），不染会得到一片白色树石。
-        /// 树按 yaw 取四种绿，灌木/草/石头各一种，保持低多边形风格。
-        /// </summary>
-        static Color? TintFor(string modelName, float yaw)
+        /// <summary>重建表现层前调用：Tilemap 的 Tile 是 ScriptableObject，不随场景对象销毁。</summary>
+        public static void DestroyTiles()
         {
-            if (modelName.StartsWith("Nature/Tree"))
+            foreach (var tile in CreatedTiles)
             {
-                var variant = Mathf.Abs(Mathf.RoundToInt(yaw / 10f)) % TreeGreens.Length;
-                return TreeGreens[variant];
+                DemoMaterials.DestroyObject(tile);
             }
 
-            if (modelName.StartsWith("Nature/Bush"))
-            {
-                return BushGreen;
-            }
-
-            if (modelName.StartsWith("Nature/Grass"))
-            {
-                return GrassTuft;
-            }
-
-            if (modelName.StartsWith("Nature/Rock"))
-            {
-                return RockGrey;
-            }
-
-            return null;
+            CreatedTiles.Clear();
         }
 
         public static void Build(Transform parent)
         {
-            DemoMaterials.Block("Ground", parent, new Vector3(2f, -0.1f, 0f), new Vector3(38f, 0.2f, 28f), GrassColor);
+            if (PixelArt.UseArt && BuildGroundTilemap(parent))
+            {
+                return;
+            }
 
-            // 产出仓与草垛：领域里的标记点，仍用体块表示，NPC 走到这里就算到了。
+            BuildGroundBlock(parent);
+        }
+
+        static bool BuildGroundTilemap(Transform parent)
+        {
+            var sprites = new Sprite[GrassCells.Length];
+            for (var i = 0; i < GrassCells.Length; i++)
+            {
+                sprites[i] = PixelArt.LoadTile(GrassCells[i].x, GrassCells[i].y);
+                if (sprites[i] == null)
+                {
+                    // 图集缺一张就整块回退：半张 Tilemap 会比整块草地更难看。
+                    return false;
+                }
+            }
+
+            var gridObject = new GameObject("Farm Grid");
+            gridObject.transform.SetParent(parent, false);
+            var grid = gridObject.AddComponent<Grid>();
+            grid.cellSize = new Vector3(1f, 1f, 0f);
+
+            var tilemapObject = new GameObject("Ground");
+            tilemapObject.transform.SetParent(gridObject.transform, false);
+            var tilemap = tilemapObject.AddComponent<Tilemap>();
+            var renderer = tilemapObject.AddComponent<TilemapRenderer>();
+            renderer.sortingOrder = SortingOrder.Ground;
+
+            var tiles = new Tile[sprites.Length];
+            for (var i = 0; i < sprites.Length; i++)
+            {
+                var tile = ScriptableObject.CreateInstance<Tile>();
+                tile.sprite = sprites[i];
+                tile.colliderType = Tile.ColliderType.None;
+                tiles[i] = tile;
+                CreatedTiles.Add(tile);
+            }
+
+            var bounds = ExpandedWalkable();
+            for (var y = bounds.yMin; y < bounds.yMax; y++)
+            {
+                for (var x = bounds.xMin; x < bounds.xMax; x++)
+                {
+                    // 两个素数相乘再异或：变化不沿某一行/列周期重复，铺开不会出现横向亮带。
+                    var hash = unchecked((x * 73856093) ^ (y * 19349663)) & 0x7fffffff;
+                    var variant = hash % tiles.Length;
+                    tilemap.SetTile(new Vector3Int(x, y, 0), tiles[variant]);
+                }
+            }
+
+            return true;
+        }
+
+        static void BuildGroundBlock(Transform parent)
+        {
+            var center = FarmLayout.TileCenter(FarmLayout.Walkable);
+            var width = FarmLayout.Walkable.width + 4f;
+            var height = FarmLayout.Walkable.height + 4f;
             DemoMaterials.Block(
-                "Produce Store",
+                "Ground",
                 parent,
-                new Vector3(FarmDemoBootstrap.ProduceStoreSpot.X, 0.6f, FarmDemoBootstrap.ProduceStoreSpot.Z),
-                new Vector3(1.6f, 1.2f, 1.6f),
-                BarnFallback);
-            DemoMaterials.Block(
-                "Haystack",
-                parent,
-                new Vector3(FarmDemoBootstrap.RestSpot.X, 0.35f, FarmDemoBootstrap.RestSpot.Z),
-                new Vector3(3.2f, 0.7f, 1.4f),
-                HayColor);
-
-            // 装饰性建筑没有体块回退：缺素材时宁可少一座谷仓，也不要在场地边堆大箱子。
-            SpawnOrBlock("Buildings/Barn", parent, new Vector3(-3.4f, 0f, 8.8f), 0.58f, 8f);
-            SpawnOrBlock("Buildings/SmallBarn", parent, new Vector3(-7.4f, 0f, -4.8f), 0.5f, 20f);
-            SpawnOrBlock("Buildings/Windmill", parent, new Vector3(8.8f, 0f, 9.0f), 0.5f, -24f);
-            SpawnOrBlock("Buildings/WaterTower", parent, new Vector3(-10.6f, 0f, -5.4f), 0.55f, 0f);
-            SpawnOrBlock("Buildings/ChickenCoop", parent, new Vector3(7.4f, 0f, -5.8f), 0.8f, -35f);
-            SpawnOrBlock("Buildings/Well", parent, new Vector3(4.9f, 0f, -4.9f), 0.85f, 0f);
-
-            SpawnScatter(
-                parent,
-                "Nature/Tree",
-                4,
-                new[]
-                {
-                    new PropPlacement(-12.5f, 3.2f, 1.0f, 20f),
-                    new PropPlacement(-12.8f, -2.0f, 1.2f, -35f),
-                    new PropPlacement(13.2f, 3.6f, 0.95f, 120f),
-                    new PropPlacement(13.6f, 8.8f, 1.15f, -60f),
-                    new PropPlacement(-7.2f, 14.2f, 1.3f, 0f),
-                    new PropPlacement(5.2f, 14.6f, 1.1f, 80f)
-                });
-
-            SpawnScatter(
-                parent,
-                "Nature/Bush",
-                3,
-                new[]
-                {
-                    new PropPlacement(-9.4f, 2.2f, 1.1f, 15f),
-                    new PropPlacement(-9.0f, -7.8f, 0.9f, 70f),
-                    new PropPlacement(10.8f, -1.4f, 1.0f, -20f),
-                    new PropPlacement(11.4f, -8.2f, 1.2f, 45f),
-                    new PropPlacement(-1.2f, 12.8f, 1.0f, 0f)
-                });
-
-            SpawnScatter(
-                parent,
-                "Nature/Rock",
-                3,
-                new[]
-                {
-                    new PropPlacement(-6.4f, 8.6f, 0.9f, 0f),
-                    new PropPlacement(6.8f, 9.2f, 0.7f, 40f),
-                    new PropPlacement(-2.6f, -7.4f, 0.8f, 95f),
-                    new PropPlacement(8.2f, 2.0f, 0.6f, 10f)
-                });
-
-            var grass = new PropPlacement[10];
-            for (var i = 0; i < grass.Length; i++)
-            {
-                grass[i] = new PropPlacement(
-                    -11f + (i % 5) * 5.4f,
-                    i < 5 ? 14.6f : -9.4f,
-                    0.9f,
-                    i * 36f);
-            }
-
-            SpawnScatter(parent, "Nature/Grass", 3, grass);
+                new Vector3(center.x, center.y, 1f),
+                new Vector3(width, height, 0.2f),
+                GrassFallback);
         }
 
-        readonly struct PropPlacement
+        /// <summary>地面比可走范围再向外铺两格，3× 俯视时不会看到地面边缘。</summary>
+        static RectInt ExpandedWalkable()
         {
-            public PropPlacement(float x, float z, float scale, float yaw)
-            {
-                X = x;
-                Z = z;
-                Scale = scale;
-                Yaw = yaw;
-            }
-
-            public float X { get; }
-
-            public float Z { get; }
-
-            public float Scale { get; }
-
-            public float Yaw { get; }
-        }
-
-        static void SpawnScatter(Transform parent, string prefix, int variants, PropPlacement[] placements)
-        {
-            for (var i = 0; i < placements.Length; i++)
-            {
-                var placement = placements[i];
-                SpawnOrBlock(
-                    $"{prefix}{(i % variants) + 1}",
-                    parent,
-                    new Vector3(placement.X, 0f, placement.Z),
-                    placement.Scale,
-                    placement.Yaw);
-            }
-        }
-
-        static void SpawnOrBlock(string modelName, Transform parent, Vector3 ground, float scale, float yaw)
-        {
-            var model = QuaterniusArt.Load(modelName);
-            if (model == null)
-            {
-                return;
-            }
-
-            var instance = ModelPlacement.Spawn(model, parent, ground, scale, yaw);
-            var tint = TintFor(modelName, yaw);
-            if (instance != null && tint.HasValue)
-            {
-                ModelPlacement.Tint(instance, tint.Value);
-            }
-        }
-
-        /// <summary>太阳、环境光与雾；场景里已有方向光就复用。</summary>
-        public static void ApplyLighting()
-        {
-            var sun = Object.FindFirstObjectByType<Light>();
-            if (sun == null)
-            {
-                sun = new GameObject("Sun").AddComponent<Light>();
-                sun.type = LightType.Directional;
-            }
-
-            sun.type = LightType.Directional;
-            sun.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
-            sun.intensity = 1.1f;
-            sun.color = new Color(1f, 0.97f, 0.9f);
-            sun.shadows = LightShadows.Soft;
-            sun.shadowStrength = 0.8f;
-
-            RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.40f, 0.48f, 0.60f);
-            RenderSettings.ambientEquatorColor = new Color(0.42f, 0.47f, 0.40f);
-            RenderSettings.ambientGroundColor = new Color(0.20f, 0.19f, 0.16f);
-            RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.006f;
-            RenderSettings.fogColor = new Color(0.62f, 0.72f, 0.82f);
-        }
-
-        /// <summary>URP 后处理：ACES 色调映射、轻 Bloom、暗角与一点饱和度。</summary>
-        public static void ApplyPostProcessing(Camera camera)
-        {
-            if (camera == null)
-            {
-                return;
-            }
-
-            var data = camera.GetUniversalAdditionalCameraData();
-            if (data != null)
-            {
-                data.renderPostProcessing = true;
-                data.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
-            }
-
-            if (Object.FindFirstObjectByType<Volume>() != null)
-            {
-                return;
-            }
-
-            var volumeObject = new GameObject("Post FX");
-            var volume = volumeObject.AddComponent<Volume>();
-            volume.isGlobal = true;
-            volume.priority = 10f;
-
-            var profile = ScriptableObject.CreateInstance<VolumeProfile>();
-            var tonemapping = profile.Add<Tonemapping>();
-            tonemapping.mode.Override(TonemappingMode.ACES);
-
-            var bloom = profile.Add<Bloom>();
-            bloom.threshold.Override(1.3f);
-            bloom.intensity.Override(0.18f);
-            bloom.scatter.Override(0.6f);
-
-            var vignette = profile.Add<Vignette>();
-            vignette.intensity.Override(0.2f);
-            vignette.smoothness.Override(0.45f);
-
-            var color = profile.Add<ColorAdjustments>();
-            color.postExposure.Override(0f);
-            color.contrast.Override(8f);
-            color.saturation.Override(6f);
-
-            volume.sharedProfile = profile;
+            return new RectInt(
+                FarmLayout.Walkable.xMin - 2,
+                FarmLayout.Walkable.yMin - 2,
+                FarmLayout.Walkable.width + 4,
+                FarmLayout.Walkable.height + 4);
         }
     }
 }

@@ -66,3 +66,6 @@ secrets.json
 # 测试报告：生成物，不入库；cd Game 后 unity test 默认写 Game/test-results.xml
 test-results.xml
 /TestResults/
+
+# 原作素材包：只提交用到的十几张图（Game/Assets/Resources/PixelArt），整包留在仓库外
+/StardewValley-Assets/

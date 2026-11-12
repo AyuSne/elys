@@ -10,7 +10,7 @@ namespace ElysFarm.Demo
     /// <see cref="FarmWorld"/>，并让每名 NPC 按自己的人设决定间隔与体力节奏独立跑效用打分。
     /// 玩家输入经 <see cref="IntentRouter"/> 变成工单后，接单的 NPC 再按工单执行。
     /// 引导器不持有领域状态——只读 <see cref="FarmWorld"/> 的快照。
-    /// 表现层用 Quaternius 素材；素材缺失时自动退回体块，场景不会崩。
+    /// 表现层用像素素材；素材缺失时自动退回体块，场景不会崩。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class FarmDemoBootstrap : MonoBehaviour
@@ -42,10 +42,12 @@ namespace ElysFarm.Demo
         static readonly Color AtuColor = new Color(0.52f, 0.42f, 0.72f);
 
         /// <summary>休息点；体力见底的 NPC 会走到这里待着。</summary>
-        public static readonly FarmPosition RestSpot = new FarmPosition(2.2f, -1.5f);
+        public static FarmPosition RestSpot =>
+            FarmLayout.ToFarmPosition(FarmLayout.TileCenter(FarmLayout.RestSpotTile));
 
         /// <summary>产出仓的标记点；NPC 走到这里就算到了仓库。</summary>
-        public static readonly FarmPosition ProduceStoreSpot = new FarmPosition(-3.4f, -1.8f);
+        public static FarmPosition ProduceStoreSpot =>
+            FarmLayout.ToFarmPosition(FarmLayout.TileCenter(FarmLayout.ProduceStoreTile));
 
         /// <summary>领域世界（唯一状态来源）。</summary>
         public FarmWorld World { get; private set; }
@@ -81,10 +83,10 @@ namespace ElysFarm.Demo
         public bool AutonomyEnabled { get; private set; }
 
         /// <summary>当前是否用素材（false 表示体块回退）。</summary>
-        public bool UsingArt => QuaterniusArt.UseArt;
+        public bool UsingArt => PixelArt.UseArt;
 
         /// <summary>当前是否俯视机位。</summary>
-        public bool IsOverheadCamera => cameraDirector == null || cameraDirector.Mode == CameraMode.Overhead;
+        public bool IsOverheadCamera => cameraDirector == null || cameraDirector.Mode == CameraMode.Overview;
 
         Transform visualRoot;
         Transform npcRoot;
@@ -98,11 +100,12 @@ namespace ElysFarm.Demo
         {
             public Npc Npc;
             public NpcAvatar Avatar;
+            public Color Color;
             public int Slot;
             public float WalkSpeed;
             public string PendingFieldId;
             public WorkStep PendingStep;
-            public Vector3 WalkTarget;
+            public Vector2 WalkTarget;
             public bool Walking;
             public float NextActionAt;
             public string Intent = "在产出仓旁待命";
@@ -110,7 +113,7 @@ namespace ElysFarm.Demo
 
         void Awake()
         {
-            QuaterniusArt.ApplyEnvironmentOverride();
+            PixelArt.ApplyEnvironmentOverride();
             SetUpWorld();
             BuildScene();
         }
@@ -157,7 +160,7 @@ namespace ElysFarm.Demo
             }
         }
 
-        /// <summary>切回俯视 45°。</summary>
+        /// <summary>切回俯视 3×。</summary>
         public void UseOverheadCamera()
         {
             cameraDirector?.SetOverhead();
@@ -191,7 +194,7 @@ namespace ElysFarm.Demo
         public void ToggleArt()
         {
             var following = cameraDirector != null ? cameraDirector.FollowNpcId : null;
-            QuaterniusArt.UseArt = !QuaterniusArt.UseArt;
+            PixelArt.UseArt = !PixelArt.UseArt;
             BuildScene();
 
             if (!string.IsNullOrEmpty(following))
@@ -199,8 +202,8 @@ namespace ElysFarm.Demo
                 FollowCamera(following);
             }
 
-            LastMessage = QuaterniusArt.UseArt
-                ? "切到 Quaternius 素材"
+            LastMessage = PixelArt.UseArt
+                ? "切到像素素材"
                 : "素材已关闭，退回体块（领域状态不变）";
         }
 
@@ -317,13 +320,20 @@ namespace ElysFarm.Demo
         void SetUpWorld()
         {
             World = new FarmWorld(new FarmClock());
-            World.AddField(FieldA1, new FarmPosition(-4f, 4f), 0.3f);
-            World.AddField(FieldA2, new FarmPosition(0f, 4f), 0.3f);
-            World.AddField(FieldA3, new FarmPosition(4f, 4f), 0.3f);
 
-            World.AddNpc(AheId, "阿禾", new FarmPosition(-1.5f, -3f), NpcPersona.Ahe);
-            World.AddNpc(AyaId, "阿芽", new FarmPosition(0f, -3f), NpcPersona.Aya);
-            World.AddNpc(AtuId, "阿土", new FarmPosition(1.5f, -3f), NpcPersona.Atu);
+            foreach (var plot in FarmLayout.Fields)
+            {
+                World.AddField(plot.Id, FarmLayout.ToFarmPosition(plot.Center), 0.3f);
+            }
+
+            foreach (var spawn in FarmLayout.NpcSpawns)
+            {
+                World.AddNpc(
+                    spawn.Id,
+                    DisplayNameOf(spawn.Id),
+                    FarmLayout.ToFarmPosition(spawn.World),
+                    PersonaOf(spawn.Id));
+            }
 
             World.SetProduceStore(ProduceStoreSpot);
             World.AddSeeds(CropCatalog.RadishId, 12);
@@ -335,21 +345,26 @@ namespace ElysFarm.Demo
             AutonomyEnabled = false;
             LastMessage = "第 1 天，三名 NPC 在产出仓旁待命"
                 + (UsingModel ? "（模型在线）" : "（本地模板）");
+
+            foreach (var spawn in FarmLayout.NpcSpawns)
+            {
+                CreateNpcView(World.GetNpc(spawn.Id), ColorOf(spawn.Id));
+            }
         }
 
         void BuildScene()
         {
             DemoMaterials.DestroyCreated();
+            FarmDressing.DestroyTiles();
 
             if (visualRoot != null)
             {
-                ModelPlacement.Destroy(visualRoot.gameObject);
+                DestroyObject(visualRoot.gameObject);
             }
 
             visualRoot = new GameObject("Farm Visuals").transform;
             visualRoot.SetParent(transform, false);
 
-            FarmDressing.ApplyLighting();
             FarmDressing.Build(visualRoot);
 
             fieldViews.Clear();
@@ -363,10 +378,12 @@ namespace ElysFarm.Demo
             npcRoot = new GameObject("NPCs").transform;
             npcRoot.SetParent(visualRoot, false);
 
-            npcViews.Clear();
-            CreateNpc(World.GetNpc(AheId), AheColor);
-            CreateNpc(World.GetNpc(AyaId), AyaColor);
-            CreateNpc(World.GetNpc(AtuId), AtuColor);
+            foreach (var view in npcViews)
+            {
+                view.Avatar = NpcAvatar.Create(view.Npc, npcRoot, view.Color);
+                view.Avatar.SetFeet(FarmLayout.ToWorld(view.Npc.Position));
+                view.Avatar.SetWalking(view.Walking);
+            }
 
             SetUpCamera();
         }
@@ -391,19 +408,76 @@ namespace ElysFarm.Demo
             }
 
             cameraDirector.Configure(camera);
-            FarmDressing.ApplyPostProcessing(camera);
         }
 
-        void CreateNpc(Npc npc, Color color)
+        void CreateNpcView(Npc npc, Color color)
         {
-            var avatar = NpcAvatar.Create(npc, npcRoot, color);
             npcViews.Add(new NpcView
             {
                 Npc = npc,
-                Avatar = avatar,
+                Color = color,
                 Slot = npcViews.Count,
                 WalkSpeed = WalkSpeedOf(npc.Id)
             });
+        }
+
+        /// <summary>演示用的展示名；领域只认 id，名字是表现层的事。</summary>
+        public static string DisplayNameOf(string npcId)
+        {
+            switch (npcId)
+            {
+                case AheId:
+                    return "阿禾";
+                case AyaId:
+                    return "阿芽";
+                case AtuId:
+                    return "阿土";
+                default:
+                    return npcId;
+            }
+        }
+
+        static NpcPersona PersonaOf(string npcId)
+        {
+            switch (npcId)
+            {
+                case AyaId:
+                    return NpcPersona.Aya;
+                case AtuId:
+                    return NpcPersona.Atu;
+                default:
+                    return NpcPersona.Ahe;
+            }
+        }
+
+        static Color ColorOf(string npcId)
+        {
+            switch (npcId)
+            {
+                case AyaId:
+                    return AyaColor;
+                case AtuId:
+                    return AtuColor;
+                default:
+                    return AheColor;
+            }
+        }
+
+        static void DestroyObject(UnityEngine.Object target)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            if (Application.isPlaying)
+            {
+                UnityEngine.Object.Destroy(target);
+            }
+            else
+            {
+                UnityEngine.Object.DestroyImmediate(target);
+            }
         }
 
         /// <summary>行走速度是表现层参数，不进领域人设；只影响观感，不影响效用打分。</summary>
@@ -422,10 +496,10 @@ namespace ElysFarm.Demo
             }
         }
 
-        /// <summary>把相机摆到俯视 45° 的演示机位；场景生成器与运行时共用同一组数值。</summary>
+        /// <summary>把相机摆到俯视 3× 的演示机位；场景生成器与运行时共用同一组数值。</summary>
         public static void ApplyCameraPose(Camera camera)
         {
-            DemoCamera.ApplyPoseTo(camera, CameraRig.OverheadPose);
+            DemoCamera.ApplyOverviewTo(camera);
         }
 
         void UpdateNpc(NpcView view)
@@ -453,7 +527,7 @@ namespace ElysFarm.Demo
             if (npc.IsResting)
             {
                 var restTarget = RestTargetOf(view);
-                if (Vector3.Distance(view.Avatar.transform.position, restTarget) > 0.35f)
+                if (Vector2.Distance(view.Avatar.Feet, restTarget) > 0.35f)
                 {
                     BeginWalk(view, restTarget, $"去歇会儿（体力 {npc.Stamina:P0}）");
                 }
@@ -555,18 +629,26 @@ namespace ElysFarm.Demo
 
         void BeginWalkToField(NpcView view, string fieldId, WorkStep step, string intentHint = null)
         {
-            var field = World.GetField(fieldId);
-            var lateral = (view.Slot - 1) * 0.55f;
-            var target = new Vector3(field.Position.X + lateral, 0f, field.Position.Z - 2.6f);
-
             view.PendingFieldId = fieldId;
             view.PendingStep = step;
-            view.WalkTarget = target;
+            view.WalkTarget = FieldStandPoint(fieldId, view.Slot);
             view.Walking = true;
             view.Intent = intentHint ?? $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
         }
 
-        void BeginWalk(NpcView view, Vector3 target, string intent)
+        /// <summary>走到地块南侧、离地一格的位置；三个站位横向错开，避免三个人叠在一起。</summary>
+        public static Vector2 FieldStandPoint(string fieldId, int slot)
+        {
+            if (!FarmLayout.TryGetField(fieldId, out var plot))
+            {
+                return FarmLayout.OverviewCenter;
+            }
+
+            var center = FarmLayout.TileCenter(plot.Tiles);
+            return new Vector2(center.x + (slot - 1) * 0.8f, plot.Tiles.y - 0.5f);
+        }
+
+        void BeginWalk(NpcView view, Vector2 target, string intent)
         {
             view.PendingFieldId = null;
             view.PendingStep = default;
@@ -575,31 +657,28 @@ namespace ElysFarm.Demo
             view.Intent = intent;
         }
 
-        Vector3 RestTargetOf(NpcView view)
+        Vector2 RestTargetOf(NpcView view)
         {
-            var lateral = (view.Slot - 1) * 0.9f;
-            return new Vector3(RestSpot.X + lateral, 0f, RestSpot.Z);
+            var spot = FarmLayout.TileCenter(FarmLayout.RestSpotTile);
+            return new Vector2(spot.x + (view.Slot - 1) * 0.8f, spot.y);
         }
 
         void Walk(NpcView view)
         {
-            var body = view.Avatar.transform;
-            var position = body.position;
-            var next = Vector3.MoveTowards(position, view.WalkTarget, view.WalkSpeed * Time.deltaTime);
-            next.y = 0f;
-            body.position = next;
-            World.MoveNpc(view.Npc.Id, new FarmPosition(next.x, next.z));
+            var next = Vector2.MoveTowards(
+                view.Avatar.Feet,
+                view.WalkTarget,
+                view.WalkSpeed * Time.deltaTime);
+            view.Avatar.SetFeet(next);
+            World.MoveNpc(view.Npc.Id, new FarmPosition(next.x, next.y));
 
-            var direction = new Vector3(view.WalkTarget.x - next.x, 0f, view.WalkTarget.z - next.z);
+            var direction = view.WalkTarget - next;
             if (direction.sqrMagnitude > 0.0004f)
             {
-                body.rotation = Quaternion.LookRotation(direction);
+                view.Avatar.SetVelocity(direction);
             }
 
-            var flatDistance = Vector2.Distance(
-                new Vector2(next.x, next.z),
-                new Vector2(view.WalkTarget.x, view.WalkTarget.z));
-            if (flatDistance > ArriveRadius)
+            if (Vector2.Distance(next, view.WalkTarget) > ArriveRadius)
             {
                 return;
             }

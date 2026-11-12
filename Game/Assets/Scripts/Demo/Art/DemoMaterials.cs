@@ -4,12 +4,14 @@ using UnityEngine;
 namespace ElysFarm.Demo
 {
     /// <summary>
-    /// 演示层的材质与体块工厂。URP 里 <see cref="GameObject.CreatePrimitive"/> 的默认材质
-    /// 属于内置管线（粉色），所以每个运行时创建的方块都必须显式赋 URP 材质。
-    /// 运行时创建的材质会被记录下来，重建表现层（素材开关）时一起销毁，避免反复切换泄漏。
+    /// 体块回退用的材质与方块工厂。像素素材关掉（或缺失）时，地块、作物与角色都退回这些体块，
+    /// 领域状态不变。运行时创建的材质会被记录下来，重建表现层时一起销毁，避免反复切换泄漏。
     /// </summary>
     public static class DemoMaterials
     {
+        /// <summary>URP 的 Unlit：体块不参与光照，颜色就是看到的颜色。</summary>
+        public const string BlockShaderName = "Universal Render Pipeline/Unlit";
+
         static readonly Color DrySoil = new Color(0.47f, 0.34f, 0.23f);
         static readonly Color WetSoil = new Color(0.24f, 0.17f, 0.12f);
         static readonly List<Material> Created = new List<Material>();
@@ -21,10 +23,10 @@ namespace ElysFarm.Demo
 
         public static Material Create(string name, Color color)
         {
-            var shader = Shader.Find(UrpMaterialConverter.UrpLitShaderName);
+            var shader = Shader.Find(BlockShaderName);
             if (shader == null)
             {
-                shader = Shader.Find("Universal Render Pipeline/Unlit");
+                shader = Shader.Find("Universal Render Pipeline/Lit");
             }
 
             if (shader == null)
@@ -33,25 +35,7 @@ namespace ElysFarm.Demo
             }
 
             var material = new Material(shader) { name = name };
-            if (material.HasProperty("_BaseColor"))
-            {
-                material.SetColor("_BaseColor", color);
-            }
-            else if (material.HasProperty("_Color"))
-            {
-                material.SetColor("_Color", color);
-            }
-
-            if (material.HasProperty("_Smoothness"))
-            {
-                material.SetFloat("_Smoothness", 0.08f);
-            }
-
-            if (material.HasProperty("_Metallic"))
-            {
-                material.SetFloat("_Metallic", 0f);
-            }
-
+            SetColor(material, color);
             Created.Add(material);
             return material;
         }
@@ -66,14 +50,7 @@ namespace ElysFarm.Demo
                     continue;
                 }
 
-                if (Application.isPlaying)
-                {
-                    Object.Destroy(material);
-                }
-                else
-                {
-                    Object.DestroyImmediate(material);
-                }
+                DestroyObject(material);
             }
 
             Created.Clear();
@@ -113,6 +90,13 @@ namespace ElysFarm.Demo
             primitive.transform.position = position;
             primitive.transform.localScale = scale;
             primitive.GetComponent<Renderer>().sharedMaterial = Create(name, color);
+
+            var collider = primitive.GetComponent<Collider>();
+            if (collider != null)
+            {
+                DestroyObject(collider);
+            }
+
             return primitive;
         }
 
@@ -130,6 +114,24 @@ namespace ElysFarm.Demo
             else if (material.HasProperty("_Color"))
             {
                 material.SetColor("_Color", color);
+            }
+        }
+
+        /// <summary>运行时对象销毁：Play Mode 用延迟销毁，编辑器里立即销毁。</summary>
+        public static void DestroyObject(Object target)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            if (Application.isPlaying)
+            {
+                Object.Destroy(target);
+            }
+            else
+            {
+                Object.DestroyImmediate(target);
             }
         }
     }

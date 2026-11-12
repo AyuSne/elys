@@ -128,7 +128,7 @@ namespace ElysFarm.Demo
             var x = leftEdge + (gap - width) * 0.5f;
             GUILayout.BeginArea(new Rect(x, PanelTop, width, 76f), GUI.skin.box);
             GUILayout.Label(
-                demo.IsOverheadCamera ? "镜头 · 俯视 45°" : $"镜头 · 跟拍{FollowedName()}",
+                demo.IsOverheadCamera ? "镜头 · 俯视 3×" : $"镜头 · 跟拍 4× {FollowedName()}",
                 smallStyle);
 
             GUILayout.BeginHorizontal();
