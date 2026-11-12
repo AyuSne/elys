@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 
 namespace ElysFarm.Core
@@ -41,10 +42,16 @@ namespace ElysFarm.Core
                 "2. 玩家追问状态或原因 -> outlet 为 query，reply 用 NPC 口吻简短回答。\n" +
                 "3. 闲聊 -> outlet 为 chat，reply 简短自然。\n" +
                 "4. 做不到的要求不要假装能做，在 reply 里用一句话说明理由。\n" +
-                "5. 只按 json 输出，不要输出 markdown 代码块。";
+                "5. 玩家追问时，reply 必须包含具体状态或记忆依据（地块 id、工步、体力、第几天），不能只说套话；引用记忆用「我记得…」。\n" +
+                "6. 不要编造记忆里没有的地块或事件。\n" +
+                "7. 只按 json 输出，不要输出 markdown 代码块。";
         }
 
-        public static ChatRequest Build(FarmWorld world, Npc npc, string playerText)
+        public static ChatRequest Build(
+            FarmWorld world,
+            Npc npc,
+            string playerText,
+            IReadOnlyList<MemoryHit> memories = null)
         {
             var user = new StringBuilder();
             user.Append("农场的真实状态：\n");
@@ -88,6 +95,22 @@ namespace ElysFarm.Core
 
             user.Append('\n');
             user.Append($"NPC：{npc.DisplayName}（{npc.Id}），体力 {npc.Stamina:P0}，当前位置 x={npc.Position.X:0.#}, z={npc.Position.Z:0.#}。\n");
+            user.Append($"NPC 当前意图：{world.IntentOf(npc.Id)}。\n");
+
+            user.Append("检索到的记忆（按权重降序，最多三条）：");
+            if (memories == null || memories.Count == 0)
+            {
+                user.Append("无。\n");
+            }
+            else
+            {
+                user.Append('\n');
+                foreach (var memory in memories)
+                {
+                    user.Append($"- 第 {memory.Day} 天：{memory.Text}（权重 {memory.Weight:0.00}）\n");
+                }
+            }
+
             user.Append($"玩家说：{playerText}");
 
             return new ChatRequest(new[]

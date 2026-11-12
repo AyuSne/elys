@@ -63,6 +63,39 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 构造embedding请求体并解析向量()
+        {
+            var body = DeepSeekProtocol.BuildEmbeddingBody(
+                new[] { "给 A1 浇水", "今天天气不错" },
+                "BAAI/bge-m3");
+
+            StringAssert.Contains("\"model\":\"BAAI/bge-m3\"", body);
+            StringAssert.Contains("\"input\":[\"给 A1 浇水\",\"今天天气不错\"]", body);
+            StringAssert.Contains("\"encoding_format\":\"float\"", body);
+
+            const string response =
+                "{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]},{\"index\":1,\"embedding\":[0.3,0.4]}]}";
+            var vectors = DeepSeekProtocol.ParseEmbeddingResponse(response, 2);
+
+            Assert.AreEqual(2, vectors.Count);
+            Assert.AreEqual(0.2f, vectors[0][1], 0.0001f);
+            Assert.AreEqual(0.3f, vectors[1][0], 0.0001f);
+        }
+
+        [Test]
+        public void embedding条数或维度对不上时按不可用处理()
+        {
+            const string tooFew = "{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]}]}";
+            Assert.Throws<ModelRequestException>(
+                () => DeepSeekProtocol.ParseEmbeddingResponse(tooFew, 2));
+
+            const string ragged =
+                "{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]},{\"index\":1,\"embedding\":[0.3]}]}";
+            Assert.Throws<ModelRequestException>(
+                () => DeepSeekProtocol.ParseEmbeddingResponse(ragged, 2));
+        }
+
+        [Test]
         public void 解析模型名与token用量()
         {
             const string response =

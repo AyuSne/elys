@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ElysFarm.Core;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -99,6 +100,96 @@ namespace ElysFarm.Model
                 latencySeconds,
                 (int?)usage?["prompt_tokens"] ?? 0,
                 (int?)usage?["completion_tokens"] ?? 0);
+        }
+
+        /// <summary>构造 /embeddings 的请求体；硅基流动兼容 OpenAI 的批量 input。</summary>
+        public static string BuildEmbeddingBody(IReadOnlyList<string> inputs, string model)
+        {
+            if (inputs == null || inputs.Count == 0)
+            {
+                throw new ArgumentException("embedding 至少需要一个输入", nameof(inputs));
+            }
+
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                throw new ArgumentException("必须指定 embedding 模型名", nameof(model));
+            }
+
+            var array = new JArray();
+            foreach (var input in inputs)
+            {
+                array.Add(input ?? string.Empty);
+            }
+
+            var body = new JObject
+            {
+                ["model"] = model,
+                ["input"] = array,
+                ["encoding_format"] = "float"
+            };
+
+            return body.ToString(Formatting.None);
+        }
+
+        /// <summary>
+        /// 解析 /embeddings 的响应。条数或维度不对时按不可用处理，
+        /// 让调用方退回关键词检索，而不是拿半截向量去算余弦。
+        /// </summary>
+        public static IReadOnlyList<float[]> ParseEmbeddingResponse(string json, int expectedCount)
+        {
+            JObject root;
+            try
+            {
+                root = JObject.Parse(json);
+            }
+            catch (Exception ex)
+            {
+                throw new ModelRequestException("embedding 响应不是合法 JSON", ex);
+            }
+
+            var data = root["data"] as JArray;
+            if (data == null || data.Count != expectedCount)
+            {
+                throw new ModelRequestException(
+                    $"embedding 返回 {data?.Count ?? 0} 条，期望 {expectedCount} 条");
+            }
+
+            var vectors = new float[expectedCount][];
+            var dimension = -1;
+            foreach (var item in data)
+            {
+                var index = (int?)item?["index"] ?? -1;
+                var embedding = item?["embedding"] as JArray;
+                if (index < 0 || index >= expectedCount || embedding == null || embedding.Count == 0)
+                {
+                    throw new ModelRequestException("embedding 响应缺少向量或索引非法");
+                }
+
+                if (dimension >= 0 && embedding.Count != dimension)
+                {
+                    throw new ModelRequestException(
+                        $"embedding 维度不一致：{dimension} 与 {embedding.Count}");
+                }
+
+                dimension = embedding.Count;
+                var vector = new float[dimension];
+                for (var i = 0; i < dimension; i++)
+                {
+                    vector[i] = (float)embedding[i];
+                }
+
+                vectors[index] = vector;
+            }
+
+            foreach (var vector in vectors)
+            {
+                if (vector == null)
+                {
+                    throw new ModelRequestException("embedding 响应缺少某条向量");
+                }
+            }
+
+            return vectors;
         }
     }
 }

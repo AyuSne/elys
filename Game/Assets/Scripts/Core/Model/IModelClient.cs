@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 namespace ElysFarm.Core
 {
     /// <summary>
-    /// 模型调用的统一出口（见规格）：本轮只覆盖对话补全，embedding 留给记忆票扩展。
-    /// 真实实现走 DeepSeek；测试一律用假实现，永不联网。
+    /// 模型调用的统一出口（见规格）：覆盖对话补全与 embedding 两类请求。
+    /// 真实实现走 DeepSeek 与硅基流动；测试一律用假实现，永不联网。
     /// 实现必须带硬超时，失败时抛异常交给调用方走本地降级。
     /// </summary>
     public interface IModelClient
@@ -14,8 +14,16 @@ namespace ElysFarm.Core
         /// <summary>模型名；失败调用没有响应可读，也必须能从客户端拿到。</summary>
         string ModelName { get; }
 
+        /// <summary>是否配置了 embedding；为 false 时记忆检索直接用关键词，不发向量请求。</summary>
+        bool SupportsEmbeddings { get; }
+
         /// <summary>发起一次对话补全请求。</summary>
         Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default);
+
+        /// <summary>批量取 embedding 向量；返回顺序与 inputs 一一对应，失败时抛异常。</summary>
+        Task<IReadOnlyList<float[]>> EmbedAsync(
+            IReadOnlyList<string> inputs,
+            CancellationToken cancellationToken = default);
     }
 
     /// <summary>对话中的一条消息。</summary>

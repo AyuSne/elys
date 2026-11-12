@@ -4,10 +4,10 @@ using System.Collections.Generic;
 namespace ElysFarm.Core
 {
     /// <summary>
-    /// 记忆中台（见规格）：按 NPC 记录带游戏日与 importance（1–10）的记忆，
-    /// 按 <c>0.5×相似度 + 0.3×重要性 + 0.2×时间衰减</c> 取前几条。
-    /// 相似度先用本地关键词 bigram，断网也照常检索；#7 接 embedding 时只替换相似度这一项，
-    /// 排序公式与决策可视化的展示接口保持不变。
+    /// 记忆中台（见规格）：按 NPC 记录带游戏日与 importance（1–10）的记忆。
+    /// 两段式检索——先按相似度召回 10 条，再按
+    /// <c>0.5×相似度 + 0.3×重要性 + 0.2×时间衰减</c> 取前几条。
+    /// 相似度在有向量时用余弦，否则退回本地关键词 bigram；断网也照常检索。
     /// 模块内部，不单开测试接缝；所有行为通过 <see cref="FarmWorld"/> 暴露。
     /// </summary>
     internal sealed class MemoryStore
@@ -24,7 +24,11 @@ namespace ElysFarm.Core
         /// <summary>importance 的合法范围。</summary>
         public const int MaxImportance = 10;
 
+        /// <summary>第一段检索召回的条数；加权重排只在这十条里进行。</summary>
+        public const int RecallCount = 10;
+
         readonly Dictionary<string, List<MemoryEntry>> byNpc = new Dictionary<string, List<MemoryEntry>>();
+        readonly Dictionary<string, float[]> vectors = new Dictionary<string, float[]>();
 
         /// <summary>记下一条属于某 NPC 的记忆；importance 会被夹到 1..10。</summary>
         public void Remember(string npcId, string text, int day, int importance)
@@ -49,26 +53,80 @@ namespace ElysFarm.Core
             entries.Add(new MemoryEntry(text.Trim(), day, clamped));
         }
 
-        /// <summary>检索某名 NPC 的前 count 条记忆，按权重降序；权重相同时新记忆优先。</summary>
-        public IReadOnlyList<MemoryHit> Retrieve(string npcId, string cue, int currentDay, int count)
+        /// <summary>还没有向量的记忆文本，新的在前；供路由器一次批量取向量。</summary>
+        public IReadOnlyList<string> TextsNeedingEmbedding(string npcId, int count)
+        {
+            if (count <= 0 || !byNpc.TryGetValue(npcId, out var entries) || entries.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var texts = new List<string>();
+            for (var i = entries.Count - 1; i >= 0 && texts.Count < count; i--)
+            {
+                var text = entries[i].Text;
+                if (vectors.ContainsKey(text) || texts.Contains(text))
+                {
+                    continue;
+                }
+
+                texts.Add(text);
+            }
+
+            return texts;
+        }
+
+        /// <summary>缓存一条记忆的 embedding；同一文本重复缓存时后写入的覆盖先写入的。</summary>
+        public void CacheEmbedding(string text, float[] vector)
+        {
+            if (string.IsNullOrWhiteSpace(text) || vector == null || vector.Length == 0)
+            {
+                return;
+            }
+
+            vectors[text.Trim()] = (float[])vector.Clone();
+        }
+
+        /// <summary>
+        /// 两段式检索：先按相似度召回 <see cref="RecallCount"/> 条，再按
+        /// <c>0.5×相似度 + 0.3×重要性 + 0.2×时间衰减</c> 取前 count 条。
+        /// 第二段只在召回的十条里重排，因此低相似度的记忆不会靠重要性直接空降。
+        /// </summary>
+        public IReadOnlyList<MemoryHit> Retrieve(
+            string npcId,
+            string cue,
+            int currentDay,
+            int count,
+            float[] cueEmbedding = null)
         {
             if (count <= 0 || !byNpc.TryGetValue(npcId, out var entries) || entries.Count == 0)
             {
                 return Array.Empty<MemoryHit>();
             }
 
-            var scored = new List<MemoryHit>(entries.Count);
+            var recalled = new List<Recalled>(entries.Count);
             foreach (var entry in entries)
             {
-                var similarity = MemorySimilarity.Between(cue, entry.Text);
-                var importance = entry.Importance / (float)MaxImportance;
-                var ageDays = Math.Max(0, currentDay - entry.Day);
+                recalled.Add(new Recalled(entry, Similarity(cue, cueEmbedding, entry.Text)));
+            }
+
+            recalled.Sort(CompareSimilarity);
+            if (recalled.Count > RecallCount)
+            {
+                recalled.RemoveRange(RecallCount, recalled.Count - RecallCount);
+            }
+
+            var scored = new List<MemoryHit>(recalled.Count);
+            foreach (var candidate in recalled)
+            {
+                var importance = candidate.Entry.Importance / (float)MaxImportance;
+                var ageDays = Math.Max(0, currentDay - candidate.Entry.Day);
                 var recency = 1f / (1f + ageDays);
-                var weight = SimilarityWeight * similarity
+                var weight = SimilarityWeight * candidate.Similarity
                     + ImportanceWeight * importance
                     + RecencyWeight * recency;
 
-                scored.Add(new MemoryHit(entry.Text, entry.Day, weight));
+                scored.Add(new MemoryHit(candidate.Entry.Text, candidate.Entry.Day, weight));
             }
 
             scored.Sort(Compare);
@@ -78,6 +136,58 @@ namespace ElysFarm.Core
             }
 
             return scored;
+        }
+
+        /// <summary>线索与记忆都拿到向量时用余弦；任一方没有向量就退回关键词 bigram。</summary>
+        float Similarity(string cue, float[] cueEmbedding, string text)
+        {
+            if (cueEmbedding != null
+                && cueEmbedding.Length > 0
+                && vectors.TryGetValue(text, out var vector))
+            {
+                return Cosine(cueEmbedding, vector);
+            }
+
+            return MemorySimilarity.Between(cue, text);
+        }
+
+        /// <summary>余弦相似度，负相关按 0 计；维度不一致或零向量一律按 0。</summary>
+        static float Cosine(float[] a, float[] b)
+        {
+            if (a == null || b == null || a.Length == 0 || a.Length != b.Length)
+            {
+                return 0f;
+            }
+
+            double dot = 0d;
+            double lengthA = 0d;
+            double lengthB = 0d;
+            for (var i = 0; i < a.Length; i++)
+            {
+                dot += a[i] * b[i];
+                lengthA += a[i] * a[i];
+                lengthB += b[i] * b[i];
+            }
+
+            if (lengthA <= 0d || lengthB <= 0d)
+            {
+                return 0f;
+            }
+
+            var cosine = dot / (Math.Sqrt(lengthA) * Math.Sqrt(lengthB));
+            return (float)Math.Max(0d, Math.Min(1d, cosine));
+        }
+
+        static int CompareSimilarity(Recalled a, Recalled b)
+        {
+            var bySimilarity = b.Similarity.CompareTo(a.Similarity);
+            if (bySimilarity != 0)
+            {
+                return bySimilarity;
+            }
+
+            var byDay = b.Entry.Day.CompareTo(a.Entry.Day);
+            return byDay != 0 ? byDay : string.CompareOrdinal(a.Entry.Text, b.Entry.Text);
         }
 
         static int Compare(MemoryHit a, MemoryHit b)
@@ -90,6 +200,19 @@ namespace ElysFarm.Core
 
             var byDay = b.Day.CompareTo(a.Day);
             return byDay != 0 ? byDay : string.CompareOrdinal(a.Text, b.Text);
+        }
+
+        readonly struct Recalled
+        {
+            public Recalled(MemoryEntry entry, float similarity)
+            {
+                Entry = entry;
+                Similarity = similarity;
+            }
+
+            public MemoryEntry Entry { get; }
+
+            public float Similarity { get; }
         }
 
         readonly struct MemoryEntry

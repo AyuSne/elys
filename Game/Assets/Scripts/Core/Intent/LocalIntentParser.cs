@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace ElysFarm.Core
 {
@@ -14,7 +15,9 @@ namespace ElysFarm.Core
         {
             "干什么", "干嘛", "做什么", "忙什么", "在种什么", "种什么", "种啥",
             "种的什么", "种的是什么", "种的啥", "种了啥", "在种啥",
-            "为什么", "怎么不去", "什么情况", "状态", "累不累", "渴不渴"
+            "为什么", "怎么不去", "什么情况", "状态", "累不累", "渴不渴",
+            "上次", "之前", "昨天", "前天", "哪块", "哪边", "是不是", "你让我",
+            "还记得", "记得吗"
         };
 
         static readonly char[] CropPrefixNoise = "满上点儿些一亩块片地田都全把给在到去遍次棵株颗粒茬植".ToCharArray();
@@ -26,7 +29,8 @@ namespace ElysFarm.Core
 
             if (IsQuery(normalized))
             {
-                return IntentDraft.Read(IntentOutlet.Query, QueryReply(world, npc));
+                // 追问的台词要带当前状态与检索到的记忆，由路由器在拿到记忆后生成。
+                return IntentDraft.Read(IntentOutlet.Query, null);
             }
 
             if (!HasFarmKeyword(normalized))
@@ -268,17 +272,193 @@ namespace ElysFarm.Core
             return text.Contains("麦子");
         }
 
-        internal static string QueryReply(FarmWorld world, Npc npc)
+        /// <summary>
+        /// 离线追问的回答。按问题分成三类：上次那件事、为什么没去干活、现在在干什么；
+        /// 每条回答都落到具体地块 / 工步 / 体力，并附上检索到的记忆作为依据。
+        /// </summary>
+        internal static string QueryReply(
+            FarmWorld world,
+            Npc npc,
+            string question,
+            IReadOnlyList<MemoryHit> memories)
         {
-            var order = world.WorkOrderOf(npc.Id);
-            if (order == null)
+            var normalized = Normalize(question ?? string.Empty);
+            var builder = new StringBuilder();
+
+            if (IsMemoryQuestion(normalized) && memories != null && memories.Count > 0)
             {
-                return "我在等下一件该干的活。";
+                AppendMemoryAnswer(builder, world, npc, memories[0]);
+                return builder.ToString();
             }
 
-            return order.NextStep.HasValue
-                ? $"我正要去{order.FieldId}干活。"
-                : "我手里的活刚干完。";
+            if (IsWhyNotWorking(normalized))
+            {
+                AppendWhyNotWorking(builder, world, npc);
+            }
+            else if (IsStatusQuestion(normalized))
+            {
+                AppendStatus(builder, npc);
+            }
+            else
+            {
+                AppendWhatDoing(builder, world, npc);
+            }
+
+            AppendMemoryBasis(builder, memories);
+            return builder.ToString();
+        }
+
+        static bool IsMemoryQuestion(string text)
+        {
+            return text.Contains("上次")
+                || text.Contains("之前")
+                || text.Contains("昨天")
+                || text.Contains("前天")
+                || text.Contains("你让我")
+                || text.Contains("哪块")
+                || text.Contains("哪边")
+                || text.Contains("是不是")
+                || text.Contains("记得");
+        }
+
+        static bool IsWhyNotWorking(string text)
+        {
+            return text.Contains("怎么不去")
+                || text.Contains("为什么不")
+                || text.Contains("为什么没")
+                || text.Contains("怎么没")
+                || text.Contains("不干活")
+                || text.Contains("偷懒")
+                || text.Contains("闲着");
+        }
+
+        static bool IsStatusQuestion(string text)
+        {
+            return text.Contains("累不累")
+                || text.Contains("渴不渴")
+                || text.Contains("状态")
+                || text.Contains("体力")
+                || text.Contains("心情")
+                || text.Contains("饿");
+        }
+
+        static void AppendWhatDoing(StringBuilder builder, FarmWorld world, Npc npc)
+        {
+            var order = world.WorkOrderOf(npc.Id);
+            if (order != null && order.NextStep.HasValue)
+            {
+                var step = order.NextStep.Value;
+                builder.Append($"我正要去 {order.FieldId} {WorkStepLabel.Of(step)}");
+                builder.Append($"（工单第 {order.CompletedCount + 1}/{order.Steps.Count} 步）");
+                if (!ActionValidator.Validate(
+                        world,
+                        npc,
+                        world.GetField(order.FieldId),
+                        step,
+                        order.SpeciesId,
+                        out var reason))
+                {
+                    builder.Append($"，不过{TrimEnd(reason)}");
+                }
+
+                builder.Append('。');
+                return;
+            }
+
+            if (npc.IsResting)
+            {
+                builder.Append($"我在歇着：体力只剩 {npc.Stamina:P0}，还要 {npc.RestSecondsRemaining:0} 秒。");
+                return;
+            }
+
+            var intent = world.IntentOf(npc.Id);
+            if (string.Equals(intent, FarmWorld.ThinkingReason, StringComparison.Ordinal))
+            {
+                builder.Append($"我刚干完一趟，还在琢磨下一步（还要 {npc.DecisionSecondsRemaining:0} 秒）。");
+                return;
+            }
+
+            builder.Append($"我现在{intent}，体力 {npc.Stamina:P0}。");
+        }
+
+        static void AppendWhyNotWorking(StringBuilder builder, FarmWorld world, Npc npc)
+        {
+            if (npc.IsResting)
+            {
+                builder.Append(
+                    $"我累了在歇着：体力只剩 {npc.Stamina:P0}，还要 {npc.RestSecondsRemaining:0} 秒才缓过来。");
+                return;
+            }
+
+            var order = world.WorkOrderOf(npc.Id);
+            if (order != null && order.NextStep.HasValue)
+            {
+                var step = order.NextStep.Value;
+                builder.Append($"我手里有你派的活：去 {order.FieldId} {WorkStepLabel.Of(step)}。");
+                if (!ActionValidator.Validate(
+                        world,
+                        npc,
+                        world.GetField(order.FieldId),
+                        step,
+                        order.SpeciesId,
+                        out var reason))
+                {
+                    builder.Append($"现在{TrimEnd(reason)}，得等一等。");
+                }
+
+                return;
+            }
+
+            if (!npc.CanDecide)
+            {
+                builder.Append($"我刚干完一趟，还得 {npc.DecisionSecondsRemaining:0} 秒才拿主意。");
+                return;
+            }
+
+            var next = world.NextStep(npc.Id);
+            if (!next.HasValue)
+            {
+                builder.Append("地里现在没有我能干的活了。");
+                return;
+            }
+
+            builder.Append($"我正准备去 {next.Value.FieldId} {WorkStepLabel.Of(next.Value.Step)}，只是还没动身。");
+        }
+
+        static void AppendStatus(StringBuilder builder, Npc npc)
+        {
+            builder.Append(
+                $"体力 {npc.Stamina:P0}，心情 {npc.Mood:P0}，饥饿 {npc.Hunger:P0}。");
+        }
+
+        static void AppendMemoryAnswer(StringBuilder builder, FarmWorld world, Npc npc, MemoryHit memory)
+        {
+            var text = TrimEnd(memory.Text);
+            builder.Append(text.StartsWith("玩家", StringComparison.Ordinal)
+                ? $"对，第 {memory.Day} 天{ToSecondPerson(text)}。"
+                : $"我记得，第 {memory.Day} 天{text}。");
+            builder.Append($"现在{world.IntentOf(npc.Id)}。");
+        }
+
+        static void AppendMemoryBasis(StringBuilder builder, IReadOnlyList<MemoryHit> memories)
+        {
+            if (memories == null || memories.Count == 0)
+            {
+                return;
+            }
+
+            var top = memories[0];
+            builder.Append($"我记得第 {top.Day} 天，{TrimEnd(top.Text)}。");
+        }
+
+        static string ToSecondPerson(string text)
+        {
+            return text.StartsWith("玩家", StringComparison.Ordinal) ? "你" + text.Substring(2) : text;
+        }
+
+        static string TrimEnd(string text)
+        {
+            return (text ?? string.Empty).Trim().TrimEnd('。', '！', '？', '，', '、');
         }
 
         internal static string ChatReply(string text)

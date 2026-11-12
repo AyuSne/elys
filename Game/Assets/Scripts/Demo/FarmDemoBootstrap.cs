@@ -236,7 +236,19 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            LastUnderstood = "没有接单";
+            switch (result.Outlet)
+            {
+                case IntentOutlet.Query:
+                    LastUnderstood = "追问：只读回答（不改状态）";
+                    break;
+                case IntentOutlet.Chat:
+                    LastUnderstood = "闲聊：只留下记忆";
+                    break;
+                default:
+                    LastUnderstood = "没有接单";
+                    break;
+            }
+
             LastMessage = $"{target.DisplayName}：{result.Reply}";
             if (view != null)
             {

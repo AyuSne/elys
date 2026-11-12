@@ -23,6 +23,8 @@ namespace ElysFarm.Core
         readonly Dictionary<string, Npc> npcsById = new Dictionary<string, Npc>();
         readonly Dictionary<string, WorkOrder> workOrdersByNpc = new Dictionary<string, WorkOrder>();
         readonly Dictionary<string, StepCandidate> lastDecisions = new Dictionary<string, StepCandidate>();
+        readonly Dictionary<string, IReadOnlyList<MemoryHit>> lastRecalls =
+            new Dictionary<string, IReadOnlyList<MemoryHit>>();
         readonly MemoryStore memories = new MemoryStore();
         readonly UtilityScorer scorer = new UtilityScorer();
 
@@ -221,11 +223,107 @@ namespace ElysFarm.Core
             return DecisionInspector.Inspect(this, GetNpc(npcId), lastCall);
         }
 
-        /// <summary>检索某名 NPC 的记忆；最多返回三条，按权重降序。</summary>
-        public IReadOnlyList<MemoryHit> RetrieveMemories(string npcId, string cue)
+        /// <summary>记下一条属于某名 NPC 的记忆；importance 会被夹到 1..10，时间记为当前游戏日。</summary>
+        public void Remember(string npcId, string text, int importance)
         {
             _ = GetNpc(npcId);
-            return memories.Retrieve(npcId, cue, Clock.Day, DecisionInspector.MemoryCount);
+            memories.Remember(npcId, text, Clock.Day, importance);
+
+            // 记忆变了，上一次回答命中的排序不再可信；面板回到按当前意图检索。
+            lastRecalls.Remove(npcId);
+        }
+
+        /// <summary>
+        /// 地块的可读指称：处在某个方向极值上时带上方位（如「西边（A1）」），
+        /// 否则只给 id。记忆与追问都用它，保证玩家说「西边那块」时能对上同一块地。
+        /// </summary>
+        public string DescribeField(string fieldId)
+        {
+            var field = GetField(fieldId);
+            if (fields.Count <= 1)
+            {
+                return field.Id;
+            }
+
+            var minX = fields[0].Position.X;
+            var maxX = minX;
+            var minZ = fields[0].Position.Z;
+            var maxZ = minZ;
+            foreach (var each in fields)
+            {
+                minX = Math.Min(minX, each.Position.X);
+                maxX = Math.Max(maxX, each.Position.X);
+                minZ = Math.Min(minZ, each.Position.Z);
+                maxZ = Math.Max(maxZ, each.Position.Z);
+            }
+
+            const float epsilon = 0.001f;
+            if (field.Position.X <= minX + epsilon && maxX - minX > epsilon)
+            {
+                return $"西边（{field.Id}）";
+            }
+
+            if (field.Position.X >= maxX - epsilon && maxX - minX > epsilon)
+            {
+                return $"东边（{field.Id}）";
+            }
+
+            if (field.Position.Z <= minZ + epsilon && maxZ - minZ > epsilon)
+            {
+                return $"南边（{field.Id}）";
+            }
+
+            if (field.Position.Z >= maxZ - epsilon && maxZ - minZ > epsilon)
+            {
+                return $"北边（{field.Id}）";
+            }
+
+            return field.Id;
+        }
+
+        /// <summary>
+        /// 缓存一条记忆的 embedding 向量，供后续检索用余弦相似度；向量只是检索元数据，不改变游戏状态。
+        /// 没有向量（断网、未配置 embedding）时检索自动退回关键词相似度。
+        /// </summary>
+        public void CacheMemoryEmbedding(string npcId, string text, float[] embedding)
+        {
+            _ = GetNpc(npcId);
+            memories.CacheEmbedding(text, embedding);
+        }
+
+        /// <summary>还没有向量的记忆文本，新的在前；路由器据此一次批量取向量。</summary>
+        public IReadOnlyList<string> MemoriesNeedingEmbedding(string npcId, int count)
+        {
+            _ = GetNpc(npcId);
+            return memories.TextsNeedingEmbedding(npcId, count);
+        }
+
+        /// <summary>
+        /// 检索某名 NPC 的记忆；最多返回三条，按权重降序。
+        /// 给出检索线索的 embedding 时，有向量的记忆用余弦相似度，没有向量的仍用关键词。
+        /// 这是纯查询，不会记下本次命中；要回答玩家时用 <see cref="RecallForAnswer"/>。
+        /// </summary>
+        public IReadOnlyList<MemoryHit> RetrieveMemories(string npcId, string cue, float[] cueEmbedding = null)
+        {
+            _ = GetNpc(npcId);
+            return memories.Retrieve(npcId, cue, Clock.Day, DecisionInspector.MemoryCount, cueEmbedding);
+        }
+
+        /// <summary>
+        /// 为一次回答检索记忆，并记下这次命中：决策可视化层展示的正是回答所依据的三条，
+        /// 而不是按当前意图再检索一次。回答本身只读，不改地块、时钟或背包。
+        /// </summary>
+        public IReadOnlyList<MemoryHit> RecallForAnswer(string npcId, string cue, float[] cueEmbedding = null)
+        {
+            var hits = RetrieveMemories(npcId, cue, cueEmbedding);
+            lastRecalls[npcId] = hits;
+            return hits;
+        }
+
+        /// <summary>最近一次回答命中的记忆；没有回答过时为 null。</summary>
+        internal IReadOnlyList<MemoryHit> LastRecallOf(string npcId)
+        {
+            return lastRecalls.TryGetValue(npcId, out var hits) ? hits : null;
         }
 
         /// <summary>
@@ -258,6 +356,7 @@ namespace ElysFarm.Core
 
             candidate = best.Value;
             lastDecisions[npcId] = candidate;
+            lastRecalls.Remove(npcId);
             npc.MarkDecided();
             reason = null;
             return true;
@@ -294,6 +393,7 @@ namespace ElysFarm.Core
 
             // 一次执行尝试会消耗掉上一次自主决定：无论成败，NPC 都不该继续声称自己「正要去」那件事。
             lastDecisions.Remove(npcId);
+            lastRecalls.Remove(npcId);
 
             if (!ActionValidator.Validate(this, npc, field, step, sowSpeciesId, out var reason))
             {
@@ -543,6 +643,9 @@ namespace ElysFarm.Core
 
         void SettleDay(int day)
         {
+            // 跨日后时间衰减变了，上一次回答命中的顺序不再可信，回到按当前意图检索。
+            lastRecalls.Clear();
+
             foreach (var field in fields)
             {
                 field.AdvanceDay();

@@ -468,6 +468,18 @@ namespace ElysFarm.Demo
                 Submit();
             }
 
+            if (GUILayout.Button("你在干什么", buttonStyle, GUILayout.Width(82f)))
+            {
+                commandInput = "你在干什么";
+                Submit();
+            }
+
+            if (GUILayout.Button("怎么不去干活", buttonStyle, GUILayout.Width(96f)))
+            {
+                commandInput = "你怎么不去干活";
+                Submit();
+            }
+
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 

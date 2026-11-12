@@ -27,6 +27,15 @@ namespace ElysFarm.Demo
                 }
 
                 Debug.Log($"[Elys] 模型已配置：{settings.Model} @ {settings.BaseUrl}（密钥不落日志）。");
+                if (settings.HasEmbeddingKey)
+                {
+                    Debug.Log($"[Elys] 记忆向量已配置：{settings.EmbeddingModel} @ {settings.EmbeddingBaseUrl}。");
+                }
+                else
+                {
+                    Debug.Log("[Elys] 未配置硅基流动密钥，记忆检索用关键词相似度。");
+                }
+
                 return new DeepSeekModelClient(settings);
             }
             catch (Exception ex)
@@ -45,11 +54,27 @@ namespace ElysFarm.Demo
                 settings.BaseUrl = FirstNonEmpty((string)secrets["deepseek"]?["baseUrl"], settings.BaseUrl);
                 settings.Model = FirstNonEmpty((string)secrets["deepseek"]?["model"], settings.Model);
                 settings.ApiKey = (string)secrets["deepseek"]?["apiKey"];
+                settings.EmbeddingBaseUrl = FirstNonEmpty(
+                    (string)secrets["siliconflow"]?["baseUrl"],
+                    settings.EmbeddingBaseUrl);
+                settings.EmbeddingModel = FirstNonEmpty(
+                    (string)secrets["siliconflow"]?["embeddingModel"],
+                    settings.EmbeddingModel);
+                settings.EmbeddingApiKey = (string)secrets["siliconflow"]?["apiKey"];
             }
 
             settings.ApiKey = FirstNonEmpty(Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY"), settings.ApiKey);
             settings.BaseUrl = FirstNonEmpty(Environment.GetEnvironmentVariable("DEEPSEEK_BASE_URL"), settings.BaseUrl);
             settings.Model = FirstNonEmpty(Environment.GetEnvironmentVariable("DEEPSEEK_MODEL"), settings.Model);
+            settings.EmbeddingApiKey = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("SILICONFLOW_API_KEY"),
+                settings.EmbeddingApiKey);
+            settings.EmbeddingBaseUrl = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("SILICONFLOW_BASE_URL"),
+                settings.EmbeddingBaseUrl);
+            settings.EmbeddingModel = FirstNonEmpty(
+                Environment.GetEnvironmentVariable("SILICONFLOW_EMBEDDING_MODEL"),
+                settings.EmbeddingModel);
 
             return settings;
         }

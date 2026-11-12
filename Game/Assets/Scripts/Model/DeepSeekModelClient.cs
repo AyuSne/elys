@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading;
@@ -35,6 +36,9 @@ namespace ElysFarm.Model
         /// <summary>本次接入使用的模型名；失败时决策可视化也要能展示它。</summary>
         public string ModelName => settings.Model;
 
+        /// <summary>只有配置了硅基流动密钥时才发向量请求；否则记忆检索用关键词。</summary>
+        public bool SupportsEmbeddings => settings.HasEmbeddingKey;
+
         /// <summary>发起一次对话补全。</summary>
         public async Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default)
         {
@@ -58,6 +62,32 @@ namespace ElysFarm.Model
                 cancellationToken);
 
             return DeepSeekProtocol.ParseChatResponse(json, settings.Model, stopwatch.Elapsed.TotalSeconds);
+        }
+
+        /// <summary>批量取记忆与检索线索的向量；未配置密钥时抛错，由路由器退回关键词检索。</summary>
+        public async Task<IReadOnlyList<float[]>> EmbedAsync(
+            IReadOnlyList<string> inputs,
+            CancellationToken cancellationToken = default)
+        {
+            if (inputs == null || inputs.Count == 0)
+            {
+                return Array.Empty<float[]>();
+            }
+
+            if (!settings.HasEmbeddingKey)
+            {
+                throw new ModelRequestException("没有配置硅基流动密钥");
+            }
+
+            var body = DeepSeekProtocol.BuildEmbeddingBody(inputs, settings.EmbeddingModel);
+            var json = await PostAsync(
+                Combine(settings.EmbeddingBaseUrl, "/embeddings"),
+                settings.EmbeddingApiKey,
+                body,
+                settings.EmbeddingTimeoutSeconds,
+                cancellationToken);
+
+            return DeepSeekProtocol.ParseEmbeddingResponse(json, inputs.Count);
         }
 
         static async Task<string> PostAsync(

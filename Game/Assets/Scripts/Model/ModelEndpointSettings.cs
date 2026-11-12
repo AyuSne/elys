@@ -17,8 +17,23 @@ namespace ElysFarm.Model
         /// <summary>DeepSeek 密钥。</summary>
         public string ApiKey { get; set; }
 
+        /// <summary>硅基流动的 OpenAI 兼容地址，用于 embedding。</summary>
+        public string EmbeddingBaseUrl { get; set; } = "https://api.siliconflow.cn/v1";
+
+        /// <summary>embedding 模型名；默认 bge-m3（1024 维，中英混排友好）。</summary>
+        public string EmbeddingModel { get; set; } = "BAAI/bge-m3";
+
+        /// <summary>硅基流动密钥。</summary>
+        public string EmbeddingApiKey { get; set; }
+
+        /// <summary>一次 embedding 请求的硬超时（秒）。</summary>
+        public int EmbeddingTimeoutSeconds { get; set; } = 3;
+
         /// <summary>是否配置了可用的对话密钥。</summary>
         public bool HasChatKey => !string.IsNullOrWhiteSpace(ApiKey);
+
+        /// <summary>是否配置了可用的 embedding 密钥。</summary>
+        public bool HasEmbeddingKey => !string.IsNullOrWhiteSpace(EmbeddingApiKey);
     }
 
     /// <summary>模型调用失败（网络、协议或空 JSON）。调用方应捕获并走本地降级。</summary>

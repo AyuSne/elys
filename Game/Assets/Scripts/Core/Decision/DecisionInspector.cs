@@ -15,7 +15,9 @@ namespace ElysFarm.Core
         {
             var candidates = world.RankCandidates(npc.Id);
             var intent = world.IntentOf(npc.Id);
-            var memories = world.RetrieveMemories(npc.Id, intent);
+
+            // 玩家追问后展示回答实际依据的那三条；没有追问过才按当前意图检索。
+            var memories = world.LastRecallOf(npc.Id) ?? world.RetrieveMemories(npc.Id, intent);
 
             return new DecisionSnapshot(
                 npc.Id,

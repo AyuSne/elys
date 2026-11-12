@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using ElysFarm.Core;
@@ -47,10 +48,30 @@ namespace ElysFarm.Tests
 
             public string ModelName => "fake-deepseek";
 
+            public bool SupportsEmbeddings { get; set; }
+
+            public Func<IReadOnlyList<string>, Task<IReadOnlyList<float[]>>> OnEmbed { get; set; }
+
+            public int EmbedCalls { get; private set; }
+
             public Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default)
             {
                 Calls++;
                 return onChat(request, cancellationToken);
+            }
+
+            public Task<IReadOnlyList<float[]>> EmbedAsync(
+                IReadOnlyList<string> inputs,
+                CancellationToken cancellationToken = default)
+            {
+                EmbedCalls++;
+                if (OnEmbed == null)
+                {
+                    return Task.FromException<IReadOnlyList<float[]>>(
+                        new NotSupportedException("假客户端未配置向量"));
+                }
+
+                return OnEmbed(inputs);
             }
 
             public int Calls { get; private set; }
@@ -413,6 +434,235 @@ namespace ElysFarm.Tests
             Assert.AreEqual(ModelCallOutcome.Timeout, timeout.Call.Outcome);
             Assert.AreEqual("fake-deepseek", timeout.Call.Model, "超时也要能展示模型名");
             Assert.AreEqual(0.05d, timeout.Call.LatencySeconds, 0.01d, "超时应记录等待上限");
+        }
+
+        [Test]
+        public async Task 离线追问回答当前状态与记忆依据()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            world.AdvanceDays(1);
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
+                reason);
+
+            var result = await new IntentRouter().RouteAsync("你在干什么", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            StringAssert.Contains("A1", result.Reply, "回答必须点名具体地块，不能只说套话");
+            StringAssert.Contains("浇水", result.Reply, "回答必须说出下一步工步");
+            StringAssert.Contains("第 1 天", result.Reply, "回答必须引用检索到的记忆及其游戏日");
+            var order = world.WorkOrderOf("ahe");
+            Assert.IsNotNull(order, "追问只读，不能丢掉工单");
+            Assert.AreEqual(WorkStep.Water, order.NextStep.Value, "追问不能推进工单");
+            Assert.AreEqual(1, world.Log.Count, "追问不能执行工步");
+        }
+
+        [Test]
+        public async Task 跨日追问能对上玩家上次让我浇的地块()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            world.AdvanceDays(1);
+
+            var router = new IntentRouter();
+            var command = await router.RouteAsync("给西边的地浇水", world, world.GetNpc("ahe"));
+            Assert.IsTrue(command.Accepted, command.Reply);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed);
+            world.AdvanceDays(1);
+
+            var question = await router.RouteAsync("上次你让我浇的是西边那块吗", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, question.Outlet, "带「上次」的追问不能被当成新的浇水指令");
+            StringAssert.Contains("第 2 天", question.Reply, "必须说出玩家上次下指令的游戏日");
+            StringAssert.Contains("西边", question.Reply, "必须沿用当时的方位指称");
+            StringAssert.Contains("A1", question.Reply, "必须落到真正浇过的地块");
+            Assert.IsNull(world.WorkOrderOf("ahe"), "追问不能产生新工单");
+        }
+
+        [Test]
+        public async Task 模型追问的提示词带上检索命中与当前意图()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+
+            var prompt = string.Empty;
+            var client = new ScriptedModelClient((request, _) =>
+            {
+                prompt = request.Messages[request.Messages.Count - 1].Content;
+                return Task.FromResult(
+                    new ChatResponse(
+                        "{\"outlet\":\"query\",\"reply\":\"我在 A1 播种，第 1 天的事我还记得。\"}",
+                        "fake-deepseek"));
+            });
+
+            var result = await new IntentRouter(client).RouteAsync("你在干什么", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            StringAssert.Contains("在 A1 播下了萝卜", prompt, "检索命中的记忆必须注入提示词");
+            StringAssert.Contains("当前意图", prompt, "提示词要带上当前意图");
+            StringAssert.Contains("待命", prompt);
+            Assert.AreEqual("我在 A1 播种，第 1 天的事我还记得。", result.Reply, "模型回答应原样返回");
+        }
+
+        [Test]
+        public async Task 在线时用向量检索替换关键词检索()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "给 A1 浇了水", 5);
+            world.Remember("ahe", "今天天气不错", 5);
+
+            var prompt = string.Empty;
+            var client = new ScriptedModelClient((request, _) =>
+            {
+                prompt = request.Messages[request.Messages.Count - 1].Content;
+                return Task.FromResult(
+                    new ChatResponse("{\"outlet\":\"query\",\"reply\":\"天气不错。\"}", "fake-deepseek"));
+            })
+            {
+                SupportsEmbeddings = true,
+                OnEmbed = inputs => Task.FromResult<IReadOnlyList<float[]>>(
+                    inputs.Select(text => text.Contains("A2") || text == "今天天气不错"
+                        ? new[] { 1f, 0f }
+                        : new[] { 0f, 1f }).ToList())
+            };
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "你还记得给 A2 浇水吗",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            Assert.AreEqual(1, client.EmbedCalls, "一次追问只批量取一次向量");
+            var weather = prompt.IndexOf("今天天气不错", StringComparison.Ordinal);
+            var water = prompt.IndexOf("给 A1 浇了水", StringComparison.Ordinal);
+            Assert.GreaterOrEqual(weather, 0, "向量命中的记忆必须注入提示词");
+            Assert.GreaterOrEqual(water, 0);
+            Assert.Less(weather, water, "向量相近的记忆应排在关键词相近的记忆之前");
+            StringAssert.Contains("天气不错", result.Reply, "模型回答应原样保留");
+        }
+
+        [Test]
+        public async Task 向量调用失败时退回关键词检索并照常回答()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "给 A1 浇了水", 5);
+            world.Remember("ahe", "今天天气不错", 5);
+
+            var prompt = string.Empty;
+            var client = new ScriptedModelClient((request, _) =>
+            {
+                prompt = request.Messages[request.Messages.Count - 1].Content;
+                return Task.FromResult(
+                    new ChatResponse("{\"outlet\":\"query\",\"reply\":\"我浇过 A1。\"}", "fake-deepseek"));
+            })
+            {
+                SupportsEmbeddings = true,
+                OnEmbed = _ => Task.FromException<IReadOnlyList<float[]>>(
+                    new InvalidOperationException("模拟向量服务断网"))
+            };
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "你还记得给 A2 浇水吗",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            Assert.AreEqual(1, client.EmbedCalls);
+            var water = prompt.IndexOf("给 A1 浇了水", StringComparison.Ordinal);
+            var weather = prompt.IndexOf("今天天气不错", StringComparison.Ordinal);
+            Assert.GreaterOrEqual(water, 0);
+            Assert.Less(water, weather, "向量不可用时必须退回关键词排序");
+            Assert.AreEqual("我浇过 A1。", result.Reply);
+        }
+
+        [Test]
+        public async Task 向量调用超时不会拖住追问()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "在 A1 播下了萝卜", 6);
+            var never = new TaskCompletionSource<IReadOnlyList<float[]>>();
+            var client = new ScriptedModelClient((_, __) =>
+                Task.FromResult(new ChatResponse("{\"outlet\":\"query\",\"reply\":\"我在播种。\"}", "fake")))
+            {
+                SupportsEmbeddings = true,
+                OnEmbed = _ => never.Task
+            };
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "你在干什么",
+                world,
+                world.GetNpc("ahe"),
+                embeddingDeadlineSeconds: 0.05f);
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            Assert.AreEqual(1, client.EmbedCalls);
+            Assert.AreEqual("我在播种。", result.Reply, "向量超时不能挡住对话");
+        }
+
+        [Test]
+        public async Task 模型追问答得太空时补上记忆依据()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "玩家让我给西边（A1）浇水", 7);
+            const string json = "{\"outlet\":\"query\",\"reply\":\"我在干活。\"}";
+
+            var result = await new IntentRouter(new ScriptedModelClient(json)).RouteAsync(
+                "上次你让我浇的是哪块",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            StringAssert.Contains("第 1 天", result.Reply, "模型的空泛回答要补上检索依据");
+            StringAssert.Contains("西边", result.Reply);
+        }
+
+        [Test]
+        public async Task 追问只读而闲聊写回玩家原话()
+        {
+            var world = NewWorld();
+            var router = new IntentRouter();
+            Assert.AreEqual(0, world.Inspect("ahe").Memories.Count, "开局没有记忆");
+
+            await router.RouteAsync("你在干什么", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(0, world.Inspect("ahe").Memories.Count, "追问只读，不能留下记忆");
+
+            var chat = await router.RouteAsync("你好呀", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Chat, chat.Outlet);
+            var memories = world.Inspect("ahe").Memories;
+            Assert.Greater(memories.Count, 0, "闲聊要留下记忆");
+            StringAssert.Contains("你好呀", memories[0].Text, "记下的应该是玩家的原话");
+        }
+
+        [Test]
+        public async Task 离线解释为什么没去干活时给出休息原因()
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddField("A2", new FarmPosition(4f, 2f));
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -4f), NpcPersona.Aya);
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            Assert.IsTrue(world.ExecuteStep("aya", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(world.ExecuteStep("aya", "A1", WorkStep.Water).Executed);
+            Assert.IsTrue(world.ExecuteStep("aya", "A1", WorkStep.Fertilize).Executed);
+            Assert.IsTrue(world.ExecuteStep("aya", "A2", WorkStep.Sow).Executed);
+
+            var npc = world.GetNpc("aya");
+            Assert.IsTrue(npc.IsResting, "阿芽连做四个工步后应按人设去休息");
+            var stamina = npc.Stamina;
+            var logCount = world.Log.Count;
+
+            var result = await new IntentRouter().RouteAsync("你怎么不去干活", world, npc);
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            StringAssert.Contains("歇", result.Reply, "必须承认自己在休息");
+            StringAssert.Contains("体力", result.Reply, "必须给出具体体力");
+            StringAssert.Contains("秒", result.Reply, "必须给出还要缓多久");
+            Assert.AreEqual(stamina, npc.Stamina, 0.0001f, "追问不能恢复体力");
+            Assert.AreEqual(logCount, world.Log.Count, "追问不能执行工步");
         }
 
         [Test]

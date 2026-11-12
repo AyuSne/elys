@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,12 @@ namespace ElysFarm.Core
 
         /// <summary>农事指令（规划级）的硬超时（秒）。</summary>
         public const float PlanningDeadlineSeconds = 15f;
+
+        /// <summary>一次记忆检索取向量的硬超时（秒）；超时退回关键词相似度。</summary>
+        public const float EmbeddingDeadlineSeconds = 2f;
+
+        /// <summary>一次批量补向量的条数上限；只补最近没向量的记忆，避免一次请求过大。</summary>
+        const int EmbeddingBatchLimit = 10;
 
         readonly IModelClient client;
 
@@ -42,7 +49,8 @@ namespace ElysFarm.Core
             string text,
             FarmWorld world,
             Npc npc,
-            float? deadlineSeconds = null)
+            float? deadlineSeconds = null,
+            float? embeddingDeadlineSeconds = null)
         {
             if (world == null)
             {
@@ -74,8 +82,17 @@ namespace ElysFarm.Core
 
             if (client == null || deadline <= 0f)
             {
-                return Finish(LocalFallback(text, world, npc, ModelCallInfo.None));
+                var offlineMemories = world.RecallForAnswer(npc.Id, text);
+                return Finish(LocalFallback(text, world, npc, offlineMemories, ModelCallInfo.None));
             }
+
+            // 追问与闲聊都要先检索记忆：向量可用时用余弦，断网或超时自动退回关键词。
+            var cueEmbedding = await TryEmbedCueAsync(
+                text,
+                world,
+                npc,
+                embeddingDeadlineSeconds ?? EmbeddingDeadlineSeconds);
+            var memories = world.RecallForAnswer(npc.Id, text, cueEmbedding);
 
             using var timeout = new CancellationTokenSource();
             var startedAt = Stopwatch.StartNew();
@@ -83,7 +100,7 @@ namespace ElysFarm.Core
             Task<ChatResponse> callTask;
             try
             {
-                request = IntentPrompt.Build(world, npc, text);
+                request = IntentPrompt.Build(world, npc, text, memories);
                 request.TimeoutSeconds = Math.Max(1, (int)Math.Ceiling(deadline));
                 callTask = client.CompleteAsync(request, timeout.Token);
             }
@@ -94,6 +111,7 @@ namespace ElysFarm.Core
                     text,
                     world,
                     npc,
+                    memories,
                     new ModelCallInfo(
                         client.ModelName,
                         startedAt.Elapsed.TotalSeconds,
@@ -119,7 +137,7 @@ namespace ElysFarm.Core
                     0,
                     ModelCallOutcome.Timeout,
                     $"等待 {deadline:0.#} 秒未返回");
-                return Finish(LocalFallback(text, world, npc, timedOut));
+                return Finish(LocalFallback(text, world, npc, memories, timedOut));
             }
 
             ChatResponse response;
@@ -134,6 +152,7 @@ namespace ElysFarm.Core
                     text,
                     world,
                     npc,
+                    memories,
                     new ModelCallInfo(
                         client.ModelName,
                         startedAt.Elapsed.TotalSeconds,
@@ -159,10 +178,10 @@ namespace ElysFarm.Core
                     response.PromptTokens,
                     response.CompletionTokens,
                     ModelCallOutcome.Unusable);
-                return Finish(LocalFallback(text, world, npc, unusable));
+                return Finish(LocalFallback(text, world, npc, memories, unusable));
             }
 
-            return Finish(ResolveDraft(draft, world, npc, false, call));
+            return Finish(ResolveDraft(draft, text, memories, world, npc, false, call));
         }
 
         IntentResult Finish(IntentResult result)
@@ -171,14 +190,21 @@ namespace ElysFarm.Core
             return result;
         }
 
-        IntentResult LocalFallback(string text, FarmWorld world, Npc npc, ModelCallInfo call)
+        IntentResult LocalFallback(
+            string text,
+            FarmWorld world,
+            Npc npc,
+            IReadOnlyList<MemoryHit> memories,
+            ModelCallInfo call)
         {
             var draft = LocalIntentParser.Parse(text, world, npc);
-            return ResolveDraft(draft, world, npc, true, call);
+            return ResolveDraft(draft, text, memories, world, npc, true, call);
         }
 
         static IntentResult ResolveDraft(
             IntentDraft draft,
+            string playerText,
+            IReadOnlyList<MemoryHit> memories,
             FarmWorld world,
             Npc npc,
             bool usedFallback,
@@ -192,16 +218,22 @@ namespace ElysFarm.Core
             switch (draft.Outlet)
             {
                 case IntentOutlet.Query:
-                    return IntentResult.ReadOnly(
-                        IntentOutlet.Query,
-                        ReplyOr(draft.Reply, LocalIntentParser.QueryReply(world, npc)),
-                        usedFallback,
-                        call);
+                    // 本地追问必须重新生成：模型不可用时，draft 里的模板回复没有状态与记忆依据。
+                    var localReply = LocalIntentParser.QueryReply(world, npc, playerText, memories);
+                    var queryReply = usedFallback
+                        ? localReply
+                        : EnsureQueryBasis(ReplyOr(draft.Reply, localReply), world, npc, memories, localReply);
+                    return IntentResult.ReadOnly(IntentOutlet.Query, queryReply, usedFallback, call);
 
                 case IntentOutlet.Chat:
+                    // 闲聊只留下记忆，不改变地块、时钟与背包；importance 后续由模型细化。
+                    world.Remember(
+                        npc.Id,
+                        $"玩家说「{Shorten(playerText, PlayerChatMaxLength)}」",
+                        PlayerChatImportance);
                     return IntentResult.ReadOnly(
                         IntentOutlet.Chat,
-                        ReplyOr(draft.Reply, LocalIntentParser.ChatReply(string.Empty)),
+                        ReplyOr(draft.Reply, LocalIntentParser.ChatReply(playerText ?? string.Empty)),
                         usedFallback,
                         call);
             }
@@ -244,11 +276,187 @@ namespace ElysFarm.Core
                 return IntentResult.Refuse(reason, usedFallback, call);
             }
 
+            // 玩家的话也要记住：跨日之后再问「上次你让我浇的是哪块」得答得出来。
+            world.Remember(
+                npc.Id,
+                PlayerRequestMemory(world, draft.Goal.Value, field, species, draft.FieldToken),
+                PlayerRequestImportance);
+
             var reply = ReplyOr(
                 draft.Reply,
                 $"好，我这就去{field.Id}{ActionName(draft.Goal.Value, species)}。");
 
             return IntentResult.AcceptedCommand(reply, order, usedFallback, call);
+        }
+
+        /// <summary>
+        /// 模型的追问回答如果既没提状态也没提记忆，补一句本地生成的依据。
+        /// 这样「答得出」不依赖模型是否听话，也不会把空泛回答直接端给玩家。
+        /// </summary>
+        static string EnsureQueryBasis(
+            string reply,
+            FarmWorld world,
+            Npc npc,
+            IReadOnlyList<MemoryHit> memories,
+            string localReply)
+        {
+            if (string.IsNullOrWhiteSpace(reply))
+            {
+                return localReply;
+            }
+
+            return HasQueryBasis(reply, world, npc, memories) ? reply : $"{reply.Trim()} {localReply}";
+        }
+
+        static bool HasQueryBasis(
+            string reply,
+            FarmWorld world,
+            Npc npc,
+            IReadOnlyList<MemoryHit> memories)
+        {
+            if (memories != null)
+            {
+                foreach (var memory in memories)
+                {
+                    if (reply.Contains($"第 {memory.Day} 天") || reply.Contains(memory.Text))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            foreach (var field in world.Fields)
+            {
+                if (reply.Contains(field.Id))
+                {
+                    return true;
+                }
+            }
+
+            foreach (WorkStep step in Enum.GetValues(typeof(WorkStep)))
+            {
+                if (reply.Contains(WorkStepLabel.Of(step)))
+                {
+                    return true;
+                }
+            }
+
+            return reply.Contains("体力") || reply.Contains("心情") || reply.Contains("饥饿");
+        }
+
+        /// <summary>
+        /// 取检索线索的向量，并顺手补齐最近记忆缺的向量。任何失败（未配置、断网、超时、
+        /// 维度不对）都返回 null，调用方按关键词检索，绝不阻塞对话。
+        /// </summary>
+        async Task<float[]> TryEmbedCueAsync(string cue, FarmWorld world, Npc npc, float deadline)
+        {
+            if (client == null || !client.SupportsEmbeddings || deadline <= 0f)
+            {
+                return null;
+            }
+
+            var pending = world.MemoriesNeedingEmbedding(npc.Id, EmbeddingBatchLimit);
+            var inputs = new List<string>(pending.Count + 1) { cue };
+            inputs.AddRange(pending);
+
+            using var timeout = new CancellationTokenSource();
+            try
+            {
+                var callTask = client.EmbedAsync(inputs, timeout.Token);
+                var winner = await Task.WhenAny(callTask, Task.Delay(TimeSpan.FromSeconds(deadline), timeout.Token));
+                if (winner != callTask)
+                {
+                    timeout.Cancel();
+                    Observe(callTask);
+                    return null;
+                }
+
+                timeout.Cancel();
+                var vectors = await callTask;
+                if (vectors == null || vectors.Count != inputs.Count)
+                {
+                    return null;
+                }
+
+                for (var i = 0; i < pending.Count; i++)
+                {
+                    var vector = UsableVector(vectors[i + 1]);
+                    if (vector != null)
+                    {
+                        world.CacheMemoryEmbedding(npc.Id, pending[i], vector);
+                    }
+                }
+
+                return UsableVector(vectors[0]);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        static float[] UsableVector(float[] vector)
+        {
+            if (vector == null || vector.Length == 0)
+            {
+                return null;
+            }
+
+            foreach (var value in vector)
+            {
+                if (float.IsNaN(value) || float.IsInfinity(value))
+                {
+                    return null;
+                }
+            }
+
+            return vector;
+        }
+
+        /// <summary>
+        /// 玩家一次农事指令的记忆文本：用当时解析出的方位与地块，而不是原始句子。
+        /// 玩家点名「西边」时即使农场只有一块地，也保留这个方位，跨日追问才对得上。
+        /// </summary>
+        static string PlayerRequestMemory(
+            FarmWorld world,
+            FarmGoal goal,
+            Field field,
+            CropSpecies species,
+            string fieldToken)
+        {
+            var label = FieldLocator.TryDirectionLabel(fieldToken, out var direction)
+                ? $"{direction}（{field.Id}）"
+                : world.DescribeField(field.Id);
+            switch (goal)
+            {
+                case FarmGoal.Plant:
+                    return $"玩家让我把{label}种满{species?.DisplayName ?? "作物"}";
+                case FarmGoal.Water:
+                    return $"玩家让我给{label}浇水";
+                case FarmGoal.Fertilize:
+                    return $"玩家让我给{label}施肥";
+                case FarmGoal.Weed:
+                    return $"玩家让我给{label}除草";
+                case FarmGoal.Harvest:
+                    return $"玩家让我收{label}的作物";
+                default:
+                    return $"玩家让我去{label}干活";
+            }
+        }
+
+        /// <summary>玩家农事指令的记忆重要性：高于日常维护，低于收获。</summary>
+        const int PlayerRequestImportance = 7;
+
+        /// <summary>玩家闲聊的记忆重要性：低于农事指令，避让待办事项。</summary>
+        const int PlayerChatImportance = 4;
+
+        /// <summary>闲聊记忆保留的最大字数；再长就截断，避免一条闲聊挤掉农事记忆。</summary>
+        const int PlayerChatMaxLength = 40;
+
+        static string Shorten(string text, int maxLength)
+        {
+            var value = (text ?? string.Empty).Trim();
+            return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "…";
         }
 
         /// <summary>
