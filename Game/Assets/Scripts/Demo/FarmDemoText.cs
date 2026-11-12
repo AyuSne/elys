@@ -53,6 +53,33 @@ namespace ElysFarm.Demo
             return CropCatalog.TryGet(speciesId, out var species) ? species.DisplayName : speciesId;
         }
 
+        /// <summary>人设的一句话注脚；人设参数在领域层，这里只放展示用词。</summary>
+        public static string PersonaNote(string personaId)
+        {
+            switch (personaId)
+            {
+                case "ahe":
+                    return "稳、勤、话少";
+                case "aya":
+                    return "快、爱偷懒、爱甩锅";
+                case "atu":
+                    return "慢、懂多、爱八卦";
+                default:
+                    return "自定义人设";
+            }
+        }
+
+        /// <summary>把 HUD 里的一行动态文案截短，避免面板被长句撑开。</summary>
+        public static string Short(string text, int maxLength)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
+            {
+                return text;
+            }
+
+            return text.Substring(0, maxLength) + "…";
+        }
+
         /// <summary>把路由器接单的结果摊成一行「理解成」，让玩家确认没听错。</summary>
         public static string Plan(string fieldId, string speciesId, IReadOnlyList<WorkStep> steps)
         {

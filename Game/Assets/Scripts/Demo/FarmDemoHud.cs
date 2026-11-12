@@ -5,11 +5,15 @@ namespace ElysFarm.Demo
 {
     /// <summary>
     /// 体块演示场景的 HUD：只读 <see cref="FarmDemoBootstrap"/> 暴露的领域快照，
-    /// 把「第几天、三本账、候选工步与否决理由」摊开给观察者看，并提供一句话输入框。
+    /// 把「第几天、三本账、三名 NPC 的体力与意图、候选工步的分项权重」摊开给观察者看，
+    /// 并提供一句话输入框与指挥对象切换。它不是 #6 的决策可视化层。
     /// </summary>
     [RequireComponent(typeof(FarmDemoBootstrap))]
     public sealed class FarmDemoHud : MonoBehaviour
     {
+        static readonly Color StaminaColor = new Color(0.45f, 0.8f, 0.4f);
+        static readonly Color RestColor = new Color(0.9f, 0.65f, 0.25f);
+
         FarmDemoBootstrap demo;
         Font font;
         GUIStyle titleStyle;
@@ -17,6 +21,7 @@ namespace ElysFarm.Demo
         GUIStyle smallStyle;
         GUIStyle boldStyle;
         GUIStyle inputStyle;
+        GUIStyle buttonStyle;
         bool stylesReady;
         string commandInput = string.Empty;
 
@@ -84,6 +89,12 @@ namespace ElysFarm.Demo
                 padding = new RectOffset(6, 6, 4, 4)
             };
 
+            buttonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 12,
+                padding = new RectOffset(6, 6, 2, 2)
+            };
+
             if (font != null)
             {
                 titleStyle.font = font;
@@ -91,6 +102,7 @@ namespace ElysFarm.Demo
                 smallStyle.font = font;
                 boldStyle.font = font;
                 inputStyle.font = font;
+                buttonStyle.font = font;
             }
         }
 
@@ -98,66 +110,124 @@ namespace ElysFarm.Demo
         {
             var clock = demo.World.Clock;
             var ledger = demo.World.Ledger;
-            var npc = demo.Npc;
+            var radish = CropCatalog.RadishId;
+            var wheat = CropCatalog.WheatId;
 
-            GUILayout.BeginArea(new Rect(12f, 8f, 360f, 326f), GUI.skin.box);
-            GUILayout.Label("Elys · 农场闭环", titleStyle);
-            GUILayout.Label($"第 {clock.Day} 天 · 当天已过 {clock.DayProgress:P0}", labelStyle);
-            DrawProgressBar(clock.DayProgress);
-            GUILayout.Space(6f);
+            GUILayout.BeginArea(new Rect(12f, 8f, 372f, 326f), GUI.skin.box);
+            GUILayout.Label("Elys · 三名 NPC", titleStyle);
+            GUILayout.Label(
+                $"第 {clock.Day} 天 · 当天已过 {clock.DayProgress:P0} · 自主{(demo.AutonomyEnabled ? "开" : "关")}",
+                labelStyle);
+            DrawProgressBar(clock.DayProgress, StaminaColor);
+            GUILayout.Space(4f);
 
             GUILayout.BeginHorizontal();
             foreach (var speed in FarmClock.AllowedSpeeds)
             {
                 var label = speed == clock.Speed ? $"[{speed:0}x]" : $"{speed:0}x";
-                if (GUILayout.Button(label))
+                if (GUILayout.Button(label, buttonStyle, GUILayout.Width(42f)))
                 {
                     // 演示用的时间控制，不是自然语言输入；文本输入仍只经 IntentRouter。
                     clock.Speed = speed;
                 }
             }
 
+            if (GUILayout.Button(demo.AutonomyEnabled ? "暂停自主" : "开始自主", buttonStyle, GUILayout.Width(74f)))
+            {
+                demo.ToggleAutonomy();
+            }
+
             GUILayout.EndHorizontal();
-            GUILayout.Space(6f);
+            GUILayout.Space(4f);
 
-            var cropName = CropCatalog.Radish.DisplayName;
-            GUILayout.Label($"种子库：{cropName} × {ledger.SeedsOf(CropCatalog.RadishId)}", labelStyle);
             GUILayout.Label(
-                $"产出仓：{cropName} × {ledger.ProduceOf(CropCatalog.RadishId)}（随身 {ledger.HeldOf(demo.Npc.Id, CropCatalog.RadishId)}）",
-                labelStyle);
-            GUILayout.Label(
-                $"流水：种子 +{ledger.SeedsAdded}/-{ledger.SeedsRemoved} · 产出 +{ledger.ProduceAdded}/-{ledger.ProduceRemoved} · 随身 +{ledger.HeldAdded}/-{ledger.HeldRemoved}",
+                $"种子 萝卜×{ledger.SeedsOf(radish)} 小麦×{ledger.SeedsOf(wheat)} · 产出 萝卜×{ledger.ProduceOf(radish)} 小麦×{ledger.ProduceOf(wheat)}",
                 smallStyle);
-            GUILayout.Label($"{npc.DisplayName}体力：{npc.Stamina:P0}", labelStyle);
-            GUILayout.Space(6f);
+            GUILayout.Space(4f);
 
+            foreach (var npc in demo.Npcs)
+            {
+                DrawNpcRow(npc);
+            }
+
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
             foreach (var field in demo.World.Fields)
             {
-                GUILayout.Label(
-                    field.IsSown
-                        ? $"{field.Id} · {FarmDemoText.StateName(field.State)} · 生长 {field.Growth:P0} · 水 {field.Water:P0} · 草 {field.Weeds:P0}"
-                        : $"{field.Id} · {FarmDemoText.StateName(field.State)}",
-                    labelStyle);
+                GUILayout.Label(FieldLine(field), smallStyle, GUILayout.Width(120f));
             }
+
+            GUILayout.EndHorizontal();
 
             GUILayout.Label($"账本自检：{(ledger.Verify(out var error) ? "入账 − 出账 = 持有 ✓" : error)}", smallStyle);
             GUILayout.EndArea();
         }
 
+        static string FieldLine(Field field)
+        {
+            if (!field.IsSown)
+            {
+                return $"{field.Id} {FarmDemoText.StateName(field.State)}";
+            }
+
+            var growth = field.State == FieldState.Mature ? "熟" : $"生{field.Growth * 100f:0}";
+            return $"{field.Id} {growth} 水{field.Water * 100f:0} 草{field.Weeds * 100f:0}";
+        }
+
+        void DrawNpcRow(Npc npc)
+        {
+            var selected = npc == demo.SelectedNpc;
+            var name = selected ? $"▶{npc.DisplayName}" : npc.DisplayName;
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(name, buttonStyle, GUILayout.Width(58f)))
+            {
+                demo.SelectNpc(npc.Id);
+            }
+
+            GUILayout.Label($"{npc.Stamina:P0}", selected ? boldStyle : labelStyle, GUILayout.Width(38f));
+            DrawBar(npc.Stamina, 64f, npc.IsResting ? RestColor : StaminaColor);
+
+            var state = npc.IsResting
+                ? $"休息 {npc.RestSecondsRemaining:0}s"
+                : FarmDemoText.Short(demo.IntentOf(npc.Id), 15);
+            GUILayout.Label(state, smallStyle);
+            GUILayout.EndHorizontal();
+        }
+
         void DrawDecisionPanel()
         {
-            var panelWidth = 400f;
+            const float panelWidth = 400f;
             GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 326f), GUI.skin.box);
-            var order = demo.World.WorkOrderOf(FarmDemoBootstrap.NpcId);
-            GUILayout.Label($"{demo.Npc.DisplayName}的决策", titleStyle);
-            GUILayout.Label(
-                $"决策来源：{(order != null ? "玩家工单 + " : string.Empty)}本地效用打分 · 模型{(demo.UsingModel ? "在线" : "离线")}",
-                smallStyle);
-            GUILayout.Label($"最近调用：{FarmDemoText.Call(demo.LastCall)}", smallStyle);
-            GUILayout.Label($"当前意图：{demo.CurrentIntent}", labelStyle);
-            GUILayout.Label($"上一结果：{demo.LastMessage}", smallStyle);
-            GUILayout.Space(6f);
 
+            var npc = demo.SelectedNpc;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"{npc.DisplayName}的决策", titleStyle);
+            foreach (var each in demo.Npcs)
+            {
+                if (each == npc)
+                {
+                    continue;
+                }
+
+                if (GUILayout.Button(each.DisplayName, buttonStyle, GUILayout.Width(46f)))
+                {
+                    demo.SelectNpc(each.Id);
+                }
+            }
+
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label(
+                $"{FarmDemoText.PersonaNote(npc.Persona.Id)} · 决定间隔 {npc.Persona.DecisionSeconds:0.0}s · 每步体力 -{npc.Persona.StaminaPerStep:0.00}",
+                smallStyle);
+            GUILayout.Label($"当前意图：{demo.IntentOf(npc.Id)}", labelStyle);
+            GUILayout.Label($"上一结果：{FarmDemoText.Short(demo.LastMessage, 34)}", smallStyle);
+            GUILayout.Label(
+                $"本地效用打分 · 模型{(demo.UsingModel ? "在线" : "离线")} · 最近调用：{FarmDemoText.Call(demo.LastCall)}",
+                smallStyle);
+
+            var order = demo.World.WorkOrderOf(npc.Id);
             if (order != null)
             {
                 GUILayout.Label(
@@ -168,13 +238,13 @@ namespace ElysFarm.Demo
                     boldStyle);
             }
 
-            GUILayout.Label("候选工步（分数 / 否决理由）", boldStyle);
+            GUILayout.Label("候选工步：分数 = 需求 × 人设 × 体力 − 距离", boldStyle);
 
-            var candidates = demo.World.RankCandidates(FarmDemoBootstrap.NpcId);
+            var candidates = demo.World.RankCandidates(npc.Id);
             var shown = 0;
             foreach (var candidate in candidates)
             {
-                if (shown++ >= 5)
+                if (shown++ >= 4)
                 {
                     break;
                 }
@@ -182,11 +252,13 @@ namespace ElysFarm.Demo
                 var name = $"{FarmDemoText.StepName(candidate.Step)} {candidate.FieldId}";
                 if (candidate.IsValid)
                 {
-                    GUILayout.Label($"{name}   {candidate.Score:0.00}", labelStyle);
+                    GUILayout.Label(
+                        $"{name}  {candidate.Score:0.00}  ({candidate.Need:0.00}×{candidate.PersonaWeight:0.00}×{candidate.StaminaFactor:0.00}−{candidate.DistancePenalty:0.00})",
+                        smallStyle);
                 }
                 else
                 {
-                    GUILayout.Label($"{name}   ✕ {candidate.RejectionReason}", smallStyle);
+                    GUILayout.Label($"{name}  ✕ {candidate.RejectionReason}", smallStyle);
                 }
             }
 
@@ -210,7 +282,7 @@ namespace ElysFarm.Demo
             for (var i = first; i < log.Count; i++)
             {
                 var entry = log[i];
-                var yieldText = entry.Yield > 0 ? $" +{entry.Yield} {CropCatalog.Radish.DisplayName}" : string.Empty;
+                var yieldText = entry.Yield > 0 ? $" +{entry.Yield} 产出" : string.Empty;
                 var actor = demo.World.GetNpc(entry.NpcId).DisplayName;
                 GUILayout.Label(
                     $"第 {entry.Day} 天 · {actor} · {FarmDemoText.StepName(entry.Step)} {entry.FieldId}{yieldText}",
@@ -224,30 +296,25 @@ namespace ElysFarm.Demo
         {
             GUILayout.BeginArea(new Rect(12f, Screen.height - 128f, Screen.width - 24f, 120f), GUI.skin.box);
             GUILayout.BeginHorizontal();
-            GUILayout.Label("玩家说：", boldStyle, GUILayout.Width(64f));
-            commandInput = GUILayout.TextField(commandInput ?? string.Empty, 120, inputStyle, GUILayout.MinWidth(260f));
+            GUILayout.Label($"玩家说（对 {demo.SelectedNpc.DisplayName}）：", boldStyle, GUILayout.Width(140f));
+            commandInput = GUILayout.TextField(commandInput ?? string.Empty, 120, inputStyle, GUILayout.MinWidth(240f));
 
             GUI.enabled = !demo.IsThinking;
-            if (GUILayout.Button("下达", GUILayout.Width(56f)))
+            if (GUILayout.Button("下达", buttonStyle, GUILayout.Width(52f)))
             {
                 Submit();
             }
 
-            if (GUILayout.Button("种满萝卜", GUILayout.Width(90f)))
+            if (GUILayout.Button("种满萝卜", buttonStyle, GUILayout.Width(82f)))
             {
                 commandInput = "把东边那块地种满萝卜";
                 Submit();
             }
 
-            if (GUILayout.Button("去种月亮", GUILayout.Width(90f)))
+            if (GUILayout.Button("去种月亮", buttonStyle, GUILayout.Width(82f)))
             {
                 commandInput = "去种月亮";
                 Submit();
-            }
-
-            if (GUILayout.Button(demo.AutonomyEnabled ? "暂停自主" : "开始自主", GUILayout.Width(80f)))
-            {
-                demo.ToggleAutonomy();
             }
 
             GUI.enabled = true;
@@ -265,8 +332,8 @@ namespace ElysFarm.Demo
             var status = demo.IsThinking
                 ? "等模型回话…（游戏没有暂停）"
                 : demo.AutonomyEnabled
-                    ? "模型" + (demo.UsingModel ? "在线" : "离线") + " · NPC 自主中"
-                    : "模型" + (demo.UsingModel ? "在线" : "离线") + " · NPC 待命";
+                    ? "模型" + (demo.UsingModel ? "在线" : "离线") + " · 三人自主中，点名字可换观察对象"
+                    : "模型" + (demo.UsingModel ? "在线" : "离线") + " · 三人待命";
             GUILayout.Label($"上一句：{demo.LastPlayerText}　（{status}）", smallStyle);
             GUILayout.Label($"NPC：{demo.LastReply}", labelStyle);
             GUILayout.Label(demo.LastUnderstood, smallStyle);
@@ -284,7 +351,7 @@ namespace ElysFarm.Demo
             commandInput = string.Empty;
         }
 
-        void DrawProgressBar(float progress)
+        void DrawProgressBar(float progress, Color color)
         {
             var rect = GUILayoutUtility.GetRect(1f, 12f, GUILayout.ExpandWidth(true));
             GUI.Box(rect, GUIContent.none);
@@ -296,7 +363,24 @@ namespace ElysFarm.Demo
                 rect.height - 4f);
 
             var previous = GUI.color;
-            GUI.color = new Color(0.45f, 0.8f, 0.4f);
+            GUI.color = color;
+            GUI.DrawTexture(fill, Texture2D.whiteTexture);
+            GUI.color = previous;
+        }
+
+        void DrawBar(float value, float width, Color color)
+        {
+            var rect = GUILayoutUtility.GetRect(width, 9f);
+            GUI.Box(rect, GUIContent.none);
+
+            var fill = new Rect(
+                rect.x + 1f,
+                rect.y + 1f,
+                (rect.width - 2f) * Mathf.Clamp01(value),
+                rect.height - 2f);
+
+            var previous = GUI.color;
+            GUI.color = color;
             GUI.DrawTexture(fill, Texture2D.whiteTexture);
             GUI.color = previous;
         }

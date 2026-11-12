@@ -63,10 +63,10 @@ namespace ElysFarm.Core
             return field;
         }
 
-        /// <summary>加入一名 NPC；id 必须唯一。</summary>
-        public Npc AddNpc(string id, string displayName, FarmPosition position = default)
+        /// <summary>加入一名 NPC；id 必须唯一。未指定人设时使用 <see cref="NpcPersona.Default"/>。</summary>
+        public Npc AddNpc(string id, string displayName, FarmPosition position = default, NpcPersona persona = null)
         {
-            var npc = new Npc(id, displayName, position);
+            var npc = new Npc(id, displayName, position, persona);
             if (npcsById.ContainsKey(id))
             {
                 throw new ArgumentException($"NPC id 重复：{id}", nameof(id));
@@ -117,10 +117,12 @@ namespace ElysFarm.Core
             return npc.DistanceTo(ProduceStore) <= ProduceStoreRadius;
         }
 
-        /// <summary>推进真实时间；跨日时由 <see cref="FarmClock"/> 触发结算。</summary>
+        /// <summary>推进真实时间；跨日时由 <see cref="FarmClock"/> 触发结算，NPC 计时按加速倍率同步推进。</summary>
         public int Tick(float deltaSeconds)
         {
-            return Clock.Tick(deltaSeconds);
+            var advanced = Clock.Tick(deltaSeconds);
+            AdvanceNpcTime(deltaSeconds * Clock.Speed);
+            return advanced;
         }
 
         /// <summary>推进指定数量的游戏日，返回实际跨过的天数。</summary>
@@ -136,9 +138,19 @@ namespace ElysFarm.Core
             for (var i = 0; i < days; i++)
             {
                 advanced += Clock.Tick(daySeconds);
+                AdvanceNpcTime(FarmClock.SecondsPerDay);
             }
 
             return advanced;
+        }
+
+        /// <summary>NPC 的决定间隔与休息都按游戏秒推进，跨日与实时 tick 共用这一个入口。</summary>
+        void AdvanceNpcTime(float gameSeconds)
+        {
+            foreach (var npc in npcs)
+            {
+                npc.AdvanceTime(gameSeconds);
+            }
         }
 
         /// <summary>NPC 的候选工步排序；无效候选带否决理由，供决策可视化层展示。</summary>
@@ -161,16 +173,55 @@ namespace ElysFarm.Core
             return null;
         }
 
+        /// <summary>
+        /// 带人设计时的决策入口：休息中或还没到决定时刻时返回可读理由；
+        /// 决定只给出候选，真正执行仍要过 <see cref="ExecuteStep"/> 的动作校验。
+        /// </summary>
+        public bool TryDecide(string npcId, out StepCandidate candidate, out string reason)
+        {
+            candidate = default;
+            var npc = GetNpc(npcId);
+
+            if (npc.IsResting)
+            {
+                reason = Npc.RestingReason;
+                return false;
+            }
+
+            if (npc.Stamina < Npc.MinStamina)
+            {
+                npc.BeginRest();
+                reason = Npc.TooTiredReason;
+                return false;
+            }
+
+            if (!npc.CanDecide)
+            {
+                reason = "还没拿定主意";
+                return false;
+            }
+
+            var best = NextStep(npcId);
+            if (!best.HasValue)
+            {
+                reason = "现在没有该干的活";
+                return false;
+            }
+
+            candidate = best.Value;
+            reason = null;
+            return true;
+        }
+
         /// <summary>取效用最高的有效候选并执行；没有可执行工步时返回未执行结果。</summary>
         public StepResult StepOnce(string npcId)
         {
-            var candidate = NextStep(npcId);
-            if (!candidate.HasValue)
+            if (!TryDecide(npcId, out var candidate, out var reason))
             {
-                return StepResult.None(npcId, "现在没有该干的活");
+                return StepResult.None(npcId, reason);
             }
 
-            return ExecuteStep(npcId, candidate.Value.FieldId, candidate.Value.Step);
+            return ExecuteStep(npcId, candidate.FieldId, candidate.Step);
         }
 
         /// <summary>
@@ -193,6 +244,11 @@ namespace ElysFarm.Core
 
             if (!ActionValidator.Validate(this, npc, field, step, sowSpeciesId, out var reason))
             {
+                if (npc.Stamina < Npc.MinStamina)
+                {
+                    npc.BeginRest();
+                }
+
                 return StepResult.Rejected(npcId, fieldId, step, reason);
             }
 

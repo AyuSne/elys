@@ -13,7 +13,7 @@ namespace ElysFarm.Core
         /// <summary>距离归一化尺度：超过该距离的扣分封顶。</summary>
         public const float DistanceScale = 20f;
 
-        /// <summary>距离扣分的最大权重。</summary>
+        /// <summary>距离扣分的默认权重；每名 NPC 的人设可以覆盖它。</summary>
         public const float DistanceWeight = 0.15f;
 
         /// <summary>体力再低，动作也保留这个比例的效用——累了会变慢，不会直接罢工。</summary>
@@ -57,16 +57,18 @@ namespace ElysFarm.Core
         {
             var isValid = ActionValidator.Validate(world, npc, field, step, out var reason);
             var need = WeightedNeed(field, step);
+            var personaWeight = npc.Persona.Diligence;
             var distance = npc.DistanceTo(field);
-            var distancePenalty = DistanceWeight * FarmMath.Clamp01(distance / DistanceScale);
+            var distancePenalty = npc.Persona.DistanceWeight * FarmMath.Clamp01(distance / DistanceScale);
             var staminaFactor = StaminaFloor + (1f - StaminaFloor) * npc.Stamina;
-            var score = isValid ? need * staminaFactor - distancePenalty : 0f;
+            var score = isValid ? need * personaWeight * staminaFactor - distancePenalty : 0f;
 
             return new StepCandidate(
                 field.Id,
                 step,
                 score,
                 need,
+                personaWeight,
                 distancePenalty,
                 staminaFactor,
                 isValid,

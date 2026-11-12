@@ -18,6 +18,9 @@ namespace ElysFarm.Core
         /// <summary>需求项：干湿度、杂草、成熟度等合成出的「现在有多该做」。</summary>
         public float Need { get; }
 
+        /// <summary>该 NPC 的人设权重（勤勉系数），0..1。</summary>
+        public float PersonaWeight { get; }
+
         /// <summary>距离扣分。</summary>
         public float DistancePenalty { get; }
 
@@ -35,6 +38,7 @@ namespace ElysFarm.Core
             WorkStep step,
             float score,
             float need,
+            float personaWeight,
             float distancePenalty,
             float staminaFactor,
             bool isValid,
@@ -44,6 +48,7 @@ namespace ElysFarm.Core
             Step = step;
             Score = score;
             Need = need;
+            PersonaWeight = personaWeight;
             DistancePenalty = distancePenalty;
             StaminaFactor = staminaFactor;
             IsValid = isValid;

@@ -39,6 +39,7 @@
 - HUD 是 IMGUI：截图用 `capture game_view -- --source screen --output-path Screenshots/xxx.png`；`--source camera` 不含 IMGUI，锁屏时还可能得到纯色图。
 - 结束时 `editor.playmode stop`，把 `set_run_in_background` / `set_auto_tick` 关掉，再 `editor quit`。
 - **`script eval` 的引号很脆。** 代码里带 `|`、双引号或多个语句时，PowerShell 容易拆坏参数，报 `Bad Request. Give either code or file, not both`。把代码写到 `Game/Temp/<name>.cs`（`Temp/` 被 gitignore），用 `--file Temp/<name>.cs`。
+- **Editor 不一定自动重编译。** 改完 `.cs` 后 Play 里仍是旧行为、`script eval` 反射不到新方法时，执行 `unity command script recompile`，轮询 `script recompile_status` 到 `status: completed`（不是 `idle`），再重开 Play；并用反射确认新程序集已加载。
 - `capture` / `scene open` / `--file` 的路径都相对于 **Unity 工程根目录**（`Game/`），不是仓库根目录。
 
 ## 场景与表现
@@ -80,6 +81,7 @@
 ## 演示与 HUD
 
 - Game 视图实际是 1175×547 时，`capture` 输出 1280×720；按 720 摆 HUD 会重叠。布局要按 `Screen.width/height` 算，并在 547 高度下截图验收。
+- 左侧状态面板与右侧决策面板在 547 高度下各只有约 326 逻辑像素。`GUILayout.Label` 不设宽度会换行，直接把面板撑到下方日志区；三块地并排成一行、账本压成一行能省出 60+ 像素。相机也要避开底部 HUD：本票把机位从 z=-10 退到 z=-16，NPC 和草垛才不会被日志面板挡住。
 - NPC 一开局就自主干活会抢在玩家输入之前把地种掉，一句话指挥的演示看起来像被拒绝。演示默认让 NPC **待命**，玩家第一句话被接受后才恢复自主；HUD 另有「开始自主/暂停自主」。
 - IMGUI 输入框与按钮走同一套提交路径；`UnityEngine.Input` 在本工程不可用（activeInputHandler=1），但 IMGUI 事件不受影响。
 - `Game/Temp/` 会被 Unity 启动时清空；`script eval --file` 的临时文件要在 Editor 打开后重写。

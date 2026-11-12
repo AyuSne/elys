@@ -50,9 +50,15 @@ namespace ElysFarm.Core
                 return false;
             }
 
+            if (npc.IsResting)
+            {
+                reason = Npc.RestingReason;
+                return false;
+            }
+
             if (npc.Stamina < Npc.MinStamina)
             {
-                reason = "太累了，得歇会儿";
+                reason = Npc.TooTiredReason;
                 return false;
             }
 
