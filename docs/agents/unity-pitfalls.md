@@ -17,7 +17,7 @@
 
 - 编辑模式测试不需要开 Editor：`unity test Game --mode EditMode --timeout 900`。Editor 开着（尤其 Play Mode）时 `unity test` 会拒绝。
 - 退出码 6 + `TEST_RUN_ERROR` 通常只是编译失败；真正的 `error CSxxxx` 在 `%LOCALAPPDATA%\Unity\Editor\Editor.log`，CLI 也可能只打印「编辑器日志报告了以下错误」。JSON 里没有编译错误详情。
-- **编译失败时 `TestResults/editmode.xml` 不会被覆盖**，留在那里的是上一次的成功报告。看到 CLI 说「Scripts have compiler errors」就不要再读报告，否则会把上一次的 113/113 当成这一次通过。隔壁 `Editor.log` 不是合法 UTF-8，严格解码会抛 `DecoderFallbackException`；用 `[Text.Encoding]::GetEncoding(28591)`（Latin1）读，再过滤 `error CS\d+` 即可（这些行是 ASCII）。
+- **编译失败时 `TestResults/editmode.xml` 不会被覆盖**，留在那里的是上一次的成功报告。看到 CLI 说「Scripts have compiler errors」就不要再读报告，否则会把上一次的 132/132 当成这一次通过。隔壁 `Editor.log` 不是合法 UTF-8，严格解码会抛 `DecoderFallbackException`；用 `[Text.Encoding]::GetEncoding(28591)`（Latin1）读，再过滤 `error CS\d+` 即可（这些行是 ASCII）。
 - 测试引用尚不存在的 API 会让整个测试程序集编译失败。一次只加一个纵向切片；红灯先看是「编译错」还是「断言错」。
 - `unity test` 成功时通常**没有 stdout**，报告默认写到**当前工作目录**的 `test-results.xml`（不是 `Game/`）。读报告要严格按 UTF-8 解码；PowerShell 的 `[xml](Get-Content ...)` 遇到中文测试名会报「意外标记」：
 
@@ -29,7 +29,7 @@
 
 - 需要 `await` 的 EditMode 测试直接写 `[Test] public async Task ...`，不需要 `[UnityTest]` 协程。用 `Task.WhenAny` + 很小的 deadline 测超时，别用 `.Result` / `.Wait()` 阻塞主线程。
 - 测试程序集 `overrideReferences: true` 时，引用新 asmdef（例如 `ElysFarm.Model`）要显式加进 `references`；想在测试里直接用 Newtonsoft 还要加 `precompiledReferences`，否则编译不到。
-- 全套 131 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
+- 全套 132 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
 - #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。
 - 素材测试用 `Resources.Load` 读 `Assets/Resources/Quaternius`：FBX 没导入/被移走时会红。`ArtMaterialTests` 扫 FBX 子资产材质，重导入后必须仍是 URP。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
 
