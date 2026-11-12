@@ -49,6 +49,25 @@ namespace ElysFarm.Demo
     }
 
     /// <summary>
+    /// 「站在地上」这件事的规矩：落点是占位底边的中点，排序基准也是这条边。
+    /// 地标与装饰共用这一处，免得两边各写一份、各自漂移。
+    /// </summary>
+    public static class GroundSpot
+    {
+        /// <summary>精灵的落点：占位底边的中点（1 世界单位 = 1 瓦片）。</summary>
+        public static Vector2 AnchorOf(RectInt tiles)
+        {
+            return new Vector2(tiles.xMin + tiles.width * 0.5f, tiles.yMin);
+        }
+
+        /// <summary>按 Y 排序的基准：地面接触边。</summary>
+        public static float SortBaseOf(RectInt tiles)
+        {
+            return tiles.yMin;
+        }
+    }
+
+    /// <summary>
     /// 一座地标在瓦片网格上的占位。精灵以占位底边的中点为落点，
     /// 排序也以这条底边为准——所以人站在它北边会被它挡住，站在南边就画在它前面。
     /// </summary>
@@ -65,10 +84,10 @@ namespace ElysFarm.Demo
         public RectInt Tiles { get; }
 
         /// <summary>精灵的落点：占位底边的中点（1 世界单位 = 1 瓦片）。</summary>
-        public Vector2 Anchor => new Vector2(Tiles.xMin + Tiles.width * 0.5f, Tiles.yMin);
+        public Vector2 Anchor => GroundSpot.AnchorOf(Tiles);
 
         /// <summary>按 Y 排序的基准：地面接触边。</summary>
-        public float SortBase => Tiles.yMin;
+        public float SortBase => GroundSpot.SortBaseOf(Tiles);
     }
 
     /// <summary>外圈的装饰：只压画面边缘，不参与玩法。</summary>
@@ -100,10 +119,10 @@ namespace ElysFarm.Demo
         public RectInt Tiles { get; }
 
         /// <summary>精灵的落点：占位底边的中点。</summary>
-        public Vector2 Anchor => new Vector2(Tiles.xMin + Tiles.width * 0.5f, Tiles.yMin);
+        public Vector2 Anchor => GroundSpot.AnchorOf(Tiles);
 
         /// <summary>按 Y 排序的基准：地面接触边。</summary>
-        public float SortBase => Tiles.yMin;
+        public float SortBase => GroundSpot.SortBaseOf(Tiles);
     }
 
     /// <summary>
@@ -122,7 +141,7 @@ namespace ElysFarm.Demo
         public static readonly RectInt Walkable = new RectInt(-13, -7, 27, 15);
 
         /// <summary>铺地面的范围：比可走范围再向外两格，3× 俯视时看不到地面边缘。</summary>
-        public static readonly RectInt Drawn = new RectInt(
+        public static readonly RectInt GroundBounds = new RectInt(
             Walkable.xMin - 2,
             Walkable.yMin - 2,
             Walkable.width + 4,
@@ -155,12 +174,13 @@ namespace ElysFarm.Demo
         /// <summary>
         /// 农舍在东、鸡舍在南、水井与产出仓在路的南侧。
         /// 占位按精灵的实际像素尺寸换算：农舍 118×150、鸡舍 96×128、水井 48×80、产出仓 16×16。
+        /// 建筑全部退到路的南/北侧，土路整条看得见——树冠可以压路，房子不压。
         /// </summary>
         static readonly Landmark[] LandmarkArray =
         {
             new Landmark(LandmarkKind.Farmhouse, new RectInt(6, 0, 7, 9)),
-            new Landmark(LandmarkKind.Coop, new RectInt(6, -8, 6, 8)),
-            new Landmark(LandmarkKind.Well, new RectInt(-7, -5, 3, 5)),
+            new Landmark(LandmarkKind.Coop, new RectInt(6, -9, 6, 8)),
+            new Landmark(LandmarkKind.Well, new RectInt(-7, -6, 3, 5)),
             new Landmark(LandmarkKind.ProduceStore, new RectInt(-4, -3, 1, 1))
         };
 
@@ -224,29 +244,41 @@ namespace ElysFarm.Demo
         /// <summary>一种装饰占几格：树是 48×80（3×5 格）、树桩 16×26、草丛 15×20。</summary>
         public static Vector2Int TileSizeOf(DecorationKind kind)
         {
-            switch (kind)
-            {
-                case DecorationKind.Tree:
-                    return new Vector2Int(3, 5);
-                case DecorationKind.Stump:
-                    return new Vector2Int(1, 2);
-                default:
-                    return Vector2Int.one;
-            }
+            return ShapeOf(kind).Size;
         }
 
         /// <summary>一种装饰有几种换图；变体号必须小于这个数。</summary>
         public static int VariantCountOf(DecorationKind kind)
         {
+            return ShapeOf(kind).Variants;
+        }
+
+        /// <summary>装饰的尺寸与换图数量写在一处：加一种装饰只改这里和素材表。</summary>
+        static DecorationShape ShapeOf(DecorationKind kind)
+        {
             switch (kind)
             {
                 case DecorationKind.Tree:
-                    return 2;
-                case DecorationKind.GrassTuft:
-                    return 3;
+                    return new DecorationShape(new Vector2Int(3, 5), 2);
+                case DecorationKind.Stump:
+                    return new DecorationShape(new Vector2Int(1, 2), 1);
                 default:
-                    return 1;
+                    return new DecorationShape(Vector2Int.one, 3);
             }
+        }
+
+        /// <summary>一种装饰的占位尺寸与换图数量。</summary>
+        readonly struct DecorationShape
+        {
+            public DecorationShape(Vector2Int size, int variants)
+            {
+                Size = size;
+                Variants = variants;
+            }
+
+            public Vector2Int Size { get; }
+
+            public int Variants { get; }
         }
 
         static Decoration DecorationOf(DecorationKind kind, int variant, int x, int y)
@@ -338,7 +370,9 @@ namespace ElysFarm.Demo
         static Vector2Int[] BuildRoadTiles()
         {
             var tiles = new List<Vector2Int>();
-            for (var x = -13; x <= 13; x++)
+
+            // 主路铺满可走范围的宽度：镜头怎么推都看得到路，不会在边上断掉。
+            for (var x = Walkable.xMin; x < Walkable.xMax; x++)
             {
                 tiles.Add(new Vector2Int(x, RoadRow));
             }

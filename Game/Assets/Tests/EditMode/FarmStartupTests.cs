@@ -60,7 +60,47 @@ namespace ElysFarm.Tests
                 "东边那块快熟，但还没到能收");
         }
 
-        /// <summary>与演示引导器相同的开局世界：三块地，肥力取自同一条常量。</summary>
+        [Test]
+        public void 开局播种要从种子库扣账()
+        {
+            var world = NewWorld();
+            var radishBefore = world.Ledger.SeedsOf(CropCatalog.RadishId);
+            var wheatBefore = world.Ledger.SeedsOf(CropCatalog.WheatId);
+
+            FarmStartup.Seed(world);
+
+            // 两块萝卜各一颗种、一块小麦两颗种。
+            Assert.AreEqual(
+                radishBefore - 2,
+                world.Ledger.SeedsOf(CropCatalog.RadishId),
+                "播下两块萝卜，种子库要少两颗");
+            Assert.AreEqual(
+                wheatBefore - 2,
+                world.Ledger.SeedsOf(CropCatalog.WheatId),
+                "播下一块小麦，种子库要少两颗种");
+            Assert.IsTrue(world.Ledger.Verify(out var error), $"开局之后三本账要不守恒了：{error}");
+        }
+
+        [Test]
+        public void 种子库不够时播不下去()
+        {
+            var world = NewWorld();
+            while (world.Ledger.SeedsOf(CropCatalog.RadishId) > 0)
+            {
+                world.Ledger.TryTakeSeeds(CropCatalog.RadishId, 1);
+            }
+
+            FarmStartup.Seed(world);
+
+            Assert.AreEqual(FieldState.Empty, world.GetField(FarmDemoBootstrap.FieldA1).State, "没种子就不该凭空种上");
+            Assert.AreEqual(FieldState.Empty, world.GetField(FarmDemoBootstrap.FieldA3).State, "没种子就不该凭空种上");
+            Assert.AreEqual(CropStage.Mature, CropStages.Of(
+                world.GetField(FarmDemoBootstrap.FieldA2).State,
+                world.GetField(FarmDemoBootstrap.FieldA2).Growth), "小麦种子还在，中间那块照常种");
+            Assert.IsTrue(world.Ledger.Verify(out var error), error);
+        }
+
+        /// <summary>与演示引导器相同的开局世界：三块地，肥力与种子都取自同一条常量。</summary>
         static FarmWorld NewWorld()
         {
             var world = new FarmWorld(new FarmClock());
@@ -72,6 +112,8 @@ namespace ElysFarm.Tests
                     FarmStartup.FieldFertility);
             }
 
+            world.AddSeeds(CropCatalog.RadishId, 12);
+            world.AddSeeds(CropCatalog.WheatId, 4);
             return world;
         }
     }

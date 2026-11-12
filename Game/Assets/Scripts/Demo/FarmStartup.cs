@@ -51,6 +51,12 @@ namespace ElysFarm.Demo
                 return;
             }
 
+            // 与 FarmWorld.ExecuteStep 同一个顺序：先从种子库扣账，扣不动就不落种。
+            if (!world.Ledger.TryTakeSeeds(species.Id, species.SeedCost))
+            {
+                return;
+            }
+
             field.Apply(WorkStep.Sow, species);
         }
 

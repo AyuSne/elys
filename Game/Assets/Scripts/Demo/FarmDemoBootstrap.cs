@@ -329,9 +329,6 @@ namespace ElysFarm.Demo
                     FarmStartup.FieldFertility);
             }
 
-            // 开局三块地各停在一个阶段：幼苗的萝卜、熟了的小麦、快熟的萝卜。
-            FarmStartup.Seed(World);
-
             foreach (var spawn in FarmLayout.NpcSpawns)
             {
                 World.AddNpc(
@@ -344,6 +341,10 @@ namespace ElysFarm.Demo
             World.SetProduceStore(ProduceStoreSpot);
             World.AddSeeds(CropCatalog.RadishId, 12);
             World.AddSeeds(CropCatalog.WheatId, 4);
+
+            // 开局三块地各停在一个阶段：幼苗的萝卜、熟了的小麦、快熟的萝卜。
+            // 种子库要先入账——播种照实数扣种，不能凭空长出三块地。
+            FarmStartup.Seed(World);
 
             Router = new IntentRouter(DemoModelSettings.CreateClient());
             SelectedNpc = World.GetNpc(DefaultNpcId);

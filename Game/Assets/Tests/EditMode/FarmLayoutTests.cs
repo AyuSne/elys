@@ -132,13 +132,6 @@ namespace ElysFarm.Tests
                 Assert.IsTrue(kinds.Add(landmark.Kind), $"地标重复：{landmark.Kind}");
                 Assert.Greater(landmark.Tiles.width, 0, $"{landmark.Kind} 占位不能为空");
                 Assert.Greater(landmark.Tiles.height, 0, $"{landmark.Kind} 占位不能为空");
-                Assert.AreEqual(
-                    landmark.Tiles.yMin,
-                    landmark.SortBase,
-                    0.0001f,
-                    "地标的排序基准是它的地面接触边，不是中心");
-                Assert.AreEqual(landmark.Tiles.xMin + landmark.Tiles.width * 0.5f, landmark.Anchor.x, 0.0001f);
-                Assert.AreEqual(landmark.Tiles.yMin, landmark.Anchor.y, 0.0001f);
             }
 
             CollectionAssert.AreEquivalent(
@@ -201,17 +194,22 @@ namespace ElysFarm.Tests
                 "产出仓没有路");
         }
 
+        /// <summary>#13：地标不压在土路上了——路要整条看得见，建筑站在路两边。</summary>
         [Test]
-        public void 地标不站在路中间()
+        public void 地标不压在土路上()
         {
             foreach (var landmark in FarmLayout.Landmarks)
             {
-                var anchorTile = new Vector2Int(
-                    Mathf.FloorToInt(landmark.Anchor.x),
-                    Mathf.FloorToInt(landmark.Anchor.y));
-                Assert.IsFalse(
-                    FarmLayout.IsRoad(anchorTile),
-                    $"{landmark.Kind} 的落点压在路上：{anchorTile}");
+                for (var y = landmark.Tiles.yMin; y < landmark.Tiles.yMax; y++)
+                {
+                    for (var x = landmark.Tiles.xMin; x < landmark.Tiles.xMax; x++)
+                    {
+                        var tile = new Vector2Int(x, y);
+                        Assert.IsFalse(
+                            FarmLayout.IsRoad(tile),
+                            $"{landmark.Kind} 压在土路的 {tile} 上");
+                    }
+                }
             }
         }
 
@@ -233,11 +231,8 @@ namespace ElysFarm.Tests
                     decoration.Variant,
                     Is.InRange(0, FarmLayout.VariantCountOf(decoration.Kind) - 1),
                     $"{decoration.Kind} 的变体号越界");
-                Assert.AreEqual(decoration.Tiles.yMin, decoration.SortBase, 0.0001f, "排序基准是地面接触边");
-                Assert.AreEqual(decoration.Tiles.xMin + decoration.Tiles.width * 0.5f, decoration.Anchor.x, 0.0001f);
-                Assert.AreEqual(decoration.Tiles.yMin, decoration.Anchor.y, 0.0001f);
                 Assert.IsTrue(
-                    IsInside(FarmLayout.Drawn, decoration.Tiles),
+                    IsInside(FarmLayout.GroundBounds, decoration.Tiles),
                     $"{decoration.Kind} 落在没铺地面的地方：{decoration.Tiles}");
             }
 

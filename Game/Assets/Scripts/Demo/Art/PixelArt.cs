@@ -124,7 +124,6 @@ namespace ElysFarm.Demo
         /// <summary>是否使用像素素材；演示启动时会读环境变量 <c>ELYS_FORCE_BLOCKS=1</c> 强制退回体块。</summary>
         public static bool UseArt { get; set; } = true;
 
-        static readonly Vector2 BottomCenter = new Vector2(0.5f, 0f);
         static readonly Vector2 Center = new Vector2(0.5f, 0.5f);
         static readonly Dictionary<string, Texture2D> Textures = new Dictionary<string, Texture2D>();
         static readonly Dictionary<string, Sprite> Sprites = new Dictionary<string, Sprite>();
@@ -282,14 +281,14 @@ namespace ElysFarm.Demo
         {
             var atlas = CharacterAtlasOf(npcId);
             var cell = CharacterCell(facing, frame);
-            return string.IsNullOrEmpty(atlas) ? null : LoadSprite(atlas, cell, BottomCenter);
+            return string.IsNullOrEmpty(atlas) ? null : LoadSprite(atlas, cell, GroundPivot);
         }
 
         /// <summary>切出某品种某阶段的作物图；格位由 <see cref="CropStages.CellOf"/> 决定。</summary>
         public static Sprite LoadCrop(string speciesId, CropStage stage)
         {
             var cell = CropStages.CellOf(speciesId, stage);
-            return cell.IsValid ? LoadSprite(CropAtlasPath, cell, BottomCenter) : null;
+            return cell.IsValid ? LoadSprite(CropAtlasPath, cell, GroundPivot) : null;
         }
 
         /// <summary>切一块 16×16 的室外瓦片；用于生成地面 Tilemap。</summary>
@@ -358,8 +357,10 @@ namespace ElysFarm.Demo
             }
         }
 
-        /// <summary>整张图当一张精灵：地标与装饰都是单独的 PNG，不需要切格。</summary>
-        public static Sprite LoadWhole(string name, Vector2 pivot)
+        /// <summary>
+        /// 整张图当一张精灵、落点取底边中点：地标与装饰都是单独裁好的 PNG，不需要切格。
+        /// </summary>
+        public static Sprite LoadWhole(string name)
         {
             var texture = LoadTexture(name);
             if (texture == null)
@@ -367,19 +368,19 @@ namespace ElysFarm.Demo
                 return null;
             }
 
-            return LoadSprite(name, new SpriteCell(0, 0, texture.width, texture.height), pivot);
+            return LoadSprite(name, new SpriteCell(0, 0, texture.width, texture.height), GroundPivot);
         }
 
-        /// <summary>一座地标的图；缺失时返回 null，场景跳过它。</summary>
+        /// <summary>一座地标的图；缺失时返回 null，场景退回体块。</summary>
         public static Sprite LoadLandmark(LandmarkKind kind)
         {
-            return LoadWhole(LandmarkAtlasOf(kind), GroundPivot);
+            return LoadWhole(LandmarkAtlasOf(kind));
         }
 
         /// <summary>一棵树、一段树桩或一丛草的图；缺失时返回 null，场景跳过它。</summary>
         public static Sprite LoadDecoration(DecorationKind kind, int variant)
         {
-            return LoadWhole(DecorationAtlasOf(kind, variant), GroundPivot);
+            return LoadWhole(DecorationAtlasOf(kind, variant));
         }
     }
 }

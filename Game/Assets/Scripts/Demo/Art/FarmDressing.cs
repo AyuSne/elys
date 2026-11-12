@@ -107,14 +107,12 @@ namespace ElysFarm.Demo
                 CreatedTiles.Add(tile);
             }
 
-            var bounds = FarmLayout.Drawn;
+            var bounds = FarmLayout.GroundBounds;
             for (var y = bounds.yMin; y < bounds.yMax; y++)
             {
                 for (var x = bounds.xMin; x < bounds.xMax; x++)
                 {
-                    // 两个素数相乘再异或：变化不沿某一行/列周期重复，铺开不会出现横向亮带。
-                    var hash = unchecked((x * 73856093) ^ (y * 19349663)) & 0x7fffffff;
-                    var variant = hash % tiles.Length;
+                    var variant = ScatterHash(x, y) % tiles.Length;
                     ground.SetTile(new Vector3Int(x, y, 0), tiles[variant]);
                 }
             }
@@ -123,17 +121,26 @@ namespace ElysFarm.Demo
             return true;
         }
 
+        /// <summary>
+        /// 按格坐标散出一个定值：两个素数相乘再异或，变化不沿某一行/列周期重复，
+        /// 铺开既不会出现横向亮带，也不会每次重建换一种花纹。土路的沙点也用它。
+        /// </summary>
+        static int ScatterHash(int x, int y)
+        {
+            return unchecked((x * 73856093) ^ (y * 19349663)) & 0x7fffffff;
+        }
+
         /// <summary>土路单独一层：铺在草地上，耕地与所有立起来的东西都在它之上。</summary>
         static void BuildRoadTilemap(Transform gridTransform)
         {
             var road = CreateTilemap(gridTransform, "Road", SortingOrder.Road);
 
-            var light = CreateRoadTile(CreateRoadSprite(true));
-            var dark = CreateRoadTile(CreateRoadSprite(false));
+            var pale = CreateRoadTile(CreateRoadSprite(true));
+            var deep = CreateRoadTile(CreateRoadSprite(false));
             foreach (var tile in FarmLayout.RoadTiles)
             {
                 // 明暗交错，铺开才看得出是一块块土，不是一条纯色带。
-                var picked = (tile.x + tile.y) % 2 == 0 ? light : dark;
+                var picked = (tile.x + tile.y) % 2 == 0 ? pale : deep;
                 road.SetTile(new Vector3Int(tile.x, tile.y, 0), picked);
             }
         }
@@ -158,26 +165,26 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
-        /// 画一张 16×16 的土路贴图：底色上一格撒六七个小点，位置由定值散列决定，每次结果都一样。
+        /// 画一张 16×16 的土路贴图：底色上撒几粒深色小点，位置由定值散列决定，每次结果都一样。
+        /// pale 为 true 时用浅一档的土色，两档交错铺出「一块块土」的质感。
         /// </summary>
-        static Sprite CreateRoadSprite(bool light)
+        static Sprite CreateRoadSprite(bool pale)
         {
             const int size = FarmLayout.PixelsPerTile;
             var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
             {
-                name = light ? "Road Light" : "Road Dark",
+                name = pale ? "Road Pale" : "Road Deep",
                 filterMode = FilterMode.Point,
                 wrapMode = TextureWrapMode.Clamp
             };
 
-            var baseColor = light ? RoadLight : RoadDark;
+            var baseColor = pale ? RoadLight : RoadDark;
             var pixels = new Color[size * size];
             for (var y = 0; y < size; y++)
             {
                 for (var x = 0; x < size; x++)
                 {
-                    var hash = unchecked((x * 73856093) ^ (y * 19349663)) & 0x7fffffff;
-                    pixels[y * size + x] = hash % 23 == 0 ? RoadSpeckle : baseColor;
+                    pixels[y * size + x] = ScatterHash(x, y) % 23 == 0 ? RoadSpeckle : baseColor;
                 }
             }
 
@@ -199,9 +206,9 @@ namespace ElysFarm.Demo
 
         static void BuildGroundBlock(Transform parent)
         {
-            var center = FarmLayout.TileCenter(FarmLayout.Drawn);
-            var width = FarmLayout.Drawn.width + 4f;
-            var height = FarmLayout.Drawn.height + 4f;
+            var center = FarmLayout.TileCenter(FarmLayout.GroundBounds);
+            var width = FarmLayout.GroundBounds.width + 4f;
+            var height = FarmLayout.GroundBounds.height + 4f;
             DemoMaterials.Block(
                 "Ground",
                 parent,

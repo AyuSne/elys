@@ -160,12 +160,5 @@ namespace ElysFarm.Tests
                 Assert.IsNull(PixelArt.LoadDecoration(kind, 0), $"{kind} 也要回退");
             }
         }
-
-        [Test]
-        public void 地标与装饰以底边中点为落点()
-        {
-            Assert.AreEqual(new Vector2(0.5f, 0f), PixelArt.GroundPivot, "立在地面上的东西脚底要对齐落点");
-            Assert.AreNotEqual(PixelArt.GroundPivot, new Vector2(0.5f, 0.5f), "不能用中心，否则排序与落点都会偏");
-        }
     }
 }

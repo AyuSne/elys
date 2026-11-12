@@ -71,12 +71,13 @@
 - 顶部「镜头」条放在左右面板之间的空档（`PanelMargin + LeftPanelWidth` 到 `Screen.width - PanelMargin - InspectorPanelWidth`），547 高度下五个按钮刚好放下；窗口再窄时顶部条会隐藏，用键盘 `C` 俯视、`1/2/3` 跟拍兜底。跟拍时右侧决策面板与流水收起，靠 `demo.IsOverheadCamera` 判断，不要用 `SelectedNpc` 判断跟拍对象（观察对象和跟拍对象可以不同）。
 - **像素素材**：`Assets/Resources/PixelArt` 的 PNG 走 `PixelArtImportPostprocessor`（点采样、无压缩、无 mipmap）。切图在 `PixelArt` 里按 `SpriteCell` 运行时创建，别把 PNG 改成 Sprite 资产，否则 `Resources.Load<Texture2D>` 与切格测试都会变。整张就是一件东西的图（农舍、树、草丛）走 `PixelArt.LoadWhole` / `LoadLandmark` / `LoadDecoration`，不要为它们再切格。
 - **排序**：`Renderer.sortingOrder` 是 16 位有符号整数；`100000 - y*100` 会回绕成负数，被地面盖住。用 `SortingOrder.At`（`-y*100 + bias`）：地面 Tilemap -10000、土路 -9500、耕地 -9000，作物、角色、地标与装饰按 y。
-- **立在地面上的东西统一用底边中点**：地标与装饰的落点、排序基准都是占位底边的中点（`Landmark/Decoration.Anchor` 与 `SortBase`，`PixelArt.GroundPivot`）。换成中心会让「谁挡谁」和脚底位置一起偏；改占位尺寸时同步 `FarmLayout.TileSizeOf` 与 `VariantCountOf`。
+- **立在地面上的东西统一用底边中点**：地标与装饰的落点、排序基准都是占位底边的中点（`GroundSpot.AnchorOf/SortBaseOf`，`PixelArt.GroundPivot`）。换成中心会让「谁挡谁」和脚底位置一起偏；改占位尺寸或换图数量时只动 `FarmLayout.ShapeOf` 一处，测试按 `TileSizeOf`/`VariantCountOf` 走。
+- **素材开关下的两套语义**：地标（农舍、鸡舍、水井、产出仓）在素材缺失或关掉时退回**同尺寸体块**——房子、井、木桶的位置与体量还在，动线照样读得出来；装饰（树、树桩、草丛）整件跳过，因为它只压画面边缘、不参与玩法。别把地标也做成「跳过」，体块版本会丢掉整张农场。
 - **作物图集**：每个品种是一条 8 格横条；行号是 `rowInSpriteSheet / 2`，奇数行占右半边（列再 +8）。成熟格因品种不同：萝卜第 6 格、小麦第 5 格；最后一格常是空的（留茬再生用），别把 7 当成熟。
 - **Play 截图**：`capture game_view --source camera --overlay false` 不画 IMGUI，能单独看像素场景；`--source screen` 会叠上旧 HUD，旧 HUD 仍在时别拿它判断「场景没画出来」。
 - **`capture` 的取景比 Game 视图窄**：正交半高由 `Screen.height`（547）算，`capture` 却按 1280×720 出图 —— 720 高、48px/格时只看到约 20.3 格宽、11.4 格高，而 Game 视图有约 24.5 格宽。构图照 `farm2d_hud.png` 验收时按截图的 20 格宽摆东西：摆在 x=±11 之外的树只剩一条边。
-- **开局三个月阶段**：`FarmStartup.Seed` 用 `Field` 的公开工步与 `AdvanceDay` 往前推（不走时钟），所以开局仍是第 1 天；改肥力常量或生长公式后，`FarmStartupTests` 会先红。三块地因此都是「已经种上」的状态，示范播种要么先收一茬，要么用别的例句。
-- **`FarmLayout` 是唯一布局来源**：土路（`RoadTiles`）、地标（`Landmarks`）、装饰（`Decorations`）都在这里，`FarmDressing`/`FarmProps` 只照着摆。新加的东西要过四条测试：不压地块、两两不重叠、落点不在路中间、树与草丛压住画面外圈。
+- **开局三个月阶段**：`FarmStartup.Seed` 用 `Field` 的公开工步与 `AdvanceDay` 往前推（不走时钟），所以开局仍是第 1 天；**播种照实数从 `Ledger` 扣种**，所以 `FarmDemoBootstrap.SetUpWorld` 必须先 `AddSeeds` 再 `Seed`，否则三块地是白种上的、种子库对不上。改肥力常量或生长公式后，`FarmStartupTests` 会先红。三块地因此都是「已经种上」的状态，示范播种要么先收一茬，要么用别的例句（现在的例句是「去东边那块地除草」）。
+- **`FarmLayout` 是唯一布局来源**：土路（`RoadTiles`）、地标（`Landmarks`）、装饰（`Decorations`）都在这里，`FarmDressing`/`FarmProps` 只照着摆。新加的东西要过四条测试：不压地块、两两不重叠、地标不压在路上、树与草丛压住画面外圈。树冠可以压路，房子不许——路要整条看得见。
 
 ## 领域与规格
 
