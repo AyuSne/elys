@@ -231,7 +231,7 @@ namespace ElysFarm.Demo
                 demo.ToggleArt();
             }
 
-            GUI.Label(new Rect(x, y + 30f, total, 22f), "Tab 决策可视化 · 流水", skin.SmallInk);
+            GUI.Label(new Rect(x, y + 38f, total, 22f), "Tab 决策可视化 · 流水", skin.SmallInk);
         }
 
         static Rect PillRect(float x, float y, float width, float gap, ref int index)
