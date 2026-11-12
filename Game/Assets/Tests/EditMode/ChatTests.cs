@@ -61,7 +61,12 @@ namespace ElysFarm.Tests
         {
             var world = NewWorld();
             Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed, "先种上，才有水可浇");
-            var client = new ScriptedModelClient("{\"outlet\":\"chat\",\"reply\":\"今天天气是不错。\"}");
+            var client = new ScriptedModelClient((_, __) => Task.FromResult(new ChatResponse(
+                "{\"outlet\":\"chat\",\"reply\":\"今天天气是不错。\"}",
+                "fake-deepseek",
+                1.25d,
+                123,
+                45)));
             var router = new IntentRouter(client);
 
             var result = await router.RouteAsync(
@@ -75,6 +80,10 @@ namespace ElysFarm.Tests
             Assert.AreEqual(WorkStep.Water, result.AssignedWorkOrder.NextStep.Value);
             Assert.AreEqual(FieldState.Sown, world.GetField("A1").State, "接单只排工单，不直接改地块");
             Assert.AreEqual(1, client.Calls, "这次模型确实被调用过");
+            Assert.AreEqual(ModelCallOutcome.Correction, result.Call.Outcome, "模型的分类被本地出口纠正");
+            Assert.AreEqual(123, result.Call.PromptTokens, "纠正时仍保留这次调用的 token");
+            Assert.AreEqual(45, result.Call.CompletionTokens);
+            Assert.IsTrue(result.Call.Succeeded, "调用本身是成功的");
         }
 
         [Test]
@@ -114,6 +123,7 @@ namespace ElysFarm.Tests
             Assert.AreEqual(SeedCount, world.Ledger.SeedsOf(CropCatalog.RadishId));
             Assert.AreEqual(0, world.Log.Count);
             Assert.AreEqual(1, client.Calls, "这是模型的误判，不是离线降级");
+            Assert.AreEqual(ModelCallOutcome.Correction, result.Call.Outcome);
         }
 
         [Test]
@@ -128,6 +138,99 @@ namespace ElysFarm.Tests
             Assert.IsFalse(string.IsNullOrWhiteSpace(result.Reply));
             Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
+        }
+
+        [Test]
+        public async Task 问过去浇没浇水的问句是追问不是新指令()
+        {
+            var world = NewWorld();
+            var router = new IntentRouter();
+
+            var result = await router.RouteAsync("你帮我浇水了吗", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet, "「…了吗」是在问结果，不是新请求");
+            Assert.IsNull(world.WorkOrderOf("ahe"));
+            Assert.AreEqual(SeedCount, world.Ledger.SeedsOf(CropCatalog.RadishId));
+            Assert.AreEqual(0, world.Log.Count);
+        }
+
+        [Test]
+        public async Task 能帮我浇水吗这种请求照常接单()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed, "先种上，才有水可浇");
+            var router = new IntentRouter();
+
+            var result = await router.RouteAsync("能帮我给 A1 浇点水吗", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.FarmCommand, result.Outlet, "客气的请求仍然是请求");
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A1", result.FieldId);
+            Assert.AreEqual(WorkStep.Water, result.AssignedWorkOrder.NextStep.Value);
+        }
+
+        [Test]
+        public async Task 说别人的活干完了不是在派活()
+        {
+            var world = NewWorld();
+            var client = new ScriptedModelClient(PlantRadishJson);
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "阿土把施肥的活干完了",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Chat, result.Outlet, "句首点名另一名 NPC 是在说他的事");
+            Assert.IsNull(world.WorkOrderOf("ahe"));
+            Assert.AreEqual(FieldState.Empty, world.GetField("A1").State);
+            Assert.AreEqual(0, world.Log.Count);
+        }
+
+        [Test]
+        public async Task 句首叫名字不算陈述()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed, "先种上，才有水可浇");
+
+            var result = await new IntentRouter().RouteAsync(
+                "阿禾，把 A1 的水浇了吧",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A1", result.FieldId);
+            Assert.AreEqual(WorkStep.Water, result.AssignedWorkOrder.NextStep.Value);
+        }
+
+        [Test]
+        public async Task 顺带提到地块状态的请求照样接单()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed, "先种上，才有水可浇");
+
+            var result = await new IntentRouter().RouteAsync(
+                "A1 状态不好，帮我浇点水",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A1", result.FieldId);
+            Assert.AreEqual(WorkStep.Water, result.AssignedWorkOrder.NextStep.Value);
+        }
+
+        [Test]
+        public async Task 种子库里的种子不代表要种新品种()
+        {
+            var world = NewWorld();
+
+            var result = await new IntentRouter().RouteAsync(
+                "帮我把种子种在 A1",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A1", result.FieldId);
+            Assert.AreEqual(CropCatalog.RadishId, result.SpeciesId, "没点名品种时用这名 NPC 的默认品种");
         }
 
         [Test]

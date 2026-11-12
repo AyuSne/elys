@@ -174,7 +174,8 @@ namespace ElysFarm.Core
         /// <summary>失败时的诊断信息；成功或离线时为 null。</summary>
         public string Detail { get; }
 
-        /// <summary>结果是否来自一次成功的模型调用。</summary>
-        public bool Succeeded => Outcome == ModelCallOutcome.Ok;
+        /// <summary>结果是否来自一次成功的模型调用（本地出口纠正分类时调用本身仍然成功）。</summary>
+        public bool Succeeded =>
+            Outcome == ModelCallOutcome.Ok || Outcome == ModelCallOutcome.Correction;
     }
 }

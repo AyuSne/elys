@@ -542,7 +542,7 @@ namespace ElysFarm.Demo
         /// <summary>
         /// NPC 之间自己发起对话：轮到一个 NPC 时，找一名站得近、不在路上的同伴，
         /// 把听来的事讲一遍。演示层只负责挑人、播报与暂停，传闻本身由
-        /// <see cref="FarmWorld.TryShareNews"/> 认定、写进听者的记忆。
+        /// <see cref="FarmWorld.TryRetell"/> 认定、写进听者的记忆。
         /// </summary>
         void TryNpcConversation()
         {
@@ -566,12 +566,12 @@ namespace ElysFarm.Demo
                     continue;
                 }
 
-                if (!World.TryShareNews(speaker.Npc.Id, listener.Npc.Id, out var news))
+                if (!World.TryRetell(speaker.Npc.Id, listener.Npc.Id, out var retold))
                 {
                     continue;
                 }
 
-                var line = $"{news.SubjectName}{news.Claim}";
+                var line = retold.Line;
                 speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
                 listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
                 speaker.NextActionAt = Time.time + ChatHold;

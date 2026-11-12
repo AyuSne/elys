@@ -21,8 +21,14 @@ namespace ElysFarm.Core
         /// <summary>时间衰减项的权重。</summary>
         public const float RecencyWeight = 0.2f;
 
-        /// <summary>importance 的合法范围。</summary>
+        /// <summary>importance 的合法范围；记忆与传闻共用这一处。</summary>
         public const int MaxImportance = 10;
+
+        /// <summary>把 importance 夹到 1..10；记忆与传闻共用这一处规则。</summary>
+        public static int ClampImportance(int importance)
+        {
+            return Math.Max(1, Math.Min(MaxImportance, importance));
+        }
 
         /// <summary>第一段检索召回的条数；加权重排只在这十条里进行。</summary>
         public const int RecallCount = 10;
@@ -50,7 +56,7 @@ namespace ElysFarm.Core
                 byNpc.Add(npcId, entries);
             }
 
-            var clamped = Math.Max(1, Math.Min(MaxImportance, importance));
+            var clamped = ClampImportance(importance);
             entries.Add(new MemoryEntry(text.Trim(), day, clamped));
         }
 

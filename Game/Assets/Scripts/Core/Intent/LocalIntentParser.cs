@@ -33,8 +33,16 @@ namespace ElysFarm.Core
             return markers.ToArray();
         }
 
-        static readonly char[] CropPrefixNoise = "满上点儿些一亩块片地田都全把给在到去遍次棵株颗粒茬植".ToCharArray();
+        static readonly char[] CropPrefixNoise =
+            "满上点儿些一亩块片地田都全把给在到去遍次棵株颗粒茬植下进出起好完掉往".ToCharArray();
+
         static readonly char[] CropSuffixNoise = "吧了呀哦呢哈".ToCharArray();
+
+        /// <summary>动作词开头的这些名词不是动作：「种子」「种类」「肥力」。</summary>
+        static readonly string[] ActionNouns = { "种子", "种类", "肥力" };
+
+        /// <summary>「减肥」「肥皂」里的「肥」不是施肥。</summary>
+        static readonly char[] FertilizerBlockers = { '减', '皂' };
 
         /// <summary>白名单动作词；判定「请求」时只认这些，不认「草地」「减肥」这类泛用字。</summary>
         static readonly string[] ActionWords =
@@ -56,6 +64,11 @@ namespace ElysFarm.Core
             "帮我", "帮忙", "替我", "给我", "麻烦", "请", "能不能", "可不可以", "要不要"
         };
 
+        /// <summary>第一 / 第二人称开头时，后面的弱标记（想、要、给…）也算请求。</summary>
+        static readonly string[] DirectAddressPrefixes = { "我", "你", "您", "俺", "咱" };
+
+        static readonly char[] VocativeTrimChars = { ' ', '，', ',', '：', ':', '！', '!', '、', '\t' };
+
         /// <summary>讲往事的标记：没有强请求标记时，这类句子按陈述处理。</summary>
         static readonly string[] StatementMarkers =
         {
@@ -68,9 +81,10 @@ namespace ElysFarm.Core
 
         public static IntentDraft Parse(string text, FarmWorld world, Npc npc)
         {
-            var normalized = Normalize(text);
+            var spoken = SpokenText(text, world, npc, out var aboutSomeoneElse);
+            var normalized = Normalize(spoken);
 
-            if (!IsFarmRequestNormalized(normalized))
+            if (aboutSomeoneElse || !IsFarmRequestNormalized(normalized))
             {
                 // 追问优先于闲聊：带问句标记但不像农活请求的，按追问处理。
                 return IsQuery(normalized)
@@ -87,7 +101,7 @@ namespace ElysFarm.Core
             var speciesToken = DetectSpecies(normalized);
             if (goal.Value == FarmGoal.Plant && speciesToken == null)
             {
-                var unknown = FindUnknownCrop(normalized);
+                var unknown = FindUnknownCrop(normalized, world);
                 if (unknown != null)
                 {
                     return IntentDraft.Refuse(ActionValidator.UnknownSpeciesReason(unknown));
@@ -97,43 +111,127 @@ namespace ElysFarm.Core
             return IntentDraft.Command(goal.Value, DetectField(normalized, world), speciesToken, null);
         }
 
-        internal static bool TryFindUnknownCrop(string text, out string unknown)
+        internal static bool TryFindUnknownCrop(
+            string text,
+            FarmWorld world,
+            Npc npc,
+            out string unknown)
         {
             unknown = null;
-            var normalized = Normalize(text);
+            var spoken = SpokenText(text, world, npc, out var aboutSomeoneElse);
+            var normalized = Normalize(spoken);
 
             // 只拦「像农事请求的播种要求」；追问与闲聊里出现「种」不应被当成指令。
-            if (!IsFarmRequestNormalized(normalized) || DetectGoal(normalized) != FarmGoal.Plant)
+            if (aboutSomeoneElse
+                || !IsFarmRequestNormalized(normalized)
+                || DetectGoal(normalized) != FarmGoal.Plant)
             {
                 return false;
             }
 
-            unknown = FindUnknownCrop(normalized);
+            unknown = FindUnknownCrop(normalized, world);
             return unknown != null;
         }
 
         /// <summary>
         /// 这句话是不是一句农活请求。出口判定与规划超时都读它，规则只有这一处：
-        /// 有白名单动作词、不是在问事或回忆、动作词在句首或前面有祈使 / 请求标记、
-        /// 且动作没被「不 / 别 / 没」否定。
+        /// 有白名单动作词、不是在问事或回忆、动作没被「不 / 别 / 没」否定，
+        /// 并且动作前有祈使 / 请求标记（强标记可在任意位置，弱标记要在句首，
+        /// 第一 / 第二人称开头的句子例外）。句首的称呼先去掉：叫的是被指挥的人
+        /// （「阿禾，把地浇了」）算请求，叫的是别的 NPC（「阿土把活干完了」）算在说别人。
         /// 闲聊里的陈述句（「我昨天种下的萝卜长得真好」）因此不会被当成指令。
         /// </summary>
-        internal static bool IsFarmRequest(string text)
+        internal static bool IsFarmRequest(string text, FarmWorld world, Npc addressed)
         {
-            return IsFarmRequestNormalized(Normalize(text));
+            var spoken = SpokenText(text, world, addressed, out var aboutSomeoneElse);
+            return !aboutSomeoneElse && IsFarmRequestNormalized(Normalize(spoken));
+        }
+
+        /// <summary>句首称呼处理后的原话；aboutSomeoneElse 表示这句话在说另一名 NPC 的事。</summary>
+        static string SpokenText(string text, FarmWorld world, Npc addressed, out bool aboutSomeoneElse)
+        {
+            aboutSomeoneElse = false;
+            var spoken = (text ?? string.Empty).TrimStart();
+            var withoutVocative = StripAddressed(spoken, addressed);
+            if (withoutVocative != null)
+            {
+                return withoutVocative;
+            }
+
+            aboutSomeoneElse = StartsWithOtherNpc(spoken, world, addressed);
+            return spoken;
+        }
+
+        /// <summary>句首是被指挥 NPC 的称呼时，去掉称呼；否则返回 null。</summary>
+        static string StripAddressed(string text, Npc addressed)
+        {
+            if (addressed == null)
+            {
+                return null;
+            }
+
+            foreach (var name in new[] { addressed.DisplayName, addressed.Id })
+            {
+                if (string.IsNullOrEmpty(name)
+                    || !text.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return text.Substring(name.Length).TrimStart(VocativeTrimChars);
+            }
+
+            return null;
+        }
+
+        /// <summary>句首点名的是另一名 NPC，说明这句话在讲他的事，不是派活。</summary>
+        static bool StartsWithOtherNpc(string text, FarmWorld world, Npc addressed)
+        {
+            if (world == null)
+            {
+                return false;
+            }
+
+            foreach (var npc in world.Npcs)
+            {
+                if (addressed != null && string.Equals(npc.Id, addressed.Id, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (text.StartsWith(npc.DisplayName, StringComparison.Ordinal)
+                    || text.StartsWith(npc.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         static bool IsFarmRequestNormalized(string normalized)
         {
-            if (normalized.Length == 0
-                || ContainsAny(normalized, InformationMarkers)
-                || IsPastQuestion(normalized))
+            if (normalized.Length == 0)
+            {
+                return false;
+            }
+
+            // 问过去的句子永远是追问，哪怕带「帮我」这类强标记。
+            if (IsPastQuestion(normalized))
             {
                 return false;
             }
 
             var index = FirstActionIndex(normalized);
             if (index < 0)
+            {
+                return false;
+            }
+
+            var hasStrong = ContainsAny(normalized, StrongRequestMarkers);
+
+            // 问事的话只有在强请求标记下才可能是请求（「状态不好，帮我浇点水」）。
+            if (ContainsAny(normalized, InformationMarkers) && !hasStrong)
             {
                 return false;
             }
@@ -151,49 +249,53 @@ namespace ElysFarm.Core
             }
 
             var prefix = normalized.Substring(0, index);
-            if (ContainsAny(prefix, StatementMarkers) && !ContainsAny(prefix, StrongRequestMarkers))
+            if (ContainsAny(prefix, StatementMarkers) && !hasStrong)
             {
                 return false;
             }
 
-            return HasRequestMarker(prefix);
+            return HasRequestMarker(prefix, hasStrong);
         }
-
-        /// <summary>「种子」「种类」里的「种」是名词，不是动作；找动作词时跳过它们。</summary>
-        static readonly string[] ActionNouns = { "种子", "种类" };
 
         static int FirstActionIndex(string text)
         {
             var first = -1;
             foreach (var word in ActionWords)
             {
-                var from = 0;
-                while (from <= text.Length - word.Length)
+                var index = FindActionIndex(text, word);
+                if (index >= 0 && (first < 0 || index < first))
                 {
-                    var index = text.IndexOf(word, from, StringComparison.Ordinal);
-                    if (index < 0)
-                    {
-                        break;
-                    }
-
-                    if (!IsNounAt(text, index))
-                    {
-                        if (first < 0 || index < first)
-                        {
-                            first = index;
-                        }
-
-                        break;
-                    }
-
-                    from = index + 1;
+                    first = index;
                 }
             }
 
             return first;
         }
 
-        static bool IsNounAt(string text, int index)
+        /// <summary>某个动作词第一次真正当动词用的位置；名词里的同形字不算。</summary>
+        static int FindActionIndex(string text, string word)
+        {
+            var from = 0;
+            while (from <= text.Length - word.Length)
+            {
+                var index = text.IndexOf(word, from, StringComparison.Ordinal);
+                if (index < 0)
+                {
+                    return -1;
+                }
+
+                if (!IsActionNoun(text, index, word))
+                {
+                    return index;
+                }
+
+                from = index + 1;
+            }
+
+            return -1;
+        }
+
+        static bool IsActionNoun(string text, int index, string word)
         {
             foreach (var noun in ActionNouns)
             {
@@ -204,11 +306,40 @@ namespace ElysFarm.Core
                 }
             }
 
+            return word == "肥"
+                && index > 0
+                && Array.IndexOf(FertilizerBlockers, text[index - 1]) >= 0;
+        }
+
+        /// <summary>
+        /// 前缀里有没有可用的请求标记。强标记出现在哪都算；弱标记只有在句首
+        /// （「把 / 给 / 去 / 再…」）或第一、第二人称开头（「我想…」「你要…」）时才算，
+        /// 否则「阿土把活干完了」这种说别人的句子会被误当成请求。
+        /// </summary>
+        static bool HasRequestMarker(string prefix, bool hasStrong)
+        {
+            if (hasStrong)
+            {
+                return true;
+            }
+
+            if (StartsWithAny(prefix, DirectAddressPrefixes))
+            {
+                return HasAnyActiveMarker(prefix);
+            }
+
+            foreach (var marker in RequestMarkers)
+            {
+                if (prefix.StartsWith(marker, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
-        /// <summary>前缀里有没有「没被否定」的请求标记；「不想」「不要」不算。</summary>
-        static bool HasRequestMarker(string prefix)
+        static bool HasAnyActiveMarker(string prefix)
         {
             foreach (var marker in RequestMarkers)
             {
@@ -233,15 +364,36 @@ namespace ElysFarm.Core
             return false;
         }
 
+        static bool StartsWithAny(string text, IReadOnlyList<string> markers)
+        {
+            foreach (var marker in markers)
+            {
+                if (text.StartsWith(marker, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         static bool IsNegator(char value)
         {
             return value == '不' || value == '别' || value == '没' || value == '甭';
         }
 
-        /// <summary>问过去的句子（「上次你浇的是哪块」「还记得浇水吗」）是追问，不是新请求。</summary>
+        /// <summary>
+        /// 问过去的句子（「上次你浇的是哪块」「你帮我浇水了吗」）是追问，不是新请求。
+        /// 「了吗 / 了没 / 过吗 / 没有」把一句听起来像请求的话变成问结果，不能当成要活干。
+        /// </summary>
         static bool IsPastQuestion(string text)
         {
             if (ContainsAny(text, PastQuestionMarkers))
+            {
+                return true;
+            }
+
+            if (text.Contains("了吗") || text.Contains("了没") || text.Contains("过吗") || text.Contains("没有"))
             {
                 return true;
             }
@@ -378,14 +530,15 @@ namespace ElysFarm.Core
 
         /// <summary>
         /// 「去种月亮」这类要求里，品种不在白名单。找出「种」后面的名词，
-        /// 已知品种、泛称与语气词都不算，剩下的就是 NPC 要明确拒绝的对象。
+        /// 已知品种、泛称、地块指称与语气词都不算，剩下的就是 NPC 要明确拒绝的对象。
+        /// 「种子」里的同形字不算动作，地块 id（「种在 A1」）也不是品种。
         /// </summary>
-        static string FindUnknownCrop(string text)
+        static string FindUnknownCrop(string text, FarmWorld world)
         {
-            var index = text.IndexOf("种", StringComparison.Ordinal);
+            var index = FindActionIndex(text, "种");
             if (index < 0)
             {
-                index = text.IndexOf("栽", StringComparison.Ordinal);
+                index = FindActionIndex(text, "栽");
             }
 
             if (index < 0 || index + 1 >= text.Length)
@@ -416,6 +569,17 @@ namespace ElysFarm.Core
             if (rest.StartsWith("什么") || rest.StartsWith("啥") || rest.StartsWith("地") || rest.StartsWith("田"))
             {
                 return null;
+            }
+
+            if (world != null)
+            {
+                foreach (var field in world.Fields)
+                {
+                    if (rest.StartsWith(field.Id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return null;
+                    }
+                }
             }
 
             return rest.Length > 6 ? rest.Substring(0, 6) : rest;

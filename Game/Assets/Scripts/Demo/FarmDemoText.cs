@@ -114,7 +114,7 @@ namespace ElysFarm.Demo
                 case ModelCallOutcome.Guard:
                     return "本地白名单校验（未调用模型）";
                 case ModelCallOutcome.Correction:
-                    return $"{ModelName(call)} {call.LatencySeconds:0.00}s · 本地出口校验接管";
+                    return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens} · 本地出口纠正";
                 default:
                     return "未调用（本地模式）";
             }

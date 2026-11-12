@@ -29,7 +29,7 @@ namespace ElysFarm.Core
         readonly Dictionary<string, IReadOnlyList<MemoryHit>> lastRecalls =
             new Dictionary<string, IReadOnlyList<MemoryHit>>();
         readonly MemoryStore memories = new MemoryStore();
-        readonly NewsBook newsBook = new NewsBook();
+        readonly HearsayBook hearsay = new HearsayBook();
         readonly UtilityScorer scorer = new UtilityScorer();
 
         /// <summary>产出仓的位置；随身物品只有在这里才能移交。</summary>
@@ -243,9 +243,8 @@ namespace ElysFarm.Core
         /// </summary>
         public void RememberChat(string npcId, string text, int importance)
         {
-            var clamped = Math.Max(1, Math.Min(NewsBook.MaxImportance, importance));
-            Remember(npcId, MemoryContext.PlayerChatMemory(text), clamped);
-            newsBook.LearnFromPlayer(npcId, text, clamped, npcs);
+            Remember(npcId, MemoryContext.PlayerChatMemory(text), importance);
+            hearsay.LearnFromPlayer(npcId, text, importance, npcs);
         }
 
         /// <summary>
@@ -253,15 +252,15 @@ namespace ElysFarm.Core
         /// 两人要站得够近，讲的人手里要有对方还不知道的事；成功时只写听者的记忆，
         /// 说法原样带过去，来源换成当下讲的人，重要性随转手次数递减。
         /// </summary>
-        public bool TryShareNews(string speakerId, string listenerId, out SharedNews news)
+        public bool TryRetell(string speakerId, string listenerId, out Hearsay retold)
         {
-            return TryShareNews(speakerId, listenerId, out news, out _);
+            return TryRetell(speakerId, listenerId, out retold, out _);
         }
 
         /// <summary>带失败理由的转述入口；失败时不改动任何状态。</summary>
-        public bool TryShareNews(string speakerId, string listenerId, out SharedNews news, out string reason)
+        public bool TryRetell(string speakerId, string listenerId, out Hearsay retold, out string reason)
         {
-            news = default;
+            retold = default;
 
             var speaker = GetNpc(speakerId);
             var listener = GetNpc(listenerId);
@@ -277,25 +276,15 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            if (!newsBook.TryPickForRetelling(speaker.Id, listener.Id, out var item))
+            if (!hearsay.TryPickForRetelling(speaker.Id, listener.Id, out var heard))
             {
                 reason = "我这儿也没什么听来的事";
                 return false;
             }
 
-            var importance = Math.Max(1, item.Importance - 1);
-            var hops = item.Hops + 1;
-            newsBook.Learn(listener.Id, new NewsBook.Item(item.SubjectId, item.SubjectName, item.Claim, importance, hops));
-
-            news = new SharedNews(
-                speaker.Id,
-                speaker.DisplayName,
-                item.SubjectId,
-                item.SubjectName,
-                item.Claim,
-                importance,
-                hops);
-            Remember(listener.Id, news.TextFor(listener.Id), importance);
+            retold = heard.Retold();
+            hearsay.Learn(listener.Id, retold);
+            Remember(listener.Id, retold.TextFor(speaker.DisplayName, listener.Id), retold.Importance);
             reason = null;
             return true;
         }

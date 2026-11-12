@@ -66,7 +66,7 @@ namespace ElysFarm.Core
 
             // 品种白名单先于模型生效：模型可能把「种月亮」改写成一句合法农活，
             // 但白名单外的品种必须由本地规则明确拒绝，不能绕过。
-            if (LocalIntentParser.TryFindUnknownCrop(text, out var unknownCrop))
+            if (LocalIntentParser.TryFindUnknownCrop(text, world, npc, out var unknownCrop))
             {
                 return Finish(IntentResult.Refuse(
                     ActionValidator.UnknownSpeciesReason(unknownCrop),
@@ -75,7 +75,7 @@ namespace ElysFarm.Core
             }
 
             var deadline = deadlineSeconds
-                ?? (LocalIntentParser.IsFarmRequest(text) ? PlanningDeadlineSeconds : ChatDeadlineSeconds);
+                ?? (LocalIntentParser.IsFarmRequest(text, world, npc) ? PlanningDeadlineSeconds : ChatDeadlineSeconds);
 
             if (client == null || deadline <= 0f)
             {
@@ -218,7 +218,7 @@ namespace ElysFarm.Core
 
             // 出口以玩家原话为准，模型只负责理解细节（地块、品种、措辞）：
             // 农活请求不能被模型当成闲聊吞掉，纯闲聊也不能被模型凭空变成一条农活。
-            var isRequest = LocalIntentParser.IsFarmRequest(playerText);
+            var isRequest = LocalIntentParser.IsFarmRequest(playerText, world, npc);
             if (isRequest != (draft.Outlet == IntentOutlet.FarmCommand))
             {
                 draft = LocalIntentParser.Parse(playerText, world, npc);

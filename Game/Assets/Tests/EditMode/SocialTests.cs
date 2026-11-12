@@ -27,12 +27,12 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 玩家说的别人闲话会被听的人转述出去()
+        public void 玩家聊起的传闻会被听的人转述出去()
         {
             var world = NewWorld();
             world.RememberChat("atu", "阿芽今天偷懒了", 4);
 
-            Assert.IsTrue(world.TryShareNews("atu", "ahe", out var told), "两个人站得近，可以聊两句");
+            Assert.IsTrue(world.TryRetell("atu", "ahe", out var told), "两个人站得近，可以聊两句");
             Assert.AreEqual("aya", told.SubjectId);
             StringAssert.Contains("偷懒", told.Claim);
             Assert.AreEqual(1, told.Hops);
@@ -51,8 +51,8 @@ namespace ElysFarm.Tests
             var world = NewWorld();
             world.RememberChat("atu", "阿芽今天偷懒了", 4);
 
-            Assert.IsTrue(world.TryShareNews("atu", "ahe", out _));
-            Assert.IsTrue(world.TryShareNews("ahe", "amiao", out var second), "听来的事还能再讲给第三个人");
+            Assert.IsTrue(world.TryRetell("atu", "ahe", out _));
+            Assert.IsTrue(world.TryRetell("ahe", "amiao", out var second), "听来的事还能再讲给第三个人");
 
             Assert.AreEqual("aya", second.SubjectId, "转述不能把说的是谁弄丢");
             Assert.AreEqual(2, second.Hops, "到阿苗这里是第二手");
@@ -72,7 +72,7 @@ namespace ElysFarm.Tests
             world.RememberChat("atu", "阿芽今天偷懒了", 4);
             world.MoveNpc("ahe", new FarmPosition(60f, 0f));
 
-            Assert.IsFalse(world.TryShareNews("atu", "ahe", out _, out var reason));
+            Assert.IsFalse(world.TryRetell("atu", "ahe", out _, out var reason));
             StringAssert.Contains("远", reason);
             Assert.AreEqual(0, world.RetrieveMemories("ahe", "阿芽偷懒").Count, "没说到就没听来");
         }
@@ -82,13 +82,13 @@ namespace ElysFarm.Tests
         {
             var world = NewWorld();
             world.RememberChat("atu", "阿芽今天偷懒了", 4);
-            Assert.IsTrue(world.TryShareNews("atu", "ahe", out _));
+            Assert.IsTrue(world.TryRetell("atu", "ahe", out _));
 
-            Assert.IsFalse(world.TryShareNews("atu", "ahe", out _, out var reason), "同一句话没必要说第二遍");
+            Assert.IsFalse(world.TryRetell("atu", "ahe", out _, out var reason), "同一句话没必要说第二遍");
             Assert.IsFalse(string.IsNullOrWhiteSpace(reason));
             Assert.AreEqual(1, world.RetrieveMemories("ahe", "阿芽偷懒").Count, "记忆里只留一条");
 
-            Assert.IsFalse(world.TryShareNews("ahe", "atu", out _, out _), "听过的人不会再讲回给讲的人");
+            Assert.IsFalse(world.TryRetell("ahe", "atu", out _, out _), "听过的人不会再讲回给讲的人");
         }
 
         [Test]
@@ -97,7 +97,7 @@ namespace ElysFarm.Tests
             var world = NewWorld();
             world.RememberChat("atu", "今天天气不错", 4);
 
-            Assert.IsFalse(world.TryShareNews("atu", "ahe", out _, out var reason));
+            Assert.IsFalse(world.TryRetell("atu", "ahe", out _, out var reason));
             Assert.IsFalse(string.IsNullOrWhiteSpace(reason), "没什么可说时也要给一句可读的理由");
         }
 
@@ -107,7 +107,19 @@ namespace ElysFarm.Tests
             var world = NewWorld();
             world.RememberChat("atu", "阿芽今天偷懒了", 4);
 
-            Assert.IsFalse(world.TryShareNews("atu", "atu", out _, out _));
+            Assert.IsFalse(world.TryRetell("atu", "atu", out _, out _));
+        }
+
+        [Test]
+        public void 转述时去掉说话人的口头语()
+        {
+            var world = NewWorld();
+            world.RememberChat("atu", "我觉得阿芽太懒了", 4);
+
+            Assert.IsTrue(world.TryRetell("atu", "ahe", out _));
+
+            var heard = world.RetrieveMemories("ahe", "阿芽太懒");
+            StringAssert.Contains("听阿土说，阿芽太懒了", heard[0].Text, "转述不能叠成「阿芽我觉得太懒了」");
         }
 
         [Test]
@@ -116,7 +128,7 @@ namespace ElysFarm.Tests
             var world = NewWorld();
             world.RememberChat("atu", "阿芽今天偷懒了", 4);
 
-            Assert.IsTrue(world.TryShareNews("atu", "aya", out _));
+            Assert.IsTrue(world.TryRetell("atu", "aya", out _));
 
             var heard = world.RetrieveMemories("aya", "阿芽偷懒");
             Assert.Greater(heard.Count, 0);
@@ -139,8 +151,8 @@ namespace ElysFarm.Tests
             var logCount = world.Log.Count;
 
             world.RememberChat("atu", "阿芽今天偷懒了", 4);
-            Assert.IsTrue(world.TryShareNews("atu", "ahe", out _));
-            Assert.IsTrue(world.TryShareNews("ahe", "amiao", out _));
+            Assert.IsTrue(world.TryRetell("atu", "ahe", out _));
+            Assert.IsTrue(world.TryRetell("ahe", "amiao", out _));
 
             Assert.AreEqual(day, world.Clock.Day, "转述不能推进时间");
             Assert.AreEqual(water, field.Water, 0.0001f, "转述不能改地块水分");
