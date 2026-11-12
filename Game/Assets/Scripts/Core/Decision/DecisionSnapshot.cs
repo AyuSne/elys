@@ -25,11 +25,12 @@ namespace ElysFarm.Core
     /// <summary>一条被检索命中的记忆及其权重。</summary>
     public readonly struct MemoryHit
     {
-        public MemoryHit(string text, int day, float weight)
+        public MemoryHit(string text, int day, float weight, int importance)
         {
             Text = text;
             Day = day;
             Weight = weight;
+            Importance = importance;
         }
 
         /// <summary>记忆正文。</summary>
@@ -40,6 +41,9 @@ namespace ElysFarm.Core
 
         /// <summary>检索权重，0..1；决策可视化用权重条展示。</summary>
         public float Weight { get; }
+
+        /// <summary>记忆的 importance，1..10；参与检索加权。</summary>
+        public int Importance { get; }
     }
 
     /// <summary>

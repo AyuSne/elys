@@ -63,24 +63,8 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            if (dx > 0f)
-            {
-                label = "东边";
-            }
-            else if (dx < 0f)
-            {
-                label = "西边";
-            }
-            else if (dz > 0f)
-            {
-                label = "北边";
-            }
-            else
-            {
-                label = "南边";
-            }
-
-            return true;
+            label = FarmDirection.LabelOf(dx, dz);
+            return label != null;
         }
 
         /// <summary>指称没有点名具体地块，可以交给效用打分去挑。</summary>

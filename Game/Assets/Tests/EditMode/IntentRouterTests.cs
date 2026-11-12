@@ -573,7 +573,8 @@ namespace ElysFarm.Tests
             var weather = prompt.IndexOf("今天天气不错", StringComparison.Ordinal);
             Assert.GreaterOrEqual(water, 0);
             Assert.Less(water, weather, "向量不可用时必须退回关键词排序");
-            Assert.AreEqual("我浇过 A1。", result.Reply);
+            StringAssert.Contains("我浇过 A1", result.Reply, "模型回答应保留");
+            StringAssert.Contains("第 1 天", result.Reply, "问「记得」时还要补上记忆依据");
         }
 
         [Test]
@@ -601,11 +602,11 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public async Task 模型追问答得太空时补上记忆依据()
+        public async Task 记忆追问即使模型提到地块也要补上记忆依据()
         {
             var world = NewWorld();
             world.Remember("ahe", "玩家让我给西边（A1）浇水", 7);
-            const string json = "{\"outlet\":\"query\",\"reply\":\"我在干活。\"}";
+            const string json = "{\"outlet\":\"query\",\"reply\":\"我在 A1。\"}";
 
             var result = await new IntentRouter(new ScriptedModelClient(json)).RouteAsync(
                 "上次你让我浇的是哪块",
@@ -613,8 +614,24 @@ namespace ElysFarm.Tests
                 world.GetNpc("ahe"));
 
             Assert.AreEqual(IntentOutlet.Query, result.Outlet);
-            StringAssert.Contains("第 1 天", result.Reply, "模型的空泛回答要补上检索依据");
-            StringAssert.Contains("西边", result.Reply);
+            StringAssert.Contains("第 1 天", result.Reply, "跨日追问必须落到记忆里的游戏日");
+            StringAssert.Contains("西边", result.Reply, "跨日追问必须落到记忆里的方位");
+        }
+
+        [Test]
+        public async Task 记忆追问优先引用玩家的话而不是自己的动作()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "给 A1 浇了水", 10);
+            world.Remember("ahe", "玩家让我给西边（A1）浇水", 4);
+
+            var result = await new IntentRouter().RouteAsync(
+                "上次你浇的是哪块",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            StringAssert.Contains("你让我给西边", result.Reply, "回答玩家的问题时应引用玩家当时的交代");
         }
 
         [Test]
@@ -634,6 +651,34 @@ namespace ElysFarm.Tests
             var memories = world.Inspect("ahe").Memories;
             Assert.Greater(memories.Count, 0, "闲聊要留下记忆");
             StringAssert.Contains("你好呀", memories[0].Text, "记下的应该是玩家的原话");
+        }
+
+        [Test]
+        public async Task 闲聊记忆的重要性由模型打分()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "玩家说「随便聊聊」", 8);
+            const string json = "{\"outlet\":\"chat\",\"reply\":\"嗯。\",\"importance\":9}";
+
+            var result = await new IntentRouter(new ScriptedModelClient(json)).RouteAsync(
+                "我明天要走了",
+                world,
+                world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Chat, result.Outlet);
+            var hits = world.RetrieveMemories("ahe", "待命");
+            StringAssert.Contains("我明天要走了", hits[0].Text, "模型打出的高重要性应压过默认值");
+        }
+
+        [Test]
+        public async Task 带昨天的闲聊仍然写记忆而不是被当成追问()
+        {
+            var world = NewWorld();
+
+            var result = await new IntentRouter().RouteAsync("昨天天气不错", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(IntentOutlet.Chat, result.Outlet, "陈述句不能因为带「昨天」就变成追问");
+            StringAssert.Contains("昨天天气不错", world.Inspect("ahe").Memories[0].Text);
         }
 
         [Test]

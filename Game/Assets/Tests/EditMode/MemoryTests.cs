@@ -74,6 +74,33 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 向量不齐全时整次检索退回关键词()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "给 A1 浇了水", 5);
+            world.Remember("ahe", "今天天气不错", 5);
+            world.CacheMemoryEmbedding("ahe", "今天天气不错", new[] { 1f, 0f });
+
+            var hits = world.RetrieveMemories("ahe", "给 A1 浇水", new[] { 1f, 0f });
+
+            Assert.AreEqual("给 A1 浇了水", hits[0].Text, "缺向量的记忆不能和余弦分数混排");
+        }
+
+        [Test]
+        public void 向量维度不一致时整次检索退回关键词()
+        {
+            var world = NewWorld();
+            world.Remember("ahe", "给 A1 浇了水", 5);
+            world.Remember("ahe", "今天天气不错", 5);
+            world.CacheMemoryEmbedding("ahe", "给 A1 浇了水", new[] { 1f, 0f });
+            world.CacheMemoryEmbedding("ahe", "今天天气不错", new[] { 0f, 1f });
+
+            var hits = world.RetrieveMemories("ahe", "给 A1 浇水", new[] { 1f, 0f, 0f });
+
+            Assert.AreEqual("给 A1 浇了水", hits[0].Text, "维度对不上时退回关键词");
+        }
+
+        [Test]
         public void 没有向量时退回关键词检索()
         {
             var world = NewWorld();

@@ -28,7 +28,8 @@ namespace ElysFarm.Core
         public const int RecallCount = 10;
 
         readonly Dictionary<string, List<MemoryEntry>> byNpc = new Dictionary<string, List<MemoryEntry>>();
-        readonly Dictionary<string, float[]> vectors = new Dictionary<string, float[]>();
+        readonly Dictionary<string, Dictionary<string, float[]>> vectors =
+            new Dictionary<string, Dictionary<string, float[]>>();
 
         /// <summary>记下一条属于某 NPC 的记忆；importance 会被夹到 1..10。</summary>
         public void Remember(string npcId, string text, int day, int importance)
@@ -61,11 +62,12 @@ namespace ElysFarm.Core
                 return Array.Empty<string>();
             }
 
+            vectors.TryGetValue(npcId, out var byText);
             var texts = new List<string>();
             for (var i = entries.Count - 1; i >= 0 && texts.Count < count; i--)
             {
                 var text = entries[i].Text;
-                if (vectors.ContainsKey(text) || texts.Contains(text))
+                if ((byText != null && byText.ContainsKey(text)) || texts.Contains(text))
                 {
                     continue;
                 }
@@ -77,20 +79,31 @@ namespace ElysFarm.Core
         }
 
         /// <summary>缓存一条记忆的 embedding；同一文本重复缓存时后写入的覆盖先写入的。</summary>
-        public void CacheEmbedding(string text, float[] vector)
+        public void CacheEmbedding(string npcId, string text, float[] vector)
         {
-            if (string.IsNullOrWhiteSpace(text) || vector == null || vector.Length == 0)
+            if (string.IsNullOrWhiteSpace(npcId)
+                || string.IsNullOrWhiteSpace(text)
+                || vector == null
+                || vector.Length == 0)
             {
                 return;
             }
 
-            vectors[text.Trim()] = (float[])vector.Clone();
+            if (!vectors.TryGetValue(npcId, out var byText))
+            {
+                byText = new Dictionary<string, float[]>();
+                vectors.Add(npcId, byText);
+            }
+
+            byText[text.Trim()] = (float[])vector.Clone();
         }
 
         /// <summary>
         /// 两段式检索：先按相似度召回 <see cref="RecallCount"/> 条，再按
         /// <c>0.5×相似度 + 0.3×重要性 + 0.2×时间衰减</c> 取前 count 条。
         /// 第二段只在召回的十条里重排，因此低相似度的记忆不会靠重要性直接空降。
+        /// 余弦与关键词不是同一把尺子：只要有一条记忆缺向量或维度对不上，
+        /// 这次检索就整体退回关键词，避免两种分数混排。
         /// </summary>
         public IReadOnlyList<MemoryHit> Retrieve(
             string npcId,
@@ -104,10 +117,17 @@ namespace ElysFarm.Core
                 return Array.Empty<MemoryHit>();
             }
 
+            // 余弦与关键词是两种尺度，不能逐条混排：只要有一条记忆缺向量或维度对不上，
+            // 这次检索就整体退回关键词，保证召回阶段仍在同一把尺子上。
+            var useVectors = HasCompleteEmbeddings(npcId, cueEmbedding, entries);
             var recalled = new List<Recalled>(entries.Count);
             foreach (var entry in entries)
             {
-                recalled.Add(new Recalled(entry, Similarity(cue, cueEmbedding, entry.Text)));
+                recalled.Add(new Recalled(
+                    entry,
+                    useVectors
+                        ? Cosine(cueEmbedding, VectorsOf(npcId)[entry.Text])
+                        : MemorySimilarity.Between(cue, entry.Text)));
             }
 
             recalled.Sort(CompareSimilarity);
@@ -126,7 +146,11 @@ namespace ElysFarm.Core
                     + ImportanceWeight * importance
                     + RecencyWeight * recency;
 
-                scored.Add(new MemoryHit(candidate.Entry.Text, candidate.Entry.Day, weight));
+                scored.Add(new MemoryHit(
+                    candidate.Entry.Text,
+                    candidate.Entry.Day,
+                    weight,
+                    candidate.Entry.Importance));
             }
 
             scored.Sort(Compare);
@@ -138,17 +162,30 @@ namespace ElysFarm.Core
             return scored;
         }
 
-        /// <summary>线索与记忆都拿到向量时用余弦；任一方没有向量就退回关键词 bigram。</summary>
-        float Similarity(string cue, float[] cueEmbedding, string text)
+        /// <summary>本次检索能否整段用余弦：线索和每条记忆都得有同维度的向量。</summary>
+        bool HasCompleteEmbeddings(string npcId, float[] cueEmbedding, List<MemoryEntry> entries)
         {
-            if (cueEmbedding != null
-                && cueEmbedding.Length > 0
-                && vectors.TryGetValue(text, out var vector))
+            if (cueEmbedding == null || cueEmbedding.Length == 0 || !vectors.TryGetValue(npcId, out var byText))
             {
-                return Cosine(cueEmbedding, vector);
+                return false;
             }
 
-            return MemorySimilarity.Between(cue, text);
+            foreach (var entry in entries)
+            {
+                if (!byText.TryGetValue(entry.Text, out var vector)
+                    || vector == null
+                    || vector.Length != cueEmbedding.Length)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        Dictionary<string, float[]> VectorsOf(string npcId)
+        {
+            return vectors[npcId];
         }
 
         /// <summary>余弦相似度，负相关按 0 计；维度不一致或零向量一律按 0。</summary>

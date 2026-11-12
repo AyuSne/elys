@@ -175,7 +175,14 @@ namespace ElysFarm.Model
                 var vector = new float[dimension];
                 for (var i = 0; i < dimension; i++)
                 {
-                    vector[i] = (float)embedding[i];
+                    try
+                    {
+                        vector[i] = (float)embedding[i];
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new ModelRequestException("embedding 向量含非数值", ex);
+                    }
                 }
 
                 vectors[index] = vector;

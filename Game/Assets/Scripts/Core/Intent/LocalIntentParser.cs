@@ -11,14 +11,23 @@ namespace ElysFarm.Core
     /// </summary>
     internal static class LocalIntentParser
     {
-        static readonly string[] QueryMarkers =
+        /// <summary>追问与「问过去」共用的标记；只在这里列一次，出口与回答分类都读它。</summary>
+        static readonly string[] SharedMemoryMarkers = { "哪块", "哪边", "是不是", "你让我" };
+
+        static readonly string[] QueryMarkers = BuildQueryMarkers();
+
+        static string[] BuildQueryMarkers()
         {
-            "干什么", "干嘛", "做什么", "忙什么", "在种什么", "种什么", "种啥",
-            "种的什么", "种的是什么", "种的啥", "种了啥", "在种啥",
-            "为什么", "怎么不去", "什么情况", "状态", "累不累", "渴不渴",
-            "上次", "之前", "昨天", "前天", "哪块", "哪边", "是不是", "你让我",
-            "还记得", "记得吗"
-        };
+            var markers = new List<string>
+            {
+                "干什么", "干嘛", "做什么", "忙什么", "在种什么", "种什么", "种啥",
+                "种的什么", "种的是什么", "种的啥", "种了啥", "在种啥",
+                "为什么", "怎么不去", "什么情况", "状态", "累不累", "渴不渴",
+                "吗", "怎么样", "如何", "还记得", "记得吗"
+            };
+            markers.AddRange(SharedMemoryMarkers);
+            return markers.ToArray();
+        }
 
         static readonly char[] CropPrefixNoise = "满上点儿些一亩块片地田都全把给在到去遍次棵株颗粒茬植".ToCharArray();
         static readonly char[] CropSuffixNoise = "吧了呀哦呢哈".ToCharArray();
@@ -102,7 +111,12 @@ namespace ElysFarm.Core
 
         static bool IsQuery(string text)
         {
-            foreach (var marker in QueryMarkers)
+            return ContainsAny(text, QueryMarkers);
+        }
+
+        static bool ContainsAny(string text, IReadOnlyList<string> markers)
+        {
+            foreach (var marker in markers)
             {
                 if (text.Contains(marker))
                 {
@@ -287,7 +301,7 @@ namespace ElysFarm.Core
 
             if (IsMemoryQuestion(normalized) && memories != null && memories.Count > 0)
             {
-                AppendMemoryAnswer(builder, world, npc, memories[0]);
+                AppendMemoryAnswer(builder, world, npc, BestPlayerMemory(memories));
                 return builder.ToString();
             }
 
@@ -308,16 +322,13 @@ namespace ElysFarm.Core
             return builder.ToString();
         }
 
-        static bool IsMemoryQuestion(string text)
+        internal static bool IsMemoryQuestion(string text)
         {
-            return text.Contains("上次")
+            return ContainsAny(text, SharedMemoryMarkers)
+                || text.Contains("上次")
                 || text.Contains("之前")
                 || text.Contains("昨天")
                 || text.Contains("前天")
-                || text.Contains("你让我")
-                || text.Contains("哪块")
-                || text.Contains("哪边")
-                || text.Contains("是不是")
                 || text.Contains("记得");
         }
 
@@ -342,6 +353,21 @@ namespace ElysFarm.Core
                 || text.Contains("饿");
         }
 
+        static bool TryValidateOrderStep(
+            FarmWorld world,
+            Npc npc,
+            WorkOrder order,
+            out string reason)
+        {
+            return ActionValidator.Validate(
+                world,
+                npc,
+                world.GetField(order.FieldId),
+                order.NextStep.Value,
+                order.SpeciesId,
+                out reason);
+        }
+
         static void AppendWhatDoing(StringBuilder builder, FarmWorld world, Npc npc)
         {
             var order = world.WorkOrderOf(npc.Id);
@@ -350,13 +376,7 @@ namespace ElysFarm.Core
                 var step = order.NextStep.Value;
                 builder.Append($"我正要去 {order.FieldId} {WorkStepLabel.Of(step)}");
                 builder.Append($"（工单第 {order.CompletedCount + 1}/{order.Steps.Count} 步）");
-                if (!ActionValidator.Validate(
-                        world,
-                        npc,
-                        world.GetField(order.FieldId),
-                        step,
-                        order.SpeciesId,
-                        out var reason))
+                if (!TryValidateOrderStep(world, npc, order, out var reason))
                 {
                     builder.Append($"，不过{TrimEnd(reason)}");
                 }
@@ -378,6 +398,14 @@ namespace ElysFarm.Core
                 return;
             }
 
+            const string autonomousPrefix = "自主：";
+            if (intent.StartsWith(autonomousPrefix, StringComparison.Ordinal))
+            {
+                var plan = intent.Substring(autonomousPrefix.Length).Replace(" · ", " ");
+                builder.Append($"我正打算去 {plan}，体力 {npc.Stamina:P0}。");
+                return;
+            }
+
             builder.Append($"我现在{intent}，体力 {npc.Stamina:P0}。");
         }
 
@@ -395,13 +423,7 @@ namespace ElysFarm.Core
             {
                 var step = order.NextStep.Value;
                 builder.Append($"我手里有你派的活：去 {order.FieldId} {WorkStepLabel.Of(step)}。");
-                if (!ActionValidator.Validate(
-                        world,
-                        npc,
-                        world.GetField(order.FieldId),
-                        step,
-                        order.SpeciesId,
-                        out var reason))
+                if (!TryValidateOrderStep(world, npc, order, out var reason))
                 {
                     builder.Append($"现在{TrimEnd(reason)}，得等一等。");
                 }
@@ -431,13 +453,26 @@ namespace ElysFarm.Core
                 $"体力 {npc.Stamina:P0}，心情 {npc.Mood:P0}，饥饿 {npc.Hunger:P0}。");
         }
 
+        static MemoryHit BestPlayerMemory(IReadOnlyList<MemoryHit> memories)
+        {
+            foreach (var memory in memories)
+            {
+                if (memory.Text.StartsWith("玩家", StringComparison.Ordinal))
+                {
+                    return memory;
+                }
+            }
+
+            return memories[0];
+        }
+
         static void AppendMemoryAnswer(StringBuilder builder, FarmWorld world, Npc npc, MemoryHit memory)
         {
             var text = TrimEnd(memory.Text);
             builder.Append(text.StartsWith("玩家", StringComparison.Ordinal)
                 ? $"对，第 {memory.Day} 天{ToSecondPerson(text)}。"
                 : $"我记得，第 {memory.Day} 天{text}。");
-            builder.Append($"现在{world.IntentOf(npc.Id)}。");
+            builder.Append($"现在{world.IntentOf(npc.Id)}，体力 {npc.Stamina:P0}。");
         }
 
         static void AppendMemoryBasis(StringBuilder builder, IReadOnlyList<MemoryHit> memories)

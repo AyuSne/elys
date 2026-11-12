@@ -26,8 +26,8 @@ namespace ElysFarm.Model
         /// <summary>硅基流动密钥。</summary>
         public string EmbeddingApiKey { get; set; }
 
-        /// <summary>一次 embedding 请求的硬超时（秒）。</summary>
-        public int EmbeddingTimeoutSeconds { get; set; } = 3;
+        /// <summary>一次 embedding 请求的硬超时（秒），与路由器的 2 秒预算一致。</summary>
+        public int EmbeddingTimeoutSeconds { get; set; } = 2;
 
         /// <summary>是否配置了可用的对话密钥。</summary>
         public bool HasChatKey => !string.IsNullOrWhiteSpace(ApiKey);

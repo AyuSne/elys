@@ -260,22 +260,22 @@ namespace ElysFarm.Core
             const float epsilon = 0.001f;
             if (field.Position.X <= minX + epsilon && maxX - minX > epsilon)
             {
-                return $"西边（{field.Id}）";
+                return $"{FarmDirection.LabelOf(-1f, 0f)}（{field.Id}）";
             }
 
             if (field.Position.X >= maxX - epsilon && maxX - minX > epsilon)
             {
-                return $"东边（{field.Id}）";
+                return $"{FarmDirection.LabelOf(1f, 0f)}（{field.Id}）";
             }
 
             if (field.Position.Z <= minZ + epsilon && maxZ - minZ > epsilon)
             {
-                return $"南边（{field.Id}）";
+                return $"{FarmDirection.LabelOf(0f, -1f)}（{field.Id}）";
             }
 
             if (field.Position.Z >= maxZ - epsilon && maxZ - minZ > epsilon)
             {
-                return $"北边（{field.Id}）";
+                return $"{FarmDirection.LabelOf(0f, 1f)}（{field.Id}）";
             }
 
             return field.Id;
@@ -288,7 +288,7 @@ namespace ElysFarm.Core
         public void CacheMemoryEmbedding(string npcId, string text, float[] embedding)
         {
             _ = GetNpc(npcId);
-            memories.CacheEmbedding(text, embedding);
+            memories.CacheEmbedding(npcId, text, embedding);
         }
 
         /// <summary>还没有向量的记忆文本，新的在前；路由器据此一次批量取向量。</summary>

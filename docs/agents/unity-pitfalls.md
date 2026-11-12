@@ -28,7 +28,7 @@
 
 - 需要 `await` 的 EditMode 测试直接写 `[Test] public async Task ...`，不需要 `[UnityTest]` 协程。用 `Task.WhenAny` + 很小的 deadline 测超时，别用 `.Result` / `.Wait()` 阻塞主线程。
 - 测试程序集 `overrideReferences: true` 时，引用新 asmdef（例如 `ElysFarm.Model`）要显式加进 `references`；想在测试里直接用 Newtonsoft 还要加 `precompiledReferences`，否则编译不到。
-- 全套 51 个测试本身不到 0.1 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
+- 全套 91 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
 
 ## 驱动 Editor 与验证演示
 
@@ -60,9 +60,9 @@
 ## 领域与规格
 
 - `FarmWorld.Inspect` 是只读快照：不要在里面推进决定、扣体力或写记忆；测试 `读取决策快照不改变任何游戏状态` 会盯住时钟、账本与 NPC 状态。决策可视化的测试仍打 `FarmWorld` 这条缝，不为面板或 `DecisionInspector` 另开接缝。
-- 记忆的 `0.5×相似度 + 0.3×importance + 0.2×时间衰减` 在 `MemoryStore`，两段式：先按相似度召回 10 条，再加权取 3 条。相似度有向量时用余弦，没有时退回 bigram Jaccard；不要把排序第一的候选塞进 cue，否则「意图指向 A2」会被 A1 的候选稀释。追问的 cue 是玩家原话；`Inspect` 在追问后展示 `RecallForAnswer` 缓存，没有缓存才用 `IntentOf`。
+- 记忆的 `0.5×相似度 + 0.3×importance + 0.2×时间衰减` 在 `MemoryStore`，两段式：先按相似度召回 10 条，再加权取 3 条。相似度有向量时用余弦，没有时退回 bigram Jaccard；两种尺度**不能逐条混排**——只要有一条记忆缺向量或维度不对，整次检索退回关键词。不要把排序第一的候选塞进 cue，否则「意图指向 A2」会被 A1 的候选稀释。追问的 cue 是玩家原话；`Inspect` 在追问后展示 `RecallForAnswer` 缓存，没有缓存才用 `IntentOf`。
 - embedding 走 `IModelClient.EmbedAsync`（硅基流动 `/embeddings`，bge-m3 固定 1024 维，`input` 支持数组）。路由器的批量请求把「检索线索 + 最近缺向量的记忆」一起送；硬超时 2 秒，任何失败都退回关键词，不能挡对话。测试用假客户端返回固定向量，不联网；真实端点只用 `script eval` 或手工请求验。实测两条无关中文短句余弦约 0.5，排序看相对差。
-- 追问的「依据」是领域行为，不是 HUD 文案：`LocalIntentParser.QueryReply` 按「上次那件事 / 为什么没干活 / 在干什么」生成，回答必带地块、工步或体力；`IntentRouter.EnsureQueryBasis` 给模型的空泛回答补本地依据。别把这段搬进演示层，否则离线追问会退化成套话。
+- 追问的「依据」是领域行为，不是 HUD 文案：`LocalIntentParser.QueryReply` 按「上次那件事 / 为什么没干活 / 状态 / 在干什么」四类生成，回答必带地块、工步、体力或记忆原话；`IntentRouter.EnsureQueryBasis` 给模型的空泛回答补本地依据，问「上次」时必须是记忆依据，只提当前地块不算。别把这段搬进演示层，否则离线追问会退化成套话。
 - `FarmWorld.Remember` 会清掉该 NPC 的 `RecallForAnswer` 缓存（记忆排序变了）；`ExecuteStep`、`TryDecide`、跨日也会清。改缓存生命周期时跑 `MemoryTests.决策面板显示最近一次追问命中的记忆` 和 `DecisionInspectorTests.读取决策快照不改变任何游戏状态`。
 - 心情与饥饿只供状态条展示，由工步、休息与跨日结算驱动；不要把它们加进效用打分，否则会改 ADR-0002 的公式和 #5 的测试预期。
 - 决策可视化五项是记忆 / 意图 / 候选与否决原因 / 最近一次模型调用 / 状态条；面板只能读快照，不要把 prompt、token 流、工单进度或人设注脚塞进去。

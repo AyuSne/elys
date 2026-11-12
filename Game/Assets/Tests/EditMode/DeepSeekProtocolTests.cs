@@ -93,6 +93,10 @@ namespace ElysFarm.Tests
                 "{\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]},{\"index\":1,\"embedding\":[0.3]}]}";
             Assert.Throws<ModelRequestException>(
                 () => DeepSeekProtocol.ParseEmbeddingResponse(ragged, 2));
+
+            const string notNumbers = "{\"data\":[{\"index\":0,\"embedding\":[0.1,\"oops\"]}]}";
+            Assert.Throws<ModelRequestException>(
+                () => DeepSeekProtocol.ParseEmbeddingResponse(notNumbers, 1));
         }
 
         [Test]

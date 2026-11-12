@@ -22,6 +22,9 @@ namespace ElysFarm.Core
 
         public string Reply { get; private set; }
 
+        /// <summary>模型给这条玩家原话打的重要性，1–10；0 表示没给，由路由器用默认值。</summary>
+        public int Importance { get; private set; }
+
         public bool IsRefusal { get; private set; }
 
         public static IntentDraft Command(FarmGoal goal, string fieldToken, string speciesToken, string reply)
@@ -36,9 +39,9 @@ namespace ElysFarm.Core
             };
         }
 
-        public static IntentDraft Read(IntentOutlet outlet, string reply)
+        public static IntentDraft Read(IntentOutlet outlet, string reply, int importance = 0)
         {
-            return new IntentDraft { Outlet = outlet, Reply = reply };
+            return new IntentDraft { Outlet = outlet, Reply = reply, Importance = importance };
         }
 
         public static IntentDraft Refuse(string reason)
@@ -89,7 +92,8 @@ namespace ElysFarm.Core
                 case "chat":
                     draft = IntentDraft.Read(
                         outlet == "query" ? IntentOutlet.Query : IntentOutlet.Chat,
-                        (string)json["reply"]);
+                        (string)json["reply"],
+                        (int?)json["importance"] ?? 0);
                     return true;
 
                 default:

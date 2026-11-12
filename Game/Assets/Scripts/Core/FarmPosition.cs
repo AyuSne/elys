@@ -31,4 +31,34 @@ namespace ElysFarm.Core
             return (float)Math.Sqrt(dx * dx + dz * dz);
         }
     }
+
+    /// <summary>农场平面上的四个方位；地块指称与指令记忆共用同一套中文名。</summary>
+    public static class FarmDirection
+    {
+        /// <summary>按方向分量给出中文方位名；两个分量都为零时返回 null。</summary>
+        public static string LabelOf(float dx, float dz)
+        {
+            if (dx > 0f)
+            {
+                return "东边";
+            }
+
+            if (dx < 0f)
+            {
+                return "西边";
+            }
+
+            if (dz > 0f)
+            {
+                return "北边";
+            }
+
+            if (dz < 0f)
+            {
+                return "南边";
+            }
+
+            return null;
+        }
+    }
 }
