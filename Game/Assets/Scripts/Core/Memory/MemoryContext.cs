@@ -118,6 +118,12 @@ namespace ElysFarm.Core
             return value.Length <= maxLength ? value : value.Substring(0, maxLength) + "…";
         }
 
+        /// <summary>玩家闲聊写进记忆的样子：一行、定长，与农事指令的「玩家让我…」区分开。</summary>
+        public static string PlayerChatMemory(string text)
+        {
+            return $"玩家说「{Shorten(text, PlayerChatMaxLength)}」";
+        }
+
         /// <summary>
         /// 模型的追问回答如果既没提状态也没提记忆，补一句本地生成的依据。
         /// 问「上次」时必须是记忆依据，只提当前地块不算答到了过去。

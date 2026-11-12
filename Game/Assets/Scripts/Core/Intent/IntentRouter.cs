@@ -75,7 +75,7 @@ namespace ElysFarm.Core
             }
 
             var deadline = deadlineSeconds
-                ?? (LocalIntentParser.LooksLikeFarmCommand(text) ? PlanningDeadlineSeconds : ChatDeadlineSeconds);
+                ?? (LocalIntentParser.IsFarmRequest(text) ? PlanningDeadlineSeconds : ChatDeadlineSeconds);
 
             if (client == null || deadline <= 0f)
             {
@@ -216,6 +216,15 @@ namespace ElysFarm.Core
                 return IntentResult.Refuse("我没听明白。", usedFallback, call);
             }
 
+            // 出口以玩家原话为准，模型只负责理解细节（地块、品种、措辞）：
+            // 农活请求不能被模型当成闲聊吞掉，纯闲聊也不能被模型凭空变成一条农活。
+            var isRequest = LocalIntentParser.IsFarmRequest(playerText);
+            if (isRequest != (draft.Outlet == IntentOutlet.FarmCommand))
+            {
+                draft = LocalIntentParser.Parse(playerText, world, npc);
+                call = Corrected(call);
+            }
+
             switch (draft.Outlet)
             {
                 case IntentOutlet.Query:
@@ -233,10 +242,11 @@ namespace ElysFarm.Core
                     return IntentResult.ReadOnly(IntentOutlet.Query, queryReply, usedFallback, call);
 
                 case IntentOutlet.Chat:
-                    // 闲聊只留下记忆，不改变地块、时钟与背包；模型给了importance 就用模型的。
-                    world.Remember(
+                    // 闲聊只留下记忆（提到别人时还留一条可转述的传闻），不改变地块、时钟与背包；
+                    // 模型给了 importance 就用模型的。
+                    world.RememberChat(
                         npc.Id,
-                        $"玩家说「{MemoryContext.Shorten(playerText, MemoryContext.PlayerChatMaxLength)}」",
+                        playerText,
                         draft.Importance > 0 ? draft.Importance : MemoryContext.PlayerChatImportance);
                     return IntentResult.ReadOnly(
                         IntentOutlet.Chat,
@@ -359,6 +369,18 @@ namespace ElysFarm.Core
         static string ReplyOr(string reply, string fallback)
         {
             return string.IsNullOrWhiteSpace(reply) ? fallback : reply.Trim();
+        }
+
+        /// <summary>模型的分类被本地出口规则纠正：保留这次调用的模型名、耗时与 token，只换结果类别。</summary>
+        static ModelCallInfo Corrected(ModelCallInfo call)
+        {
+            return new ModelCallInfo(
+                call.Model,
+                call.LatencySeconds,
+                call.PromptTokens,
+                call.CompletionTokens,
+                ModelCallOutcome.Correction,
+                call.Detail);
         }
 
         static void Observe(Task task)

@@ -113,6 +113,8 @@ namespace ElysFarm.Demo
                     return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens} · 回退模板";
                 case ModelCallOutcome.Guard:
                     return "本地白名单校验（未调用模型）";
+                case ModelCallOutcome.Correction:
+                    return $"{ModelName(call)} {call.LatencySeconds:0.00}s · 本地出口校验接管";
                 default:
                     return "未调用（本地模式）";
             }

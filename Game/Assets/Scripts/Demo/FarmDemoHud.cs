@@ -468,6 +468,12 @@ namespace ElysFarm.Demo
                 Submit();
             }
 
+            if (GUILayout.Button("听说阿芽偷懒", buttonStyle, GUILayout.Width(104f)))
+            {
+                commandInput = "听说阿芽今天偷懒了";
+                Submit();
+            }
+
             if (GUILayout.Button("你在干什么", buttonStyle, GUILayout.Width(82f)))
             {
                 commandInput = "你在干什么";

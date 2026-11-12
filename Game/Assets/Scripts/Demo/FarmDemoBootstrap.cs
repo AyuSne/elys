@@ -32,6 +32,12 @@ namespace ElysFarm.Demo
         const float RestRefresh = 0.3f;
         const float ArriveRadius = 0.05f;
 
+        /// <summary>两名 NPC 之间多久试着搭一次话；没有听来的事就什么也不发生。</summary>
+        const float ChatPause = 4f;
+
+        /// <summary>搭话时两人停下手里的事，让观察者看清这句转述。</summary>
+        const float ChatHold = 1.2f;
+
         static readonly Color DrySoil = new Color(0.47f, 0.34f, 0.23f);
         static readonly Color WetSoil = new Color(0.24f, 0.17f, 0.12f);
         static readonly Color CropGreen = new Color(0.22f, 0.62f, 0.24f);
@@ -80,6 +86,8 @@ namespace ElysFarm.Demo
         Transform npcRoot;
         readonly List<FieldView> fieldViews = new List<FieldView>();
         readonly List<NpcView> npcViews = new List<NpcView>();
+        float nextChatAt;
+        int chatSlot;
 
         sealed class FieldView
         {
@@ -119,6 +127,7 @@ namespace ElysFarm.Demo
                 UpdateNpc(view);
             }
 
+            TryNpcConversation();
             UpdateViews();
         }
 
@@ -242,7 +251,7 @@ namespace ElysFarm.Demo
                     LastUnderstood = "追问：只读回答（不改状态）";
                     break;
                 case IntentOutlet.Chat:
-                    LastUnderstood = "闲聊：只留下记忆";
+                    LastUnderstood = "闲聊：只留下记忆（提到别人会变成传闻）";
                     break;
                 default:
                     LastUnderstood = "没有接单";
@@ -528,6 +537,49 @@ namespace ElysFarm.Demo
             }
 
             BeginWalkToField(view, candidate.FieldId, candidate.Step);
+        }
+
+        /// <summary>
+        /// NPC 之间自己发起对话：轮到一个 NPC 时，找一名站得近、不在路上的同伴，
+        /// 把听来的事讲一遍。演示层只负责挑人、播报与暂停，传闻本身由
+        /// <see cref="FarmWorld.TryShareNews"/> 认定、写进听者的记忆。
+        /// </summary>
+        void TryNpcConversation()
+        {
+            if (npcViews.Count < 2 || Time.time < nextChatAt)
+            {
+                return;
+            }
+
+            nextChatAt = Time.time + ChatPause;
+            chatSlot = (chatSlot + 1) % npcViews.Count;
+            var speaker = npcViews[chatSlot];
+            if (speaker.Walking || speaker.Npc.IsResting)
+            {
+                return;
+            }
+
+            foreach (var listener in npcViews)
+            {
+                if (listener == speaker || listener.Walking)
+                {
+                    continue;
+                }
+
+                if (!World.TryShareNews(speaker.Npc.Id, listener.Npc.Id, out var news))
+                {
+                    continue;
+                }
+
+                var line = $"{news.SubjectName}{news.Claim}";
+                speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
+                listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
+                speaker.NextActionAt = Time.time + ChatHold;
+                listener.NextActionAt = Time.time + ChatHold;
+                LastMessage = $"第 {World.Clock.Day} 天 · "
+                    + $"{speaker.Npc.DisplayName}把听来的事讲给{listener.Npc.DisplayName}：{line}";
+                return;
+            }
         }
 
         void BeginWalkToField(NpcView view, string fieldId, WorkStep step, string intentHint = null)

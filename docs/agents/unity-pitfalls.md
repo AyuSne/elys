@@ -17,6 +17,7 @@
 
 - 编辑模式测试不需要开 Editor：`unity test Game --mode EditMode --timeout 900`。Editor 开着（尤其 Play Mode）时 `unity test` 会拒绝。
 - 退出码 6 + `TEST_RUN_ERROR` 通常只是编译失败；真正的 `error CSxxxx` 在 `%LOCALAPPDATA%\Unity\Editor\Editor.log`，CLI 也可能只打印「编辑器日志报告了以下错误」。JSON 里没有编译错误详情。
+- **编译失败时 `TestResults/editmode.xml` 不会被覆盖**，留在那里的是上一次的成功报告。看到 CLI 说「Scripts have compiler errors」就不要再读报告，否则会把上一次的 105/105 当成这一次通过。隔壁 `Editor.log` 不是合法 UTF-8，严格解码会抛 `DecoderFallbackException`；用 `[Text.Encoding]::GetEncoding(28591)`（Latin1）读，再过滤 `error CS\d+` 即可（这些行是 ASCII）。
 - 测试引用尚不存在的 API 会让整个测试程序集编译失败。一次只加一个纵向切片；红灯先看是「编译错」还是「断言错」。
 - `unity test` 成功时通常**没有 stdout**，报告默认写到**当前工作目录**的 `test-results.xml`（不是 `Game/`）。读报告要严格按 UTF-8 解码；PowerShell 的 `[xml](Get-Content ...)` 遇到中文测试名会报「意外标记」：
 
@@ -67,6 +68,9 @@
 - 心情与饥饿只供状态条展示，由工步、休息与跨日结算驱动；不要把它们加进效用打分，否则会改 ADR-0002 的公式和 #5 的测试预期。
 - 决策可视化五项是记忆 / 意图 / 候选与否决原因 / 最近一次模型调用 / 状态条；面板只能读快照，不要把 prompt、token 流、工单进度或人设注脚塞进去。
 - 先读 `GLOSSARY.md` 再命名。`仓库` / `carry` 都是明文 Avoid 的词；本票因此做了一次大范围重命名（产出仓 / 随身 / held）。
+- 三个出口的最终裁决点在 `LocalIntentParser.IsFarmRequest`（#8）：请求一定进动作校验，非请求一定不产生工单；模型只提供细节。改词表后跑 `ChatTests`。`种子` / `种类` 里的「种」是名词，`FirstActionIndex` 会跳过；新增动作词时要同步 `DetectGoal`，否则会出现「是请求但没有目标」的拒绝。
+- 闲聊只走 `FarmWorld.RememberChat`：它一次写「玩家说「…」」记忆并提取传闻。`FarmWorld.TryShareNews` 只写听者的记忆（说法原样、来源换人、importance 每转一手减一），不要顺手给讲者补记忆或流水，否则 A→B→C 的断言会被重复条目搅乱。
+- 演示层的 NPC 对话每 4 秒触发一次：挑一名不走路、不休息的 NPC，找一名不走路且听得见的同伴；把两人的 `NextActionAt` 往后推 1.2 秒，意图文案才留得住（`UpdateNpc` 在 `NextActionAt` 之前直接返回）。
 - 规格「收获进产出仓」与「随身只在产出仓移交」存在歧义。本票的选择是收获直接进产出仓，随身移交只在 `FarmWorld` API 层测试；演示场景里随身为 0。要加送货/出售任务前，先在 issue 里把语义定死。
 - 验收测试要断言规格规则本身，不要只设宽松阈值。例：「不浇水不长」应断言 `Growth == 0`；播种时也别白送水分，否则测试过了但规则没实现。
 - 跨日结算在成熟后仍要结算水/草/肥，只冻结生长；AC 测试抓不到这一点，要单独写测试。

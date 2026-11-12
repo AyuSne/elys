@@ -127,7 +127,10 @@ namespace ElysFarm.Core
         Unusable,
 
         /// <summary>本地白名单直接拒绝，未调用模型。</summary>
-        Guard
+        Guard,
+
+        /// <summary>本地出口判定纠正了模型的分类（请求走校验、非请求不造活），动作校验照旧。</summary>
+        Correction
     }
 
     /// <summary>

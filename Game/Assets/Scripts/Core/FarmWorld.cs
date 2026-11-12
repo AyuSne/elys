@@ -13,6 +13,9 @@ namespace ElysFarm.Core
         /// <summary>与产出仓的移交半径。</summary>
         public const float ProduceStoreRadius = 1.5f;
 
+        /// <summary>两名 NPC 说得上话的半径；更远就听不见，也就没法转述。</summary>
+        public const float ChatRadius = 3.5f;
+
         /// <summary>两次决定之间、还没拿定主意时的意图文案；演示行与决策可视化共用。</summary>
         public const string ThinkingReason = "琢磨着干点啥…";
 
@@ -26,6 +29,7 @@ namespace ElysFarm.Core
         readonly Dictionary<string, IReadOnlyList<MemoryHit>> lastRecalls =
             new Dictionary<string, IReadOnlyList<MemoryHit>>();
         readonly MemoryStore memories = new MemoryStore();
+        readonly NewsBook newsBook = new NewsBook();
         readonly UtilityScorer scorer = new UtilityScorer();
 
         /// <summary>产出仓的位置；随身物品只有在这里才能移交。</summary>
@@ -231,6 +235,69 @@ namespace ElysFarm.Core
 
             // 记忆变了，上一次回答命中的排序不再可信；面板回到按当前意图检索。
             lastRecalls.Remove(npcId);
+        }
+
+        /// <summary>
+        /// 记下玩家对某名 NPC 说的一句闲聊：只写记忆，不改地块、时钟与背包；
+        /// 话里提到另一名 NPC 时，顺带记成一条可转述的传闻。
+        /// </summary>
+        public void RememberChat(string npcId, string text, int importance)
+        {
+            var clamped = Math.Max(1, Math.Min(NewsBook.MaxImportance, importance));
+            Remember(npcId, MemoryContext.PlayerChatMemory(text), clamped);
+            newsBook.LearnFromPlayer(npcId, text, clamped, npcs);
+        }
+
+        /// <summary>
+        /// 让某名 NPC 把听来的事讲给另一名 NPC（见 GLOSSARY「转述」）。
+        /// 两人要站得够近，讲的人手里要有对方还不知道的事；成功时只写听者的记忆，
+        /// 说法原样带过去，来源换成当下讲的人，重要性随转手次数递减。
+        /// </summary>
+        public bool TryShareNews(string speakerId, string listenerId, out SharedNews news)
+        {
+            return TryShareNews(speakerId, listenerId, out news, out _);
+        }
+
+        /// <summary>带失败理由的转述入口；失败时不改动任何状态。</summary>
+        public bool TryShareNews(string speakerId, string listenerId, out SharedNews news, out string reason)
+        {
+            news = default;
+
+            var speaker = GetNpc(speakerId);
+            var listener = GetNpc(listenerId);
+            if (speaker == listener)
+            {
+                reason = "自己跟自己没什么好说的";
+                return false;
+            }
+
+            if (speaker.DistanceTo(listener.Position) > ChatRadius)
+            {
+                reason = $"{listener.DisplayName}离得太远，说不上话";
+                return false;
+            }
+
+            if (!newsBook.TryPickForRetelling(speaker.Id, listener.Id, out var item))
+            {
+                reason = "我这儿也没什么听来的事";
+                return false;
+            }
+
+            var importance = Math.Max(1, item.Importance - 1);
+            var hops = item.Hops + 1;
+            newsBook.Learn(listener.Id, new NewsBook.Item(item.SubjectId, item.SubjectName, item.Claim, importance, hops));
+
+            news = new SharedNews(
+                speaker.Id,
+                speaker.DisplayName,
+                item.SubjectId,
+                item.SubjectName,
+                item.Claim,
+                importance,
+                hops);
+            Remember(listener.Id, news.TextFor(listener.Id), importance);
+            reason = null;
+            return true;
         }
 
         /// <summary>

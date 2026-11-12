@@ -32,51 +32,6 @@ namespace ElysFarm.Tests
             return world;
         }
 
-        sealed class ScriptedModelClient : IModelClient
-        {
-            readonly Func<ChatRequest, CancellationToken, Task<ChatResponse>> onChat;
-
-            public ScriptedModelClient(string json)
-                : this((_, __) => Task.FromResult(new ChatResponse(json, "fake-deepseek")))
-            {
-            }
-
-            public ScriptedModelClient(Func<ChatRequest, CancellationToken, Task<ChatResponse>> onChat)
-            {
-                this.onChat = onChat;
-            }
-
-            public string ModelName => "fake-deepseek";
-
-            public bool SupportsEmbeddings { get; set; }
-
-            public Func<IReadOnlyList<string>, Task<IReadOnlyList<float[]>>> OnEmbed { get; set; }
-
-            public int EmbedCalls { get; private set; }
-
-            public Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default)
-            {
-                Calls++;
-                return onChat(request, cancellationToken);
-            }
-
-            public Task<IReadOnlyList<float[]>> EmbedAsync(
-                IReadOnlyList<string> inputs,
-                CancellationToken cancellationToken = default)
-            {
-                EmbedCalls++;
-                if (OnEmbed == null)
-                {
-                    return Task.FromException<IReadOnlyList<float[]>>(
-                        new NotSupportedException("假客户端未配置向量"));
-                }
-
-                return OnEmbed(inputs);
-            }
-
-            public int Calls { get; private set; }
-        }
-
         [Test]
         public async Task 模型解析出农事指令时只排工单不改状态()
         {

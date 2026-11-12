@@ -14,17 +14,21 @@ namespace ElysFarm.Core
         /// <summary>追问与「问过去」共用的标记；只在这里列一次，出口与回答分类都读它。</summary>
         static readonly string[] SharedMemoryMarkers = { "哪块", "哪边", "是不是", "你让我" };
 
+        /// <summary>问「是什么 / 为什么 / 怎么样」的标记：带这些字的句子是追问，不是农活请求。</summary>
+        static readonly string[] InformationMarkers =
+        {
+            "干什么", "干嘛", "做什么", "忙什么", "在种什么", "种什么", "种啥",
+            "种的什么", "种的是什么", "种的啥", "种了啥", "在种啥",
+            "为什么", "怎么不去", "什么情况", "状态", "累不累", "渴不渴",
+            "怎么样", "如何", "记得吗"
+        };
+
         static readonly string[] QueryMarkers = BuildQueryMarkers();
 
         static string[] BuildQueryMarkers()
         {
-            var markers = new List<string>
-            {
-                "干什么", "干嘛", "做什么", "忙什么", "在种什么", "种什么", "种啥",
-                "种的什么", "种的是什么", "种的啥", "种了啥", "在种啥",
-                "为什么", "怎么不去", "什么情况", "状态", "累不累", "渴不渴",
-                "吗", "怎么样", "如何", "还记得", "记得吗"
-            };
+            // 问事的标记加上「吗 / 还记得」与回忆型标记，全部在这里汇总，避免两处各维护一份。
+            var markers = new List<string>(InformationMarkers) { "吗", "还记得" };
             markers.AddRange(SharedMemoryMarkers);
             return markers.ToArray();
         }
@@ -32,19 +36,46 @@ namespace ElysFarm.Core
         static readonly char[] CropPrefixNoise = "满上点儿些一亩块片地田都全把给在到去遍次棵株颗粒茬植".ToCharArray();
         static readonly char[] CropSuffixNoise = "吧了呀哦呢哈".ToCharArray();
 
+        /// <summary>白名单动作词；判定「请求」时只认这些，不认「草地」「减肥」这类泛用字。</summary>
+        static readonly string[] ActionWords =
+        {
+            "种", "播", "栽", "浇", "施肥", "肥", "除草", "拔草", "收"
+        };
+
+        /// <summary>动作词前的祈使 / 请求标记；出现在这些词后面的动作用户是在提要求。</summary>
+        static readonly string[] RequestMarkers =
+        {
+            "帮我", "帮忙", "替我", "给我", "麻烦", "请", "能不能", "可不可以", "要不要",
+            "把", "给", "去", "来", "赶紧", "快", "记得", "别忘了", "该", "再", "想", "要",
+            "随便", "马上", "立刻"
+        };
+
+        /// <summary>即使整句在讲往事，也足以说明「这是请求」的强标记。</summary>
+        static readonly string[] StrongRequestMarkers =
+        {
+            "帮我", "帮忙", "替我", "给我", "麻烦", "请", "能不能", "可不可以", "要不要"
+        };
+
+        /// <summary>讲往事的标记：没有强请求标记时，这类句子按陈述处理。</summary>
+        static readonly string[] StatementMarkers =
+        {
+            "听说", "据说", "昨天", "前天", "上次", "之前", "刚才", "梦见", "梦到", "已经",
+            "再也", "本来", "未来", "后来", "原来", "从来"
+        };
+
+        /// <summary>回忆型追问的标记；带它们的是问过去，不是提要求。</summary>
+        static readonly string[] PastQuestionMarkers = { "哪块", "哪边", "上次", "之前", "记得", "是不是", "你让我" };
+
         public static IntentDraft Parse(string text, FarmWorld world, Npc npc)
         {
             var normalized = Normalize(text);
 
-            if (IsQuery(normalized))
+            if (!IsFarmRequestNormalized(normalized))
             {
-                // 追问的台词要带当前状态与检索到的记忆，由路由器在拿到记忆后生成。
-                return IntentDraft.Read(IntentOutlet.Query, null);
-            }
-
-            if (!HasFarmKeyword(normalized))
-            {
-                return IntentDraft.Read(IntentOutlet.Chat, ChatReply(normalized));
+                // 追问优先于闲聊：带问句标记但不像农活请求的，按追问处理。
+                return IsQuery(normalized)
+                    ? IntentDraft.Read(IntentOutlet.Query, null)
+                    : IntentDraft.Read(IntentOutlet.Chat, ChatReply(normalized));
             }
 
             var goal = DetectGoal(normalized);
@@ -71,8 +102,8 @@ namespace ElysFarm.Core
             unknown = null;
             var normalized = Normalize(text);
 
-            // 只拦「像农事指令的播种要求」；追问与闲聊里出现「种」不应被当成指令。
-            if (!LooksLikeFarmCommand(normalized) || DetectGoal(normalized) != FarmGoal.Plant)
+            // 只拦「像农事请求的播种要求」；追问与闲聊里出现「种」不应被当成指令。
+            if (!IsFarmRequestNormalized(normalized) || DetectGoal(normalized) != FarmGoal.Plant)
             {
                 return false;
             }
@@ -81,11 +112,142 @@ namespace ElysFarm.Core
             return unknown != null;
         }
 
-        /// <summary>文本是否像一句农活要求；用于选择规划级还是对话级的模型超时。</summary>
-        internal static bool LooksLikeFarmCommand(string text)
+        /// <summary>
+        /// 这句话是不是一句农活请求。出口判定与规划超时都读它，规则只有这一处：
+        /// 有白名单动作词、不是在问事或回忆、动作词在句首或前面有祈使 / 请求标记、
+        /// 且动作没被「不 / 别 / 没」否定。
+        /// 闲聊里的陈述句（「我昨天种下的萝卜长得真好」）因此不会被当成指令。
+        /// </summary>
+        internal static bool IsFarmRequest(string text)
         {
-            var normalized = Normalize(text);
-            return !IsQuery(normalized) && HasFarmKeyword(normalized);
+            return IsFarmRequestNormalized(Normalize(text));
+        }
+
+        static bool IsFarmRequestNormalized(string normalized)
+        {
+            if (normalized.Length == 0
+                || ContainsAny(normalized, InformationMarkers)
+                || IsPastQuestion(normalized))
+            {
+                return false;
+            }
+
+            var index = FirstActionIndex(normalized);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            // 「种地」「浇水」这种动词开头的句子就是祈使句。
+            if (index == 0)
+            {
+                return true;
+            }
+
+            // 「别浇」「不种」是拒绝或陈述，不是请求。
+            if (IsNegator(normalized[index - 1]))
+            {
+                return false;
+            }
+
+            var prefix = normalized.Substring(0, index);
+            if (ContainsAny(prefix, StatementMarkers) && !ContainsAny(prefix, StrongRequestMarkers))
+            {
+                return false;
+            }
+
+            return HasRequestMarker(prefix);
+        }
+
+        /// <summary>「种子」「种类」里的「种」是名词，不是动作；找动作词时跳过它们。</summary>
+        static readonly string[] ActionNouns = { "种子", "种类" };
+
+        static int FirstActionIndex(string text)
+        {
+            var first = -1;
+            foreach (var word in ActionWords)
+            {
+                var from = 0;
+                while (from <= text.Length - word.Length)
+                {
+                    var index = text.IndexOf(word, from, StringComparison.Ordinal);
+                    if (index < 0)
+                    {
+                        break;
+                    }
+
+                    if (!IsNounAt(text, index))
+                    {
+                        if (first < 0 || index < first)
+                        {
+                            first = index;
+                        }
+
+                        break;
+                    }
+
+                    from = index + 1;
+                }
+            }
+
+            return first;
+        }
+
+        static bool IsNounAt(string text, int index)
+        {
+            foreach (var noun in ActionNouns)
+            {
+                if (index + noun.Length <= text.Length
+                    && string.CompareOrdinal(text, index, noun, 0, noun.Length) == 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>前缀里有没有「没被否定」的请求标记；「不想」「不要」不算。</summary>
+        static bool HasRequestMarker(string prefix)
+        {
+            foreach (var marker in RequestMarkers)
+            {
+                var from = 0;
+                while (from <= prefix.Length - marker.Length)
+                {
+                    var index = prefix.IndexOf(marker, from, StringComparison.Ordinal);
+                    if (index < 0)
+                    {
+                        break;
+                    }
+
+                    if (index == 0 || !IsNegator(prefix[index - 1]))
+                    {
+                        return true;
+                    }
+
+                    from = index + marker.Length;
+                }
+            }
+
+            return false;
+        }
+
+        static bool IsNegator(char value)
+        {
+            return value == '不' || value == '别' || value == '没' || value == '甭';
+        }
+
+        /// <summary>问过去的句子（「上次你浇的是哪块」「还记得浇水吗」）是追问，不是新请求。</summary>
+        static bool IsPastQuestion(string text)
+        {
+            if (ContainsAny(text, PastQuestionMarkers))
+            {
+                return true;
+            }
+
+            var mentionsPastDay = text.Contains("昨天") || text.Contains("前天");
+            return mentionsPastDay && (text.Contains('吗') || text.Contains('哪'));
         }
 
         static string Normalize(string text)
@@ -125,19 +287,6 @@ namespace ElysFarm.Core
             }
 
             return false;
-        }
-
-        static bool HasFarmKeyword(string text)
-        {
-            return text.Contains("种")
-                || text.Contains("播")
-                || text.Contains("栽")
-                || text.Contains("浇")
-                || text.Contains("施肥")
-                || text.Contains("肥")
-                || text.Contains("除草")
-                || text.Contains("拔草")
-                || text.Contains("收");
         }
 
         static FarmGoal? DetectGoal(string text)
