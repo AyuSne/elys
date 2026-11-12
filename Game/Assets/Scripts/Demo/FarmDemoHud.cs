@@ -145,7 +145,7 @@ namespace ElysFarm.Demo
                 smallStyle);
             GUILayout.Space(4f);
 
-            foreach (var npc in demo.Npcs)
+            foreach (var npc in demo.World.Npcs)
             {
                 DrawNpcRow(npc);
             }
@@ -190,7 +190,7 @@ namespace ElysFarm.Demo
 
             var state = npc.IsResting
                 ? $"休息 {npc.RestSecondsRemaining:0}s"
-                : FarmDemoText.Short(demo.IntentOf(npc.Id), 15);
+                : FarmDemoText.Shorten(demo.IntentOf(npc.Id), 15);
             GUILayout.Label(state, smallStyle);
             GUILayout.EndHorizontal();
         }
@@ -203,7 +203,7 @@ namespace ElysFarm.Demo
             var npc = demo.SelectedNpc;
             GUILayout.BeginHorizontal();
             GUILayout.Label($"{npc.DisplayName}的决策", titleStyle);
-            foreach (var each in demo.Npcs)
+            foreach (var each in demo.World.Npcs)
             {
                 if (each == npc)
                 {
@@ -219,10 +219,10 @@ namespace ElysFarm.Demo
             GUILayout.EndHorizontal();
 
             GUILayout.Label(
-                $"{FarmDemoText.PersonaNote(npc.Persona.Id)} · 决定间隔 {npc.Persona.DecisionSeconds:0.0}s · 每步体力 -{npc.Persona.StaminaPerStep:0.00}",
+                $"{FarmDemoText.PersonaNote(npc.Persona.Id)} · 决定间隔 {npc.Persona.DecisionSeconds:0.0}s · 每步体力 -{npc.Persona.ExertionPerStep:0.00}",
                 smallStyle);
             GUILayout.Label($"当前意图：{demo.IntentOf(npc.Id)}", labelStyle);
-            GUILayout.Label($"上一结果：{FarmDemoText.Short(demo.LastMessage, 34)}", smallStyle);
+            GUILayout.Label($"上一结果：{FarmDemoText.Shorten(demo.LastMessage, 34)}", smallStyle);
             GUILayout.Label(
                 $"本地效用打分 · 模型{(demo.UsingModel ? "在线" : "离线")} · 最近调用：{FarmDemoText.Call(demo.LastCall)}",
                 smallStyle);
@@ -353,31 +353,23 @@ namespace ElysFarm.Demo
 
         void DrawProgressBar(float progress, Color color)
         {
-            var rect = GUILayoutUtility.GetRect(1f, 12f, GUILayout.ExpandWidth(true));
-            GUI.Box(rect, GUIContent.none);
-
-            var fill = new Rect(
-                rect.x + 2f,
-                rect.y + 2f,
-                (rect.width - 4f) * Mathf.Clamp01(progress),
-                rect.height - 4f);
-
-            var previous = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(fill, Texture2D.whiteTexture);
-            GUI.color = previous;
+            DrawBarRect(GUILayoutUtility.GetRect(1f, 12f, GUILayout.ExpandWidth(true)), progress, color, 2f);
         }
 
         void DrawBar(float value, float width, Color color)
         {
-            var rect = GUILayoutUtility.GetRect(width, 9f);
+            DrawBarRect(GUILayoutUtility.GetRect(width, 9f), value, color, 1f);
+        }
+
+        static void DrawBarRect(Rect rect, float value, Color color, float inset)
+        {
             GUI.Box(rect, GUIContent.none);
 
             var fill = new Rect(
-                rect.x + 1f,
-                rect.y + 1f,
-                (rect.width - 2f) * Mathf.Clamp01(value),
-                rect.height - 2f);
+                rect.x + inset,
+                rect.y + inset,
+                Mathf.Max(0f, rect.width - inset * 2f) * Mathf.Clamp01(value),
+                Mathf.Max(0f, rect.height - inset * 2f));
 
             var previous = GUI.color;
             GUI.color = color;

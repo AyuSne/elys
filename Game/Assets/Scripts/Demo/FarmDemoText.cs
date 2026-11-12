@@ -70,7 +70,7 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>把 HUD 里的一行动态文案截短，避免面板被长句撑开。</summary>
-        public static string Short(string text, int maxLength)
+        public static string Shorten(string text, int maxLength)
         {
             if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
             {

@@ -175,7 +175,7 @@ namespace ElysFarm.Core
 
         /// <summary>
         /// 带人设计时的决策入口：休息中或还没到决定时刻时返回可读理由；
-        /// 决定只给出候选，真正执行仍要过 <see cref="ExecuteStep"/> 的动作校验。
+        /// 成功的决定会消耗本次决定间隔，决定只给出候选，真正执行仍要过 <see cref="ExecuteStep"/> 的动作校验。
         /// </summary>
         public bool TryDecide(string npcId, out StepCandidate candidate, out string reason)
         {
@@ -185,13 +185,6 @@ namespace ElysFarm.Core
             if (npc.IsResting)
             {
                 reason = Npc.RestingReason;
-                return false;
-            }
-
-            if (npc.Stamina < Npc.MinStamina)
-            {
-                npc.BeginRest();
-                reason = Npc.TooTiredReason;
                 return false;
             }
 
@@ -209,6 +202,7 @@ namespace ElysFarm.Core
             }
 
             candidate = best.Value;
+            npc.MarkDecided();
             reason = null;
             return true;
         }
@@ -244,11 +238,6 @@ namespace ElysFarm.Core
 
             if (!ActionValidator.Validate(this, npc, field, step, sowSpeciesId, out var reason))
             {
-                if (npc.Stamina < Npc.MinStamina)
-                {
-                    npc.BeginRest();
-                }
-
                 return StepResult.Rejected(npcId, fieldId, step, reason);
             }
 

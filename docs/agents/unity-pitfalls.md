@@ -40,6 +40,7 @@
 - 结束时 `editor.playmode stop`，把 `set_run_in_background` / `set_auto_tick` 关掉，再 `editor quit`。
 - **`script eval` 的引号很脆。** 代码里带 `|`、双引号或多个语句时，PowerShell 容易拆坏参数，报 `Bad Request. Give either code or file, not both`。把代码写到 `Game/Temp/<name>.cs`（`Temp/` 被 gitignore），用 `--file Temp/<name>.cs`。
 - **Editor 不一定自动重编译。** 改完 `.cs` 后 Play 里仍是旧行为、`script eval` 反射不到新方法时，执行 `unity command script recompile`，轮询 `script recompile_status` 到 `status: completed`（不是 `idle`），再重开 Play；并用反射确认新程序集已加载。
+- 人设参数里不要放行走速度这类纯表现数据：`NpcPersona` 只留影响决策的字段，走路速度由 `FarmDemoBootstrap.WalkSpeedOf` 映射；否则范围注记与实现会打架。
 - `capture` / `scene open` / `--file` 的路径都相对于 **Unity 工程根目录**（`Game/`），不是仓库根目录。
 
 ## 场景与表现

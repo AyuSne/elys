@@ -47,9 +47,6 @@ namespace ElysFarm.Demo
         /// <summary>领域世界（唯一状态来源）。</summary>
         public FarmWorld World { get; private set; }
 
-        /// <summary>全部 NPC，按加入顺序。</summary>
-        public IReadOnlyList<Npc> Npcs => World.Npcs;
-
         /// <summary>HUD 正在观察、也是下一句话的指挥对象。</summary>
         public Npc SelectedNpc { get; private set; }
 
@@ -98,6 +95,7 @@ namespace ElysFarm.Demo
             public Npc Npc;
             public Transform Body;
             public int Slot;
+            public float WalkSpeed;
             public string PendingFieldId;
             public WorkStep PendingStep;
             public Vector3 WalkTarget;
@@ -387,8 +385,23 @@ namespace ElysFarm.Demo
             {
                 Npc = npc,
                 Body = body.transform,
-                Slot = npcViews.Count
+                Slot = npcViews.Count,
+                WalkSpeed = WalkSpeedOf(npc.Id)
             });
+        }
+
+        /// <summary>行走速度是表现层参数，不进领域人设；只影响观感，不影响效用打分。</summary>
+        static float WalkSpeedOf(string npcId)
+        {
+            switch (npcId)
+            {
+                case AyaId:
+                    return 3.4f;
+                case AtuId:
+                    return 1.6f;
+                default:
+                    return 2.6f;
+            }
         }
 
         void FrameCamera()
@@ -534,7 +547,7 @@ namespace ElysFarm.Demo
         void Walk(NpcView view)
         {
             var position = view.Body.position;
-            var next = Vector3.MoveTowards(position, view.WalkTarget, view.Npc.Persona.WalkSpeed * Time.deltaTime);
+            var next = Vector3.MoveTowards(position, view.WalkTarget, view.WalkSpeed * Time.deltaTime);
             next.y = NpcGroundY;
             view.Body.position = next;
             World.MoveNpc(view.Npc.Id, new FarmPosition(next.x, next.z));

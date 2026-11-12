@@ -11,9 +11,6 @@ namespace ElysFarm.Core
         /// <summary>低于该体力时拒绝任何工步，理由是「太累了」。</summary>
         public const float MinStamina = 0.15f;
 
-        /// <summary>每执行一个工步消耗的体力。</summary>
-        public const float StaminaPerStep = 0.08f;
-
         /// <summary>每个游戏日恢复的体力。</summary>
         public const float StaminaPerDay = 0.35f;
 
@@ -100,13 +97,18 @@ namespace ElysFarm.Core
 
         internal void ExertStep()
         {
-            Stamina = FarmMath.Clamp01(Stamina - Persona.StaminaPerStep);
-            DecisionSecondsRemaining = Persona.DecisionSeconds;
+            Stamina = FarmMath.Clamp01(Stamina - Persona.ExertionPerStep);
 
             if (Stamina <= Persona.RestThreshold)
             {
                 BeginRest();
             }
+        }
+
+        /// <summary>一次成功的决定开始计时；由 <see cref="FarmWorld.TryDecide"/> 调用。</summary>
+        internal void MarkDecided()
+        {
+            DecisionSecondsRemaining = Persona.DecisionSeconds;
         }
 
         /// <summary>推进人设计时；由 <see cref="FarmWorld"/> 在 Tick / 跨日时统一调用。</summary>
@@ -131,8 +133,8 @@ namespace ElysFarm.Core
             }
         }
 
-        /// <summary>进入休息：中断当前农活，按人设时长恢复体力。</summary>
-        internal void BeginRest()
+        /// <summary>进入休息：中断当前农活，按人设时长恢复体力。只由工步消耗触发。</summary>
+        void BeginRest()
         {
             if (IsResting)
             {

@@ -9,7 +9,8 @@ namespace ElysFarm.Tests
     /// <summary>
     /// #5 三个 NPC 与效用打分：人设只通过决策参数进入领域层。
     /// 测试仍然只打 <see cref="FarmWorld"/> 这条缝——候选分项、选择速度、休息与出勤，
-    /// 都通过它的外部行为断言；不直接测 <see cref="UtilityScorer"/> 或 <see cref="Npc"/> 的内部状态。
+    /// 都通过它暴露的公开状态（候选、NPC 的体力与休息、流水）断言；不直接测
+    /// <see cref="UtilityScorer"/> 的排序实现。
     /// </summary>
     public class NpcDecisionTests
     {
@@ -95,6 +96,12 @@ namespace ElysFarm.Tests
             world.Tick(NpcPersona.Aya.DecisionSeconds + 0.01f);
             Assert.IsTrue(world.TryDecide("aya", out var ayaCandidate, out _), "阿芽决定最快");
             Assert.IsTrue(ayaCandidate.IsValid);
+            Assert.IsFalse(world.TryDecide("aya", out _, out var decidedReason), "一次决定要消耗决定间隔");
+            Assert.AreEqual("还没拿定主意", decidedReason);
+
+            Assert.IsTrue(world.ExecuteStep("aya", ayaCandidate.FieldId, ayaCandidate.Step).Executed);
+            Assert.IsFalse(world.TryDecide("aya", out _, out var cooldownReason), "执行不会重置已经开始的间隔");
+            Assert.AreEqual("还没拿定主意", cooldownReason);
             Assert.IsFalse(world.TryDecide("ahe", out _, out _), "阿禾还没轮到");
 
             world.Tick(NpcPersona.Ahe.DecisionSeconds);
@@ -103,11 +110,6 @@ namespace ElysFarm.Tests
 
             world.Tick(NpcPersona.Atu.DecisionSeconds);
             Assert.IsTrue(world.TryDecide("atu", out _, out _), "阿土最后也拿定主意");
-
-            Assert.IsTrue(world.ExecuteStep("aya", ayaCandidate.FieldId, ayaCandidate.Step).Executed);
-            Assert.IsFalse(world.TryDecide("aya", out _, out var cooldownReason), "干完一步要重新拿主意");
-            Assert.AreEqual("还没拿定主意", cooldownReason);
-            world.Tick(NpcPersona.Aya.DecisionSeconds);
             Assert.IsTrue(world.TryDecide("aya", out _, out _), "等够决定间隔后又能决定");
         }
 
@@ -117,13 +119,12 @@ namespace ElysFarm.Tests
             var fragile = new NpcPersona(
                 "fragile",
                 decisionSeconds: 0f,
-                staminaPerStep: 0.45f,
+                exertionPerStep: 0.45f,
                 restThreshold: Npc.MinStamina,
                 restSeconds: 6f,
                 restRecovery: 0.60f,
                 diligence: 1f,
-                distanceWeight: 0.15f,
-                walkSpeed: 2.6f);
+                distanceWeight: 0.15f);
 
             var world = new FarmWorld(new FarmClock());
             world.AddField("A1", new FarmPosition(0f, 2f));
@@ -241,6 +242,8 @@ namespace ElysFarm.Tests
         {
             var world = new FarmWorld(new FarmClock());
             world.AddField("A1", new FarmPosition(0f, 3f));
+            world.AddField("A2", new FarmPosition(4f, 3f));
+            world.AddField("A3", new FarmPosition(-4f, 3f));
             world.AddNpc("ahe", "阿禾", new FarmPosition(-1.5f, -3f), NpcPersona.Ahe);
             world.AddNpc("aya", "阿芽", new FarmPosition(0f, -3f), NpcPersona.Aya);
             world.AddNpc("atu", "阿土", new FarmPosition(1.5f, -3f), NpcPersona.Atu);
@@ -255,26 +258,37 @@ namespace ElysFarm.Tests
             Assert.IsTrue(result.Accepted, result.Reply);
             Assert.AreEqual("ahe", result.AssignedWorkOrder.NpcId);
 
+            var actions = new Dictionary<string, int>();
+            foreach (var npc in world.Npcs)
+            {
+                actions[npc.Id] = 0;
+            }
+
             for (var elapsed = 0f; elapsed < 8f; elapsed += 0.1f)
             {
                 foreach (var npc in world.Npcs)
                 {
                     if (world.WorkOrderOf(npc.Id) != null)
                     {
-                        world.AdvanceWorkOrder(npc.Id);
+                        if (world.AdvanceWorkOrder(npc.Id).Executed)
+                        {
+                            actions[npc.Id]++;
+                        }
+
                         continue;
                     }
 
-                    if (world.TryDecide(npc.Id, out var candidate, out _))
+                    if (world.TryDecide(npc.Id, out var candidate, out _)
+                        && world.ExecuteStep(npc.Id, candidate.FieldId, candidate.Step).Executed)
                     {
-                        world.ExecuteStep(npc.Id, candidate.FieldId, candidate.Step);
+                        actions[npc.Id]++;
                     }
                 }
 
                 world.Tick(0.1f);
             }
 
-            Assert.Greater(world.Log.Count, 0, "没有模型也应该真的干了活");
+            Assert.IsTrue(actions.Values.All(count => count > 0), "三名 NPC 都应在这条无模型链路里干过活");
             Assert.Greater(world.WorkOrderOf("ahe")?.CompletedCount ?? 0, 0, "接单的 NPC 应推进工单");
         }
     }

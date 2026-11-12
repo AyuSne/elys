@@ -4,7 +4,7 @@ namespace ElysFarm.Core
 {
     /// <summary>
     /// NPC 的人设参数。只有会影响决策的部分放在领域层：决定快慢、每个工步的体力消耗、
-    /// 何时去休息、效用打分的人设与距离权重。台词、表情与背景故事留在表现层。
+    /// 何时去休息、效用打分的人设与距离权重。台词、表情、背景故事与行走速度留在表现层。
     /// 三名 NPC 的可观察差异（抢着干 / 摸鱼 / 磨蹭）必须来自这些参数，而不是台词（见 #5）。
     /// </summary>
     public sealed class NpcPersona
@@ -12,13 +12,13 @@ namespace ElysFarm.Core
         /// <summary>人设 id，与 NPC 的 id 区分；HUD 用它挑展示文案。</summary>
         public string Id { get; }
 
-        /// <summary>两次决定之间的间隔（游戏秒）。越小越「快」。</summary>
+        /// <summary>一次决定消耗的间隔（游戏秒），由 <see cref="FarmWorld.TryDecide"/> 成功时扣除。越小越「快」。</summary>
         public float DecisionSeconds { get; }
 
         /// <summary>每执行一个工步消耗的体力。</summary>
-        public float StaminaPerStep { get; }
+        public float ExertionPerStep { get; }
 
-        /// <summary>体力降到该值时去休息；通常不低于 <see cref="Npc.MinStamina"/>。</summary>
+        /// <summary>体力降到该值时去休息；不得低于 <see cref="Npc.MinStamina"/>。</summary>
         public float RestThreshold { get; }
 
         /// <summary>一次休息的时长（游戏秒）。</summary>
@@ -33,19 +33,15 @@ namespace ElysFarm.Core
         /// <summary>距离扣分的权重：越怕走路，越偏向近处的地块。</summary>
         public float DistanceWeight { get; }
 
-        /// <summary>表现层的行走速度；领域层不推进位置，只把它当人设的一部分。</summary>
-        public float WalkSpeed { get; }
-
         public NpcPersona(
             string id,
             float decisionSeconds,
-            float staminaPerStep,
+            float exertionPerStep,
             float restThreshold,
             float restSeconds,
             float restRecovery,
             float diligence,
-            float distanceWeight,
-            float walkSpeed)
+            float distanceWeight)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -53,14 +49,17 @@ namespace ElysFarm.Core
             }
 
             RequireNonNegative(decisionSeconds, nameof(decisionSeconds));
-            RequireNonNegative(staminaPerStep, nameof(staminaPerStep));
+            RequireNonNegative(exertionPerStep, nameof(exertionPerStep));
             RequireNonNegative(restSeconds, nameof(restSeconds));
             RequireNonNegative(restRecovery, nameof(restRecovery));
             RequireNonNegative(distanceWeight, nameof(distanceWeight));
 
-            if (restThreshold < 0f || restThreshold > 1f)
+            if (restThreshold < Npc.MinStamina || restThreshold > 1f)
             {
-                throw new ArgumentOutOfRangeException(nameof(restThreshold), restThreshold, "休息阈值必须在 0..1");
+                throw new ArgumentOutOfRangeException(
+                    nameof(restThreshold),
+                    restThreshold,
+                    "休息阈值必须在体力下限到 1 之间");
             }
 
             if (diligence < 0f || diligence > 1f)
@@ -68,69 +67,59 @@ namespace ElysFarm.Core
                 throw new ArgumentOutOfRangeException(nameof(diligence), diligence, "勤勉系数必须在 0..1");
             }
 
-            if (walkSpeed <= 0f)
-            {
-                throw new ArgumentOutOfRangeException(nameof(walkSpeed), walkSpeed, "行走速度必须为正");
-            }
-
             Id = id;
             DecisionSeconds = decisionSeconds;
-            StaminaPerStep = staminaPerStep;
+            ExertionPerStep = exertionPerStep;
             RestThreshold = restThreshold;
             RestSeconds = restSeconds;
             RestRecovery = restRecovery;
             Diligence = diligence;
             DistanceWeight = distanceWeight;
-            WalkSpeed = walkSpeed;
         }
 
         /// <summary>阿禾：稳、勤、话少。决定不慢，体力消耗低，几乎不提前休息。</summary>
         public static readonly NpcPersona Ahe = new NpcPersona(
             "ahe",
             decisionSeconds: 0.70f,
-            staminaPerStep: 0.06f,
+            exertionPerStep: 0.06f,
             restThreshold: Npc.MinStamina,
             restSeconds: 12f,
             restRecovery: 0.55f,
             diligence: 1.00f,
-            distanceWeight: 0.15f,
-            walkSpeed: 2.6f);
+            distanceWeight: 0.15f);
 
         /// <summary>阿芽：快、爱偷懒、爱甩锅。决定最快，但累得快、歇得也勤。</summary>
         public static readonly NpcPersona Aya = new NpcPersona(
             "aya",
             decisionSeconds: 0.25f,
-            staminaPerStep: 0.12f,
+            exertionPerStep: 0.12f,
             restThreshold: 0.55f,
             restSeconds: 10f,
             restRecovery: 0.45f,
             diligence: 0.72f,
-            distanceWeight: 0.32f,
-            walkSpeed: 3.4f);
+            distanceWeight: 0.32f);
 
-        /// <summary>阿土：慢、懂多、爱八卦。决定最慢，走路也慢，但对远近不那么计较。</summary>
+        /// <summary>阿土：慢、懂多、爱八卦。决定最慢，但对远近不那么计较。</summary>
         public static readonly NpcPersona Atu = new NpcPersona(
             "atu",
             decisionSeconds: 1.80f,
-            staminaPerStep: 0.07f,
+            exertionPerStep: 0.07f,
             restThreshold: 0.25f,
             restSeconds: 8f,
             restRecovery: 0.50f,
             diligence: 0.90f,
-            distanceWeight: 0.06f,
-            walkSpeed: 1.6f);
+            distanceWeight: 0.06f);
 
-        /// <summary>未指定人设时的默认值：不额外拖延，体力与休息沿用原来的领域常量。</summary>
+        /// <summary>未指定人设时的兼容基线：不额外拖延，体力与休息沿用原来的领域常量。</summary>
         public static readonly NpcPersona Default = new NpcPersona(
             "default",
             decisionSeconds: 0f,
-            staminaPerStep: Npc.StaminaPerStep,
+            exertionPerStep: 0.08f,
             restThreshold: Npc.MinStamina,
             restSeconds: 8f,
             restRecovery: 0.50f,
             diligence: 1.00f,
-            distanceWeight: UtilityScorer.DistanceWeight,
-            walkSpeed: 2.6f);
+            distanceWeight: UtilityScorer.DistanceWeight);
 
         static void RequireNonNegative(float value, string name)
         {
