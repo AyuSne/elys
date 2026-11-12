@@ -18,6 +18,13 @@ namespace ElysFarm.Demo
         static readonly Color HungerColor = new Color(0.92f, 0.62f, 0.28f);
         static readonly Color MemoryColor = new Color(0.62f, 0.78f, 0.95f);
 
+        const float PanelMargin = 12f;
+        const float PanelTop = 8f;
+        const float LeftPanelWidth = 372f;
+        const float DecisionPanelWidth = 400f;
+        const float InspectorPanelWidth = 412f;
+        const float StatusPanelHeight = 326f;
+
         FarmDemoBootstrap demo;
         Font font;
         GUIStyle titleStyle;
@@ -56,6 +63,7 @@ namespace ElysFarm.Demo
                 stylesReady = true;
             }
 
+            HandleCameraKeys();
             DrawStatusPanel();
             DrawCameraBar();
             DrawDecisionPanel();
@@ -64,13 +72,52 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
+        /// 键盘兜底：窗口太窄、顶部镜头条放不下时，仍能切机位。
+        /// 输入框获得焦点（keyboardControl ≠ 0）时不抢按键。
+        /// </summary>
+        void HandleCameraKeys()
+        {
+            var current = Event.current;
+            if (current.type != EventType.KeyDown || GUIUtility.keyboardControl != 0)
+            {
+                return;
+            }
+
+            switch (current.keyCode)
+            {
+                case KeyCode.C:
+                    demo.UseOverheadCamera();
+                    current.Use();
+                    break;
+                case KeyCode.Alpha1:
+                    Follow(FarmDemoBootstrap.AheId);
+                    current.Use();
+                    break;
+                case KeyCode.Alpha2:
+                    Follow(FarmDemoBootstrap.AyaId);
+                    current.Use();
+                    break;
+                case KeyCode.Alpha3:
+                    Follow(FarmDemoBootstrap.AtuId);
+                    current.Use();
+                    break;
+            }
+        }
+
+        void Follow(string npcId)
+        {
+            demo.SelectNpc(npcId);
+            demo.FollowCamera(npcId);
+        }
+
+        /// <summary>
         /// 镜头与素材开关。放在左右面板之间的顶部：俯视时两侧面板都开，
         /// 跟拍时右侧面板与流水收起，把画面让给 NPC。
         /// </summary>
         void DrawCameraBar()
         {
-            const float leftEdge = 384f;
-            var rightEdge = Screen.width - 424f;
+            var leftEdge = PanelMargin + LeftPanelWidth;
+            var rightEdge = Screen.width - PanelMargin - InspectorPanelWidth;
             var gap = rightEdge - leftEdge;
             var width = Mathf.Min(520f, gap);
             if (width < 280f)
@@ -79,7 +126,7 @@ namespace ElysFarm.Demo
             }
 
             var x = leftEdge + (gap - width) * 0.5f;
-            GUILayout.BeginArea(new Rect(x, 8f, width, 58f), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(x, PanelTop, width, 76f), GUI.skin.box);
             GUILayout.Label(
                 demo.IsOverheadCamera ? "镜头 · 俯视 45°" : $"镜头 · 跟拍{FollowedName()}",
                 smallStyle);
@@ -95,8 +142,7 @@ namespace ElysFarm.Demo
                 var label = demo.IsFollowing(npc.Id) ? $"●{npc.DisplayName}" : npc.DisplayName;
                 if (GUILayout.Button(label, buttonStyle, GUILayout.Width(58f)))
                 {
-                    demo.SelectNpc(npc.Id);
-                    demo.FollowCamera(npc.Id);
+                    Follow(npc.Id);
                 }
             }
 
@@ -106,6 +152,7 @@ namespace ElysFarm.Demo
             }
 
             GUILayout.EndHorizontal();
+            GUILayout.Label("快捷键：C 俯视 · 1/2/3 跟拍", smallStyle);
             GUILayout.EndArea();
         }
 
@@ -184,7 +231,7 @@ namespace ElysFarm.Demo
             var radish = CropCatalog.RadishId;
             var wheat = CropCatalog.WheatId;
 
-            GUILayout.BeginArea(new Rect(12f, 8f, 372f, 326f), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(PanelMargin, PanelTop, LeftPanelWidth, StatusPanelHeight), GUI.skin.box);
             GUILayout.BeginHorizontal();
             GUILayout.Label("Elys · 三名 NPC", titleStyle);
             if (GUILayout.Button(inspectorOpen ? "关闭可视化" : "决策可视化", buttonStyle, GUILayout.Width(86f)))
@@ -300,8 +347,13 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            const float panelWidth = 400f;
-            GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 326f), GUI.skin.box);
+            GUILayout.BeginArea(
+                new Rect(
+                    Screen.width - DecisionPanelWidth - PanelMargin,
+                    PanelTop,
+                    DecisionPanelWidth,
+                    StatusPanelHeight),
+                GUI.skin.box);
 
             var npc = demo.SelectedNpc;
             GUILayout.BeginHorizontal();
@@ -379,10 +431,13 @@ namespace ElysFarm.Demo
         /// </summary>
         void DrawInspectorPanel()
         {
-            const float panelWidth = 412f;
-
-            // 547 高度下五项刚好放满；再高会压到下方的输入面板。
-            GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 406f), GUI.skin.box);
+            GUILayout.BeginArea(
+                new Rect(
+                    Screen.width - InspectorPanelWidth - PanelMargin,
+                    PanelTop,
+                    InspectorPanelWidth,
+                    406f),
+                GUI.skin.box);
 
             var snapshot = demo.World.Inspect(demo.SelectedNpc.Id, demo.LastCall);
 
@@ -490,7 +545,7 @@ namespace ElysFarm.Demo
             }
 
             GUILayout.BeginArea(
-                new Rect(12f, Screen.height - 208f, Screen.width - 24f, 76f),
+                new Rect(PanelMargin, Screen.height - 208f, Screen.width - PanelMargin * 2f, 76f),
                 GUI.skin.box);
             GUILayout.Label("已执行的工步（流水）", boldStyle);
 
@@ -516,7 +571,9 @@ namespace ElysFarm.Demo
 
         void DrawCommandPanel()
         {
-            GUILayout.BeginArea(new Rect(12f, Screen.height - 128f, Screen.width - 24f, 120f), GUI.skin.box);
+            GUILayout.BeginArea(
+                new Rect(PanelMargin, Screen.height - 128f, Screen.width - PanelMargin * 2f, 120f),
+                GUI.skin.box);
             GUILayout.BeginHorizontal();
             GUILayout.Label($"玩家说（对 {demo.SelectedNpc.DisplayName}）：", boldStyle, GUILayout.Width(140f));
             commandInput = GUILayout.TextField(commandInput ?? string.Empty, 120, inputStyle, GUILayout.MinWidth(240f));

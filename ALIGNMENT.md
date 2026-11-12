@@ -65,7 +65,7 @@
 | 24 | **自写 HTTP 客户端**（UnityWebRequest + Newtonsoft），不用 C# SDK（见 ADR-0003） |
 | 25 | 其他依赖：UniTask、Unity 官方 AI Navigation / uGUI / TextMeshPro |
 | 26 | 渲染管线：**URP** + 导入后自动转换材质的编辑器脚本 |
-| 27 | 素材：**全 Quaternius**（Crops 5 生长阶段 / Farm Buildings / Nature Kit / Universal Animation Library 2 / Universal Base Characters），`gdown --folder` 拉取，约 50–70 MB |
+| 27 | 素材：**全 Quaternius**（Ultimate Crops / Farm Buildings / Nature pack vol.3 / Ultimate Animated Character，均 CC0），仓库只提交演示子集（约 5 MB，`Assets/Resources/Quaternius`），来源与许可见 README；Google Drive 的 `gdown --folder` 因限流未采用，改用 OpenGameArt / itch.io 镜像。`Universal Base Characters` 的 glTF + UAL2 重定向留作后续，不阻塞本票 |
 
 ## 三、架构
 

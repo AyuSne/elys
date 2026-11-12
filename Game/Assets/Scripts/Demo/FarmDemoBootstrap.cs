@@ -122,6 +122,7 @@ namespace ElysFarm.Demo
             foreach (var view in npcViews)
             {
                 UpdateNpc(view);
+                view.Avatar.SetWalking(view.Walking);
             }
 
             TryNpcConversation();
@@ -278,7 +279,6 @@ namespace ElysFarm.Demo
                 if (view != null)
                 {
                     view.Walking = false;
-                    view.Avatar.SetWalking(false);
                     view.PendingFieldId = null;
                     view.NextActionAt = 0f;
                     view.Intent = "按工单开工";
@@ -339,9 +339,11 @@ namespace ElysFarm.Demo
 
         void BuildScene()
         {
+            DemoMaterials.DestroyCreated();
+
             if (visualRoot != null)
             {
-                Destroy(visualRoot.gameObject);
+                ModelPlacement.Destroy(visualRoot.gameObject);
             }
 
             visualRoot = new GameObject("Farm Visuals").transform;
@@ -423,16 +425,7 @@ namespace ElysFarm.Demo
         /// <summary>把相机摆到俯视 45° 的演示机位；场景生成器与运行时共用同一组数值。</summary>
         public static void ApplyCameraPose(Camera camera)
         {
-            if (camera == null)
-            {
-                return;
-            }
-
-            var pose = CameraRig.OverheadPose;
-            camera.transform.SetPositionAndRotation(pose.Position, pose.Rotation);
-            camera.fieldOfView = pose.FieldOfView;
-            camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.55f, 0.66f, 0.78f);
+            DemoCamera.ApplyPoseTo(camera, CameraRig.OverheadPose);
         }
 
         void UpdateNpc(NpcView view)
@@ -443,7 +436,6 @@ namespace ElysFarm.Demo
             if (view.Walking && string.IsNullOrEmpty(view.PendingFieldId) && !npc.IsResting)
             {
                 view.Walking = false;
-                view.Avatar.SetWalking(false);
                 view.Intent = "歇好了，接着干";
             }
 
@@ -571,7 +563,6 @@ namespace ElysFarm.Demo
             view.PendingStep = step;
             view.WalkTarget = target;
             view.Walking = true;
-            view.Avatar.SetWalking(true);
             view.Intent = intentHint ?? $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
         }
 
@@ -581,7 +572,6 @@ namespace ElysFarm.Demo
             view.PendingStep = default;
             view.WalkTarget = target;
             view.Walking = true;
-            view.Avatar.SetWalking(true);
             view.Intent = intent;
         }
 
@@ -615,7 +605,6 @@ namespace ElysFarm.Demo
             }
 
             view.Walking = false;
-            view.Avatar.SetWalking(false);
 
             if (string.IsNullOrEmpty(view.PendingFieldId))
             {

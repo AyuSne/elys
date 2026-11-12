@@ -39,7 +39,7 @@
 - **Play 前先切场景**：`unity command scene open -- --path Assets/Scenes/FarmDemo.unity`。Editor 会恢复上次打开的场景（常是 `SampleScene`），不是 Build Settings 的第一项；不切场景会看到空场景或默认相机。
 - 无焦点时 Play Mode 可能冻在第 1 帧。先 `unity command editor set_auto_tick` 与 `editor.playmode set_run_in_background`，进入后用 `capture` 或 `script eval` 确认场景对象 / `Time.frameCount` 在变。
 - `job wait --condition` 需要一段 JSON，PowerShell 会吞掉内联引号（本机报 `WaitConditionInput` 解析失败）；不要照抄带引号的示例，改用上面的 `capture` / `script eval` 探测。
-- HUD 是 IMGUI：截图用 `capture game_view -- --source screen --output-path Screenshots/xxx.png`；`--source camera` 不含 IMGUI，锁屏时还可能得到纯色图。
+- HUD 是 IMGUI：截图用 `capture game_view --source screen --output-path Screenshots/xxx.png`（本机 CLI 不接受 `--` 分隔符，加了会把参数当命令帮助打印）。`--source camera` 只渲染相机，锁屏时还可能得到纯色图。
 - 结束时 `editor.playmode stop`，把 `set_run_in_background` / `set_auto_tick` 关掉，再 `editor quit`。
 - **`script eval` 的引号很脆。** 代码里带 `|`、双引号或多个语句时，PowerShell 容易拆坏参数，报 `Bad Request. Give either code or file, not both`。把代码写到 `Game/Temp/<name>.cs`（`Temp/` 被 gitignore），用 `--file Temp/<name>.cs`。
 - **Editor 不一定自动重编译。** 改完 `.cs` 后 Play 里仍是旧行为、`script eval` 反射不到新方法时，执行 `unity command script recompile`，轮询 `script recompile_status` 到 `status: completed`（不是 `idle`），再重开 Play；并用反射确认新程序集已加载。
@@ -55,7 +55,7 @@
   ```
 
   生成后提交场景与 `.meta`。
-- 场景相机与运行时 `FarmDemoBootstrap.ApplyCameraPose` 共用同一方法；改了机位要重新生成场景，否则提交的场景与运行时不一致。
+- 场景相机与运行时共用 `DemoCamera.ApplyPoseTo`（场景生成器经 `FarmDemoBootstrap.ApplyCameraPose` 调它，姿态来自 `CameraRig.OverheadPose`）；改了机位要重新生成场景，否则提交的场景与运行时不一致。
 - URP 里 `GameObject.CreatePrimitive` 的默认材质属于内置管线（粉色）。运行时建块必须显式赋 `Universal Render Pipeline/Lit`。
 - 本工程 `activeInputHandler: 1`（只启用新 Input System），`Input.GetKeyDown` 会在运行时抛异常。演示输入用 IMGUI 按钮或新 Input System。
 - 新建场景会生成 `ProjectSettings/SceneTemplateSettings.json`；不属于本次功能，别顺手提交。
@@ -63,9 +63,10 @@
 - **Nature pack vol.3 是白模。** 树、灌木、草、石头的材质全是接近白色，靠使用方染色；`ModelPlacement.Tint` 用 MaterialPropertyBlock 给树四种绿、石头灰、草绿。不染会得到一片白色树石。
 - **模型 pivot 不统一。** 有的在脚底、有的在中心，有的带 270° X 轴校正（作物/农舍）而角色没有。落位统一用 `ModelPlacement.SnapToGround` 按渲染器世界包围盒水平居中、底部贴地；不要直接 `transform.position = target` 后 `localRotation = identity`（会把作物的 Z-up 校正转掉，作物全躺在地上）。
 - **角色动画不需要 AnimatorController。** `Resources.LoadAll<AnimationClip>("Quaternius/Characters")` 能拿到 4 个角色 FBX 里的 44 个 clip（每个 11 个，含 `CharacterArmature|Idle` 与 `|Walk`），用 `AnimationClip.SampleAnimation(root, t)` 按时间采样即可；通用骨骼的路径一致，随便取一个同名 clip 都能驱动另外三个模型。
-- **`capture game_view --source screen` 在无焦点的 Game 视图会拿到旧帧。** 典型现象：HUD 的天数、体力在变，3D 却停留在切机位前的画面。要截图用 `--source camera`，它会当场渲染；但相机源会把 IMGUI 叠层按另一套分辨率合成，右侧决策面板可能被裁或错位（真实 Game 窗口里没有这个问题）。文档截图要接受这个偏差，或在结论里注明。
+- **Game 视图只有背景色、没有 3D 时先查相机数量。** 不是截图坏了：FBX 自带的相机（或临时展示台没清掉的 `Showcase Camera`）会以 `depth=0`、`clear=Skybox` 叠在主相机之上。`FindObjectsByType<Camera>()` 超过 1 个就先删；`--source camera` 只渲染主相机，所以能出图，容易误判成截图问题。清掉后 `--source screen` 能同时拿到正确的 HUD 与 3D。
+- `--source camera` 的 IMGUI 叠层按渲染分辨率合成，右侧决策面板会被裁或错位（真实 Game 窗口里没有这个问题）；文档截图优先用 `--source screen` 并先 `editor focus`。
 - **演示层截图前先清掉临时对象。** `script eval` 里创建的相机/灯如果不 parent 到临时 root 并 `DestroyImmediate(root)`，会留在打开的场景里、被带进 Play（例如作物展示台的 `Showcase Camera` 会盖住主相机）。重建 `FarmDemo.unity` 能清掉。
-- 顶部「镜头」条放在左右面板之间的空档（`leftEdge=384`，右边界 `Screen.width-424`），547 高度下五个按钮刚好放下；跟拍时右侧决策面板与流水收起，靠 `demo.IsOverheadCamera` 判断，不要用 `SelectedNpc` 判断跟拍对象（观察对象和跟拍对象可以不同）。
+- 顶部「镜头」条放在左右面板之间的空档（`PanelMargin + LeftPanelWidth` 到 `Screen.width - PanelMargin - InspectorPanelWidth`），547 高度下五个按钮刚好放下；窗口再窄时顶部条会隐藏，用键盘 `C` 俯视、`1/2/3` 跟拍兜底。跟拍时右侧决策面板与流水收起，靠 `demo.IsOverheadCamera` 判断，不要用 `SelectedNpc` 判断跟拍对象（观察对象和跟拍对象可以不同）。
 
 ## 领域与规格
 

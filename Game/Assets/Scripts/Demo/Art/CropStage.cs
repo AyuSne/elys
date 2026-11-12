@@ -29,13 +29,38 @@ namespace ElysFarm.Demo
     }
 
     /// <summary>
+    /// 一个生长阶段实际长什么样：模型、染色、尺寸与每个作物的株数。
+    /// 表现层按它生成模型或体块；测试也按它断言五个阶段确实两两不同。
+    /// </summary>
+    public readonly struct CropLook
+    {
+        public CropLook(string modelName, Color tint, float scale, int copies, bool useModelTint)
+        {
+            ModelName = modelName;
+            Tint = tint;
+            Scale = scale;
+            Copies = copies;
+            UseModelTint = useModelTint;
+        }
+
+        public string ModelName { get; }
+
+        public Color Tint { get; }
+
+        public float Scale { get; }
+
+        /// <summary>每个作物位放几株；成熟小麦用一簇三株拉开与第四阶段的剪影。</summary>
+        public int Copies { get; }
+
+        /// <summary>是否要给模型本身染色（只有成熟小麦需要）。</summary>
+        public bool UseModelTint { get; }
+    }
+
+    /// <summary>
     /// 生长进度到阶段的映射。
     /// </summary>
     public static class CropStages
     {
-        /// <summary>五个可见阶段，不含 <see cref="CropStage.None"/>。</summary>
-        public const int VisibleCount = 5;
-
         public static CropStage Of(FieldState state, float growth)
         {
             if (state == FieldState.Empty || state == FieldState.Harvested)
@@ -109,8 +134,26 @@ namespace ElysFarm.Demo
         /// <summary>
         /// 成品模型自带生长比例（越往后越高），所以模型不再乘 <see cref="ScaleOf"/>；
         /// 统一放大到能在 3 米见方的地里看清，成熟期再略高一点。
+        /// 成熟小麦额外加高到 1.35 并用一簇三株，避免与第四阶段只差一点高度和颜色。
         /// </summary>
-        public static float ModelScaleOf(CropStage stage)
+        public static CropLook LookOf(string speciesId, CropStage stage)
+        {
+            var modelName = QuaterniusArt.CropModelName(speciesId, stage);
+            if (stage == CropStage.None || string.IsNullOrEmpty(modelName))
+            {
+                return default;
+            }
+
+            var matureWheat = stage == CropStage.Mature && speciesId == CropCatalog.WheatId;
+            return new CropLook(
+                modelName,
+                ColorOf(stage),
+                matureWheat ? 1.35f : ModelScaleOf(stage),
+                matureWheat ? 3 : 1,
+                matureWheat);
+        }
+
+        static float ModelScaleOf(CropStage stage)
         {
             return stage == CropStage.Mature ? 1.25f : 1.20f;
         }

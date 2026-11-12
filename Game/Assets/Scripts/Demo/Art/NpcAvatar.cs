@@ -23,12 +23,6 @@ namespace ElysFarm.Demo
         float clipTime;
         bool walking;
 
-        /// <summary>是否用了角色模型（false 表示体块回退）。</summary>
-        public bool UsingModel => modelInstance != null;
-
-        /// <summary>给 HUD 显示的名字。</summary>
-        public string DisplayName { get; private set; }
-
         public static NpcAvatar Create(Npc npc, Transform parent, Color fallbackColor)
         {
             var go = new GameObject($"NPC {npc.DisplayName}");
@@ -42,8 +36,6 @@ namespace ElysFarm.Demo
 
         void Build(Npc npc, Color fallbackColor)
         {
-            DisplayName = npc.DisplayName;
-
             // 脚下的圆盘让俯视时也能分清三个人，同时标出跟拍对象。
             DemoMaterials.Cylinder(
                 "Footprint",
@@ -55,14 +47,14 @@ namespace ElysFarm.Demo
             var model = QuaterniusArt.LoadCharacter(npc.Id);
             if (model == null)
             {
-                BuildFallback(fallbackColor);
+                BuildFallback(fallbackColor, npc.DisplayName);
                 return;
             }
 
             modelInstance = ModelPlacement.Spawn(model, transform, transform.position, ModelScale);
             if (modelInstance == null)
             {
-                BuildFallback(fallbackColor);
+                BuildFallback(fallbackColor, npc.DisplayName);
                 return;
             }
 
@@ -80,14 +72,14 @@ namespace ElysFarm.Demo
             }
         }
 
-        void BuildFallback(Color color)
+        void BuildFallback(Color color, string displayName)
         {
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.name = "Body";
             body.transform.SetParent(transform, false);
             body.transform.localPosition = new Vector3(0f, 0.8f, 0f);
             body.transform.localScale = new Vector3(0.65f, 0.8f, 0.65f);
-            body.GetComponent<Renderer>().sharedMaterial = DemoMaterials.Create($"Npc {DisplayName}", color);
+            body.GetComponent<Renderer>().sharedMaterial = DemoMaterials.Create($"Npc {displayName}", color);
 
             var nose = DemoMaterials.Block(
                 "Nose",

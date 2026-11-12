@@ -11,30 +11,32 @@ namespace ElysFarm.Tests
     public class UrpMaterialTests
     {
         [Test]
-        public void Standard材质转成URP后保留颜色与贴图()
+        public void 非URP材质转成URP后保留颜色与贴图()
         {
-            var standard = Shader.Find("Standard");
-            if (standard == null)
-            {
-                Assert.Ignore("本机没有 Standard shader，跳过转换用例");
-                return;
-            }
+            // 本机通常有 Standard；万一某个 Unity 版本移除了它，用 Sprites/Default 也能验证
+            // 「非 URP → URP」这条转换路径，而不是静默跳过。
+            var usesStandard = Shader.Find("Standard") != null;
+            var shader = Shader.Find("Standard") ?? Shader.Find("Sprites/Default");
+            Assert.IsNotNull(shader, "工程里至少要有一个非 URP shader 用来验证转换");
 
             var texture = Texture2D.whiteTexture;
-            var material = new Material(standard) { name = "TestStandard" };
+            var material = new Material(shader) { name = "TestNonUrp" };
             material.SetColor("_Color", new Color(0.8f, 0.2f, 0.1f, 1f));
             material.SetTexture("_MainTex", texture);
-            material.SetFloat("_Metallic", 0.4f);
-            material.SetFloat("_Glossiness", 0.3f);
+            if (usesStandard)
+            {
+                material.SetFloat("_Metallic", 0.4f);
+                material.SetFloat("_Glossiness", 0.3f);
+            }
 
-            Assert.IsFalse(UrpMaterialConverter.IsUrpCompatible(material), "Standard 不算 URP 兼容");
-            Assert.IsTrue(UrpMaterialConverter.Convert(material), "Standard 材质应被转换");
+            Assert.IsFalse(UrpMaterialConverter.IsUrpCompatible(material), "非 URP shader 不算 URP 兼容");
+            Assert.IsTrue(UrpMaterialConverter.Convert(material), "非 URP 材质应被转换");
             Assert.IsTrue(UrpMaterialConverter.IsUrpCompatible(material), "转换后必须是 URP 材质");
             Assert.AreEqual(UrpMaterialConverter.UrpLitShaderName, material.shader.name);
             AssertColor(new Color(0.8f, 0.2f, 0.1f, 1f), material.GetColor("_BaseColor"), "颜色应带过去");
             Assert.AreEqual(texture, material.GetTexture("_BaseMap"));
-            Assert.AreEqual(0.4f, material.GetFloat("_Metallic"), 0.0001f);
-            Assert.AreEqual(0.3f, material.GetFloat("_Smoothness"), 0.0001f);
+            Assert.AreEqual(usesStandard ? 0.4f : 0f, material.GetFloat("_Metallic"), 0.0001f);
+            Assert.AreEqual(usesStandard ? 0.3f : 0.5f, material.GetFloat("_Smoothness"), 0.0001f);
 
             Object.DestroyImmediate(material);
         }

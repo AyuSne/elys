@@ -6,7 +6,7 @@ namespace ElysFarm.Demo
 {
     /// <summary>
     /// 场景装饰：地面、草垛、农舍、风车、水塔、树木与杂草，以及光照与后处理。
-    /// 每个模型都走 <see cref="QuaterniusArt"/>；缺失时只跳过（农舍补一个体块），
+    /// 每个模型都走 <see cref="QuaterniusArt"/>；缺失时跳过装饰，作物与 NPC 的体块回退在各自的表现类里。
     /// 场景其余部分照常搭起来——素材没拉下来也能演示。
     /// </summary>
     public static class FarmDressing
@@ -74,106 +74,113 @@ namespace ElysFarm.Demo
                 new Vector3(3.2f, 0.7f, 1.4f),
                 HayColor);
 
-            // 装饰性建筑没有体块回退：缺素材时宁可少一座谷仓，也不要在田边堆大箱子。
-            SpawnOrBlock("Buildings/Barn", parent, new Vector3(-3.4f, 0f, 8.8f), 0.58f, 8f, Vector3.zero);
-            SpawnOrBlock("Buildings/SmallBarn", parent, new Vector3(-7.4f, 0f, -4.8f), 0.5f, 20f, Vector3.zero);
-            SpawnOrBlock("Buildings/Windmill", parent, new Vector3(8.8f, 0f, 9.0f), 0.5f, -24f, Vector3.zero);
-            SpawnOrBlock("Buildings/WaterTower", parent, new Vector3(-10.6f, 0f, -5.4f), 0.55f, 0f, Vector3.zero);
-            SpawnOrBlock("Buildings/ChickenCoop", parent, new Vector3(7.4f, 0f, -5.8f), 0.8f, -35f, Vector3.zero);
-            SpawnOrBlock("Buildings/Well", parent, new Vector3(4.9f, 0f, -4.9f), 0.85f, 0f, Vector3.zero);
+            // 装饰性建筑没有体块回退：缺素材时宁可少一座谷仓，也不要在场地边堆大箱子。
+            SpawnOrBlock("Buildings/Barn", parent, new Vector3(-3.4f, 0f, 8.8f), 0.58f, 8f);
+            SpawnOrBlock("Buildings/SmallBarn", parent, new Vector3(-7.4f, 0f, -4.8f), 0.5f, 20f);
+            SpawnOrBlock("Buildings/Windmill", parent, new Vector3(8.8f, 0f, 9.0f), 0.5f, -24f);
+            SpawnOrBlock("Buildings/WaterTower", parent, new Vector3(-10.6f, 0f, -5.4f), 0.55f, 0f);
+            SpawnOrBlock("Buildings/ChickenCoop", parent, new Vector3(7.4f, 0f, -5.8f), 0.8f, -35f);
+            SpawnOrBlock("Buildings/Well", parent, new Vector3(4.9f, 0f, -4.9f), 0.85f, 0f);
 
-            var trees = new[]
-            {
-                new Vector4(-12.5f, 3.2f, 1.0f, 20f),
-                new Vector4(-12.8f, -2.0f, 1.2f, -35f),
-                new Vector4(13.2f, 3.6f, 0.95f, 120f),
-                new Vector4(13.6f, 8.8f, 1.15f, -60f),
-                new Vector4(-7.2f, 14.2f, 1.3f, 0f),
-                new Vector4(5.2f, 14.6f, 1.1f, 80f)
-            };
+            SpawnScatter(
+                parent,
+                "Nature/Tree",
+                4,
+                new[]
+                {
+                    new PropPlacement(-12.5f, 3.2f, 1.0f, 20f),
+                    new PropPlacement(-12.8f, -2.0f, 1.2f, -35f),
+                    new PropPlacement(13.2f, 3.6f, 0.95f, 120f),
+                    new PropPlacement(13.6f, 8.8f, 1.15f, -60f),
+                    new PropPlacement(-7.2f, 14.2f, 1.3f, 0f),
+                    new PropPlacement(5.2f, 14.6f, 1.1f, 80f)
+                });
 
-            for (var i = 0; i < trees.Length; i++)
+            SpawnScatter(
+                parent,
+                "Nature/Bush",
+                3,
+                new[]
+                {
+                    new PropPlacement(-9.4f, 2.2f, 1.1f, 15f),
+                    new PropPlacement(-9.0f, -7.8f, 0.9f, 70f),
+                    new PropPlacement(10.8f, -1.4f, 1.0f, -20f),
+                    new PropPlacement(11.4f, -8.2f, 1.2f, 45f),
+                    new PropPlacement(-1.2f, 12.8f, 1.0f, 0f)
+                });
+
+            SpawnScatter(
+                parent,
+                "Nature/Rock",
+                3,
+                new[]
+                {
+                    new PropPlacement(-6.4f, 8.6f, 0.9f, 0f),
+                    new PropPlacement(6.8f, 9.2f, 0.7f, 40f),
+                    new PropPlacement(-2.6f, -7.4f, 0.8f, 95f),
+                    new PropPlacement(8.2f, 2.0f, 0.6f, 10f)
+                });
+
+            var grass = new PropPlacement[10];
+            for (var i = 0; i < grass.Length; i++)
             {
-                var tree = trees[i];
-                var modelName = "Nature/Tree" + (i % 4 + 1);
+                grass[i] = new PropPlacement(
+                    -11f + (i % 5) * 5.4f,
+                    i < 5 ? 14.6f : -9.4f,
+                    0.9f,
+                    i * 36f);
+            }
+
+            SpawnScatter(parent, "Nature/Grass", 3, grass);
+        }
+
+        readonly struct PropPlacement
+        {
+            public PropPlacement(float x, float z, float scale, float yaw)
+            {
+                X = x;
+                Z = z;
+                Scale = scale;
+                Yaw = yaw;
+            }
+
+            public float X { get; }
+
+            public float Z { get; }
+
+            public float Scale { get; }
+
+            public float Yaw { get; }
+        }
+
+        static void SpawnScatter(Transform parent, string prefix, int variants, PropPlacement[] placements)
+        {
+            for (var i = 0; i < placements.Length; i++)
+            {
+                var placement = placements[i];
                 SpawnOrBlock(
-                    modelName,
+                    $"{prefix}{(i % variants) + 1}",
                     parent,
-                    new Vector3(tree.x, 0f, tree.y),
-                    tree.z,
-                    tree.w,
-                    Vector3.zero);
-            }
-
-            var bushes = new[]
-            {
-                new Vector4(-9.4f, 2.2f, 1.1f, 15f),
-                new Vector4(-9.0f, -7.8f, 0.9f, 70f),
-                new Vector4(10.8f, -1.4f, 1.0f, -20f),
-                new Vector4(11.4f, -8.2f, 1.2f, 45f),
-                new Vector4(-1.2f, 12.8f, 1.0f, 0f)
-            };
-
-            for (var i = 0; i < bushes.Length; i++)
-            {
-                var bush = bushes[i];
-                SpawnOrBlock("Nature/Bush" + (i % 3 + 1), parent, new Vector3(bush.x, 0f, bush.y), bush.z, bush.w, Vector3.zero);
-            }
-
-            var rocks = new[]
-            {
-                new Vector4(-6.4f, 8.6f, 0.9f, 0f),
-                new Vector4(6.8f, 9.2f, 0.7f, 40f),
-                new Vector4(-2.6f, -7.4f, 0.8f, 95f),
-                new Vector4(8.2f, 2.0f, 0.6f, 10f)
-            };
-
-            for (var i = 0; i < rocks.Length; i++)
-            {
-                var rock = rocks[i];
-                SpawnOrBlock("Nature/Rock" + (i % 3 + 1), parent, new Vector3(rock.x, 0f, rock.y), rock.z, rock.w, Vector3.zero);
-            }
-
-            for (var i = 0; i < 10; i++)
-            {
-                var x = -11f + (i % 5) * 5.4f;
-                var z = i < 5 ? 14.6f : -9.4f;
-                SpawnOrBlock("Nature/Grass" + (i % 3 + 1), parent, new Vector3(x, 0f, z), 0.9f, i * 36f, Vector3.zero);
+                    new Vector3(placement.X, 0f, placement.Z),
+                    placement.Scale,
+                    placement.Yaw);
             }
         }
 
-        static void SpawnOrBlock(
-            string modelName,
-            Transform parent,
-            Vector3 ground,
-            float scale,
-            float yaw,
-            Vector3 fallbackSize)
+        static void SpawnOrBlock(string modelName, Transform parent, Vector3 ground, float scale, float yaw)
         {
-            var model = QuaterniusArt.LoadModel(modelName);
-            if (model != null)
-            {
-                var instance = ModelPlacement.Spawn(model, parent, ground, scale, yaw);
-                var tint = TintFor(modelName, yaw);
-                if (instance != null && tint.HasValue)
-                {
-                    ModelPlacement.Tint(instance, tint.Value);
-                }
-
-                return;
-            }
-
-            if (fallbackSize == Vector3.zero)
+            var model = QuaterniusArt.Load(modelName);
+            if (model == null)
             {
                 return;
             }
 
-            DemoMaterials.Block(
-                modelName.Replace('/', ' '),
-                parent,
-                ground + new Vector3(0f, fallbackSize.y * 0.5f, 0f),
-                fallbackSize,
-                new Color(0.55f, 0.42f, 0.30f));
+            var instance = ModelPlacement.Spawn(model, parent, ground, scale, yaw);
+            var tint = TintFor(modelName, yaw);
+            if (instance != null && tint.HasValue)
+            {
+                ModelPlacement.Tint(instance, tint.Value);
+            }
         }
 
         /// <summary>太阳、环境光与雾；场景里已有方向光就复用。</summary>

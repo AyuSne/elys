@@ -54,12 +54,6 @@ namespace ElysFarm.Demo
             return string.IsNullOrEmpty(modelName) ? null : Load("Crops/" + modelName);
         }
 
-        /// <summary>加载场景固定模型，例如 <c>Buildings/Barn</c>、<c>Characters/Worker_Male</c>。</summary>
-        public static GameObject LoadModel(string modelPath)
-        {
-            return Load(modelPath);
-        }
-
         /// <summary>NPC 的角色模型。三个人三种体型/装扮，俯视时也能一眼分开。</summary>
         public static string CharacterModelName(string npcId)
         {

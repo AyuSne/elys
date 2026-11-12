@@ -11,9 +11,26 @@ namespace ElysFarm.Demo
     {
         const float FollowSharpness = 9f;
 
+        /// <summary>演示场景的天空/背景色；场景生成器与运行时共用。</summary>
+        public static readonly Color BackgroundColor = new Color(0.55f, 0.66f, 0.78f);
+
         Camera targetCamera;
         Transform followTarget;
         bool snapNextPose = true;
+
+        /// <summary>把一组机位数据应用到相机；场景生成器与运行时共用同一实现。</summary>
+        public static void ApplyPoseTo(Camera camera, CameraPose pose)
+        {
+            if (camera == null)
+            {
+                return;
+            }
+
+            camera.transform.SetPositionAndRotation(pose.Position, pose.Rotation);
+            camera.fieldOfView = pose.FieldOfView;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = BackgroundColor;
+        }
 
         /// <summary>机位状态（模式与跟拍对象），HUD 只读。</summary>
         public CameraRig Rig { get; } = new CameraRig();
@@ -91,10 +108,7 @@ namespace ElysFarm.Demo
 
         void Apply(CameraPose pose)
         {
-            targetCamera.transform.SetPositionAndRotation(pose.Position, pose.Rotation);
-            targetCamera.fieldOfView = pose.FieldOfView;
-            targetCamera.clearFlags = CameraClearFlags.SolidColor;
-            targetCamera.backgroundColor = new Color(0.55f, 0.66f, 0.78f);
+            ApplyPoseTo(targetCamera, pose);
         }
     }
 }

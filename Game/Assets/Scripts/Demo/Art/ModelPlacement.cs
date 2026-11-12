@@ -47,24 +47,12 @@ namespace ElysFarm.Demo
         {
             foreach (var camera in instance.GetComponentsInChildren<Camera>(true))
             {
-                DestroyObject(camera);
+                Destroy(camera);
             }
 
             foreach (var light in instance.GetComponentsInChildren<Light>(true))
             {
-                DestroyObject(light);
-            }
-        }
-
-        static void DestroyObject(Object target)
-        {
-            if (Application.isPlaying)
-            {
-                Object.Destroy(target);
-            }
-            else
-            {
-                Object.DestroyImmediate(target);
+                Destroy(light);
             }
         }
 
@@ -126,7 +114,7 @@ namespace ElysFarm.Demo
                         clone = new Material(material);
                         if (!UrpMaterialConverter.Convert(clone))
                         {
-                            Object.Destroy(clone);
+                            Destroy(clone);
                             continue;
                         }
 
@@ -157,20 +145,21 @@ namespace ElysFarm.Demo
             }
         }
 
-        public static void Destroy(GameObject instance)
+        /// <summary>销毁一个运行时对象；Play Mode 用延迟销毁，编辑器里立即销毁。</summary>
+        public static void Destroy(UnityEngine.Object target)
         {
-            if (instance == null)
+            if (target == null)
             {
                 return;
             }
 
             if (Application.isPlaying)
             {
-                Object.Destroy(instance);
+                Object.Destroy(target);
             }
             else
             {
-                Object.DestroyImmediate(instance);
+                Object.DestroyImmediate(target);
             }
         }
     }

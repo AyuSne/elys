@@ -47,7 +47,7 @@ namespace ElysFarm.Demo
 
         public const float FollowFieldOfView = 50f;
 
-        /// <summary>默认俯视机位，看向农场中心（NPC 一线），让田间与人都落在 HUD 中间的空档里。</summary>
+        /// <summary>默认俯视机位，看向农场中心（NPC 一线），让地块与人都落在 HUD 中间的空档里。</summary>
         public static CameraPose OverheadPose =>
             new CameraPose(new Vector3(0f, 12.5f, -15.5f), Quaternion.Euler(OverheadPitch, 0f, 0f), OverheadFieldOfView);
 

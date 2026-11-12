@@ -29,7 +29,7 @@ namespace ElysFarm.Tests
             Assert.IsNull(QuaterniusArt.Load("Crops/DoesNotExist"), "不存在的模型应返回 null");
             Assert.IsNull(QuaterniusArt.Load(null), "空路径应返回 null");
             Assert.IsNull(QuaterniusArt.LoadCrop("moon", CropStage.Mature), "未知品种应返回 null");
-            Assert.IsNull(QuaterniusArt.LoadModel("Buildings/DoesNotExist"), "不存在的场景模型应返回 null");
+            Assert.IsNull(QuaterniusArt.Load("Buildings/DoesNotExist"), "不存在的场景模型应返回 null");
         }
 
         [Test]
@@ -69,14 +69,13 @@ namespace ElysFarm.Tests
                 "Nature/Rock1",
                 "Nature/Grass1",
                 "Characters/Worker_Male",
-                "Characters/Worker_Female",
                 "Characters/Casual_Female",
                 "Characters/Casual_Male"
             };
 
             foreach (var model in sceneModels)
             {
-                Assert.IsNotNull(QuaterniusArt.LoadModel(model), $"{model} 应能被 Resources 加载");
+                Assert.IsNotNull(QuaterniusArt.Load(model), $"{model} 应能被 Resources 加载");
             }
         }
 
@@ -96,6 +95,15 @@ namespace ElysFarm.Tests
 
             Assert.IsNull(QuaterniusArt.CharacterModelName("nobody"), "未知 NPC 没有角色模型");
             Assert.IsNull(QuaterniusArt.LoadCharacter("nobody"), "未知 NPC 应回退体块");
+        }
+
+        [Test]
+        public void 成熟作物用素材包的成品模型而不是平铺的麦捆()
+        {
+            Assert.AreEqual("Carrot_Crop", QuaterniusArt.CropModelName(CropCatalog.RadishId, CropStage.Mature));
+            Assert.AreEqual("Wheat_4", QuaterniusArt.CropModelName(CropCatalog.WheatId, CropStage.Mature));
+            Assert.AreEqual("Carrot_1", QuaterniusArt.CropModelName(CropCatalog.RadishId, CropStage.Seedling));
+            Assert.AreEqual("Wheat_2", QuaterniusArt.CropModelName(CropCatalog.WheatId, CropStage.Sprout));
         }
     }
 }

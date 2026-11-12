@@ -63,14 +63,39 @@ namespace ElysFarm.Tests
                 }
             }
         }
-
         [Test]
-        public void 成熟作物用素材包的成品模型而不是平铺的麦捆()
+        public void 两个品种的五个阶段外观参数两两不同()
         {
-            Assert.AreEqual("Carrot_Crop", QuaterniusArt.CropModelName(CropCatalog.RadishId, CropStage.Mature));
-            Assert.AreEqual("Wheat_4", QuaterniusArt.CropModelName(CropCatalog.WheatId, CropStage.Mature));
-            Assert.AreEqual("Carrot_1", QuaterniusArt.CropModelName(CropCatalog.RadishId, CropStage.Seedling));
-            Assert.AreEqual("Wheat_2", QuaterniusArt.CropModelName(CropCatalog.WheatId, CropStage.Sprout));
+            foreach (var speciesId in new[] { CropCatalog.RadishId, CropCatalog.WheatId })
+            {
+                var stages = new[]
+                {
+                    CropStage.Seedling, CropStage.Sprout, CropStage.Growing,
+                    CropStage.Ripening, CropStage.Mature
+                };
+
+                for (var i = 0; i < stages.Length; i++)
+                {
+                    var look = CropStages.LookOf(speciesId, stages[i]);
+                    Assert.IsNotNull(look.ModelName, $"{speciesId} 的 {stages[i]} 需要有模型");
+                    Assert.Greater(look.Scale, 0f);
+                    Assert.GreaterOrEqual(look.Copies, 1);
+
+                    for (var j = i + 1; j < stages.Length; j++)
+                    {
+                        var other = CropStages.LookOf(speciesId, stages[j]);
+                        var key = $"{look.ModelName}|{look.Scale:0.00}|{look.Copies}|{look.UseModelTint}|"
+                            + ColorUtility.ToHtmlStringRGB(look.Tint);
+                        var otherKey = $"{other.ModelName}|{other.Scale:0.00}|{other.Copies}|{other.UseModelTint}|"
+                            + ColorUtility.ToHtmlStringRGB(other.Tint);
+                        Assert.AreNotEqual(key, otherKey, $"{speciesId} 的 {stages[i]} 与 {stages[j]} 剪影/颜色要有区别");
+                    }
+                }
+            }
+
+            var matureWheat = CropStages.LookOf(CropCatalog.WheatId, CropStage.Mature);
+            Assert.AreEqual(3, matureWheat.Copies, "成熟小麦要成簇，不能和第四阶段一样是单株");
+            Assert.IsTrue(matureWheat.UseModelTint, "成熟小麦要染成麦金色");
         }
     }
 }

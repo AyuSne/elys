@@ -12,6 +12,9 @@ namespace ElysFarm.Demo
     {
         const float FieldTop = 0.15f;
         const float HalfWidth = 1.5f;
+        const float CropSpread = 0.82f;
+        const float CropYawPerUnit = 37f;
+        const float WeedYawPerUnit = 53f;
 
         static readonly Vector3[] CropOffsets = BuildOffsets();
 
@@ -26,8 +29,6 @@ namespace ElysFarm.Demo
         {
             this.field = field;
         }
-
-        public Field Field => field;
 
         public void Build(Transform parent)
         {
@@ -86,8 +87,7 @@ namespace ElysFarm.Demo
 
             var speciesId = field.Crop.Id;
             var model = QuaterniusArt.LoadCrop(speciesId, stage);
-            var matureWheat = stage == CropStage.Mature && speciesId == CropCatalog.WheatId;
-            var modelScale = CropStages.ModelScaleOf(stage);
+            var look = CropStages.LookOf(speciesId, stage);
 
             foreach (var offset in CropOffsets)
             {
@@ -98,10 +98,21 @@ namespace ElysFarm.Demo
 
                 if (model != null)
                 {
-                    var crop = ModelPlacement.Spawn(model, cropRoot, ground, modelScale, offset.z * 37f);
-                    if (crop != null && matureWheat)
+                    for (var copy = 0; copy < look.Copies; copy++)
                     {
-                        ModelPlacement.Tint(crop, CropStages.ColorOf(CropStage.Mature));
+                        var clump = look.Copies == 1
+                            ? Vector3.zero
+                            : new Vector3((copy - 1) * 0.16f, 0f, (copy % 2) * 0.12f);
+                        var crop = ModelPlacement.Spawn(
+                            model,
+                            cropRoot,
+                            ground + clump,
+                            look.Scale,
+                            offset.z * CropYawPerUnit + copy * 40f);
+                        if (crop != null && look.UseModelTint)
+                        {
+                            ModelPlacement.Tint(crop, look.Tint);
+                        }
                     }
 
                     continue;
@@ -113,13 +124,13 @@ namespace ElysFarm.Demo
                     cropRoot,
                     new Vector3(ground.x, FieldTop + height * 0.5f, ground.z),
                     new Vector3(0.5f, height, 0.5f),
-                    CropStages.ColorOf(stage));
+                    look.Tint);
             }
         }
 
         void BuildFence()
         {
-            var fenceModel = QuaterniusArt.LoadModel("Buildings/Fence");
+            var fenceModel = QuaterniusArt.Load("Buildings/Fence");
             if (fenceModel != null)
             {
                 var half = HalfWidth + 0.22f;
@@ -151,7 +162,7 @@ namespace ElysFarm.Demo
             weedsRoot.SetParent(root, false);
             weedsRoot.position = new Vector3(field.Position.X, FieldTop + 0.05f, field.Position.Z);
 
-            var grass = QuaterniusArt.LoadModel("Nature/Grass2");
+            var grass = QuaterniusArt.Load("Nature/Grass2");
             var tuftColor = new Color(0.55f, 0.62f, 0.20f);
             var offsets = new[]
             {
@@ -170,7 +181,7 @@ namespace ElysFarm.Demo
                         weedsRoot,
                         weedsRoot.position + offset,
                         0.85f,
-                        offset.x * 53f);
+                        offset.x * WeedYawPerUnit);
                     continue;
                 }
 
@@ -206,7 +217,7 @@ namespace ElysFarm.Demo
             {
                 for (var z = -1; z <= 1; z++)
                 {
-                    offsets.Add(new Vector3(x * 0.82f, 0f, z * 0.82f));
+                    offsets.Add(new Vector3(x * CropSpread, 0f, z * CropSpread));
                 }
             }
 
