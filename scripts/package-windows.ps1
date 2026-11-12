@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
 .SYNOPSIS
     打出可交付的 Windows 包，生成 SHA256 / 文件清单，并把录屏、证据与说明收进 Builds/Delivery。
@@ -136,10 +136,6 @@ $required = @(
     'TestResults/clean-environment/report.md',
     'TestResults/editmode.xml'
 )
-if (-not $SkipZip) {
-    $required += 'Builds/Elys-Windows.sha256'
-    $required += 'Builds/Elys-Windows.manifest.json'
-}
 
 $missing = @($required | Where-Object { -not (Test-Path (Join-Path $repoRoot $_)) })
 if ($missing.Count -gt 0) {

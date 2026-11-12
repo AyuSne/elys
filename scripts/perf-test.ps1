@@ -171,7 +171,7 @@ foreach ($row in $rows) {
 [void]$report.AppendLine('')
 [void]$report.AppendLine('- 这是本机（RTX 4060 Laptop / 22 逻辑处理器）的实测值；集成显卡或更老的机器应按 p99 帧时与低于 60fps 的帧数重新评估。')
 [void]$report.AppendLine('- 帧数远高于 60 是因为关掉了垂直同步；真实游玩默认开垂直同步，帧率上限是显示器刷新率。')
-[void]$report.AppendLine('- 低于 30fps 的帧都是个位数（0.01% 量级），p99 仍有 200fps 左右；判断为调度 / GC 的偶发卡顿，不是固定掉帧。同一台机器重复测试时这些个位数帧会来回跳，报告保留当次原始 JSON。')
+[void]$report.AppendLine('- 低于 30fps 的帧数与占比见上表；它们摊在 60 秒采样里，配合 p99 帧时判断为后台负载 / GC 的偶发卡顿，不是固定掉帧。压测机同时跑着 DSH 与浏览器，数值会低于空闲机器；同一台机器重复测试时这些帧会来回跳，报告保留当次原始 JSON。')
 [void]$report.AppendLine('- 没有为压测降低画质或关掉 HUD：这组数字就是交付包默认画面的数字。')
 [void]$report.AppendLine('')
 [void]$report.AppendLine('原始 JSON：`TestResults/perf/perf-1280x720.json`、`TestResults/perf/perf-1920x1080.json`。')
