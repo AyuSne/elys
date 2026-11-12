@@ -7,7 +7,7 @@ namespace ElysFarm.Demo
     /// <summary>
     /// 羊皮纸风格的常驻 HUD：顶部一条（第几天 / 当天进度 / 倍速）、左上三人卡、
     /// 左下背包条、底部对话框；决策可视化退到 <c>Tab</c> 召唤的右侧抽屉。
-    /// 只读 <see cref="FarmDemoBootstrap"/> 与 <see cref="FarmWorld"/> 的快照，
+    /// 除顶部条的三档倍速（演示用时间控制，不是自然语言输入）外只读快照：
     /// 不推进时钟、不扣体力、不写记忆。
     /// </summary>
     [RequireComponent(typeof(FarmDemoBootstrap))]
@@ -22,9 +22,9 @@ namespace ElysFarm.Demo
         const float CardX = Margin;
         const float CardY = 62f;
         const float CardWidth = 280f;
-        const float CardHeight = 200f;
-        const float HeaderHeight = 38f;
-        const float RowHeight = 50f;
+        const float CardHeight = 192f;
+        const float HeaderHeight = 36f;
+        const float RowHeight = 46f;
         const float DialogueX = 24f;
         const float DialogueHeight = 168f;
         const float DialogueGap = 16f;
@@ -34,7 +34,7 @@ namespace ElysFarm.Demo
 
         static readonly string[] Examples =
         {
-            "把东边这块种满萝卜",
+            "去东边那块地除草",
             "听说阿芽偷懒了",
             "去种月亮"
         };
@@ -205,9 +205,10 @@ namespace ElysFarm.Demo
         void DrawTopControls()
         {
             const float width = 46f;
+            const float artWidth = 58f;
             const float gap = 8f;
             var count = 2 + demo.World.Npcs.Count;
-            var total = count * width + (count - 1) * gap;
+            var total = count * width + (count - 1) * gap + (artWidth - width);
             var x = Screen.width - 36f - total;
             const float y = 16f;
             var index = 0;
@@ -226,7 +227,8 @@ namespace ElysFarm.Demo
                 }
             }
 
-            if (GUI.Button(PillRect(x, y, width, gap, ref index), "素材", skin.Pill))
+            var artX = x + (count - 1) * (width + gap);
+            if (GUI.Button(new Rect(artX, y, artWidth, 30f), demo.UsingArt ? "素材开" : "素材关", skin.SpeedPill))
             {
                 demo.ToggleArt();
             }
@@ -246,10 +248,15 @@ namespace ElysFarm.Demo
             var rect = new Rect(CardX, CardY, CardWidth, CardHeight);
             skin.DrawPanel(rect, skin.Panel);
             GUI.Label(new Rect(rect.x + 18f, rect.y + 6f, 160f, 30f), "三名 NPC", skin.Title);
-            GUI.Label(
-                new Rect(rect.xMax - 100f, rect.y + 14f, 84f, 22f),
-                demo.AutonomyEnabled ? "自主中" : "待命",
-                skin.SmallRight);
+
+            // 卡头就是自主开关：开局待命，点一下让她们自己找活；再点暂停。
+            if (GUI.Button(
+                    new Rect(rect.xMax - 100f, rect.y + 12f, 84f, 24f),
+                    demo.AutonomyEnabled ? "自主中" : "待命",
+                    skin.Chip))
+            {
+                demo.ToggleAutonomy();
+            }
 
             var y = rect.y + HeaderHeight;
             foreach (var npc in demo.World.Npcs)
@@ -285,7 +292,7 @@ namespace ElysFarm.Demo
                 npc.Stamina,
                 npc.IsResting ? HudSkin.GreenActive : HudSkin.Green);
             GUI.Label(
-                new Rect(row.x + 48f, row.y + 42f, row.width - 48f, 16f),
+                new Rect(row.x + 48f, row.y + 42f, row.width - 48f, 22f),
                 IntentLine(npc),
                 skin.Small);
         }
@@ -312,11 +319,14 @@ namespace ElysFarm.Demo
             DrawBagSlot(new Rect(x + (BagSlot + BagGap) * 2f, y, BagSlot, BagSlot), PixelArt.RadishIcon, ledger.ProduceOf(radish));
             DrawBagSlot(new Rect(x + (BagSlot + BagGap) * 3f, y, BagSlot, BagSlot), PixelArt.WheatIcon, ledger.ProduceOf(wheat));
 
-            var label = ledger.HeldTotal > 0 ? $"随身 {ledger.HeldTotal}" : "随身 0";
-            GUI.Label(
-                new Rect(x + (BagSlot + BagGap) * 4f, y + BagSlot - 20f, 70f, 18f),
-                label,
-                skin.Small);
+            var label = $"随身 {ledger.HeldTotal}";
+            if (ledger.HeldTotal > 0)
+            {
+                GUI.Label(
+                    new Rect(x + (BagSlot + BagGap) * 4f, y + BagSlot - 20f, 70f, 18f),
+                    label,
+                    skin.Small);
+            }
         }
 
         void DrawBagSlot(Rect rect, int itemId, int count)
@@ -329,7 +339,7 @@ namespace ElysFarm.Demo
                 DrawSprite(new Rect(rect.x + 10f, rect.y + 8f, 32f, 32f), sprite);
             }
 
-            GUI.Label(new Rect(rect.x, rect.yMax - 20f, rect.width - 5f, 18f), count.ToString(), skin.Count);
+            GUI.Label(new Rect(rect.x, rect.yMax - 26f, rect.width - 5f, 26f), count.ToString(), skin.Count);
         }
 
         void DrawDialogue()
@@ -413,9 +423,14 @@ namespace ElysFarm.Demo
                 return "等模型回话…（游戏没有暂停）";
             }
 
+            if (demo.LastFromNpcChat)
+            {
+                return "她们自己聊的；说句话就能把话头接回来。";
+            }
+
             if (string.IsNullOrWhiteSpace(demo.LastPlayerText))
             {
-                return "先说句话，或者按「开始自主」看她们自己找活。";
+                return "先说句话；卡片右上角可以切换她们自己找活。";
             }
 
             return $"你：{FarmDemoText.Shorten(demo.LastPlayerText, 18)} · {demo.LastUnderstood}";
@@ -464,9 +479,13 @@ namespace ElysFarm.Demo
         /// <summary>卡片里只有正在说话的人用最近一次出口，其余人保持平常脸。</summary>
         FaceEmotion EmotionOf(string npcId)
         {
-            var outlet = npcId == demo.SpeakerId ? demo.LastOutlet : IntentOutlet.Query;
-            var accepted = npcId == demo.SpeakerId && demo.LastAccepted;
-            return PortraitFace.Of(outlet, accepted, demo.FaceConditionOf(npcId));
+            var condition = demo.FaceConditionOf(npcId);
+            if (npcId != demo.SpeakerId)
+            {
+                return condition == FaceCondition.Resting ? FaceEmotion.Tired : FaceEmotion.Neutral;
+            }
+
+            return PortraitFace.Of(demo.LastOutlet, demo.LastAccepted, condition);
         }
 
         void DrawDrawer()
@@ -513,7 +532,10 @@ namespace ElysFarm.Demo
                 GUILayout.BeginHorizontal();
                 DrawBar(GUILayoutUtility.GetRect(48f, 8f), hit.Weight, HudSkin.Green);
                 GUILayout.Label($"{hit.Weight:0.00}", skin.Small, GUILayout.Width(38f));
-                GUILayout.Label($"第 {hit.Day} 天 · {FarmDemoText.Shorten(hit.Text, 18)}", skin.Small);
+                GUILayout.Label(
+                    $"第 {hit.Day} 天 · {FarmDemoText.Shorten(hit.Text, 14)}",
+                    skin.Small,
+                    GUILayout.Width(220f));
                 GUILayout.EndHorizontal();
             }
         }
@@ -522,14 +544,14 @@ namespace ElysFarm.Demo
         {
             GUILayout.BeginHorizontal();
             GUILayout.Label("②", skin.BodyBold, GUILayout.Width(20f));
-            GUILayout.Label($"{npcName}的当前意图：{intent}", skin.Body);
+            GUILayout.Label($"{npcName}的当前意图：{intent}", skin.SmallWrap);
             GUILayout.EndHorizontal();
         }
 
         void DrawCandidates(IReadOnlyList<StepCandidate> candidates)
         {
             GUILayout.Space(4f);
-            GUILayout.Label($"③ 候选动作与否决原因（共 {candidates.Count} 条，最多展示 3 条）", skin.BodyBold);
+            GUILayout.Label($"③ 候选动作与否决原因（共 {candidates.Count} 条）", skin.BodyBold);
 
             var validShown = 0;
             var rejectedShown = 0;
@@ -545,14 +567,14 @@ namespace ElysFarm.Demo
                     validShown++;
                     GUILayout.Label(
                         $"✓ {FarmDemoText.StepName(candidate.Step)} {candidate.FieldId}  {candidate.Score:0.00}",
-                        skin.Small);
+                        skin.SmallWrap);
                 }
                 else if (!candidate.IsValid && rejectedShown < 2)
                 {
                     rejectedShown++;
                     GUILayout.Label(
                         $"✕ {FarmDemoText.StepName(candidate.Step)} {candidate.FieldId} · {candidate.RejectionReason}",
-                        skin.Small);
+                        skin.SmallWrap);
                 }
             }
         }
@@ -561,7 +583,7 @@ namespace ElysFarm.Demo
         {
             GUILayout.Space(4f);
             GUILayout.Label("④ 最近一次模型调用", skin.BodyBold);
-            GUILayout.Label(FarmDemoText.Call(call), skin.Small);
+            GUILayout.Label(FarmDemoText.Call(call), skin.SmallWrap);
         }
 
         void DrawStatus(NpcStatus status)
@@ -593,14 +615,14 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            for (var i = Mathf.Max(0, log.Count - 4); i < log.Count; i++)
+            for (var i = Mathf.Max(0, log.Count - 3); i < log.Count; i++)
             {
                 var entry = log[i];
                 var yieldText = entry.Yield > 0 ? $" +{entry.Yield} 产出" : string.Empty;
                 var actor = demo.World.GetNpc(entry.NpcId).DisplayName;
                 GUILayout.Label(
                     $"第 {entry.Day} 天 · {actor} · {FarmDemoText.StepName(entry.Step)} {entry.FieldId}{yieldText}",
-                    skin.Small);
+                    skin.SmallWrap);
             }
         }
 

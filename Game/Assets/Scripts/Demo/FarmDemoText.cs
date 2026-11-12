@@ -15,44 +15,9 @@ namespace ElysFarm.Demo
             return WorkStepLabel.Of(step);
         }
 
-        public static string StateName(FieldState state)
-        {
-            switch (state)
-            {
-                case FieldState.Empty:
-                    return "空地";
-                case FieldState.Sown:
-                    return "已播种";
-                case FieldState.Growing:
-                    return "生长中";
-                case FieldState.Mature:
-                    return "成熟";
-                case FieldState.Harvested:
-                    return "已收获";
-                default:
-                    return state.ToString();
-            }
-        }
-
         public static string SpeciesName(string speciesId)
         {
             return CropCatalog.TryGet(speciesId, out var species) ? species.DisplayName : speciesId;
-        }
-
-        /// <summary>人设的一句话注脚；人设参数在领域层，这里只放展示用词。</summary>
-        public static string PersonaNote(string personaId)
-        {
-            switch (personaId)
-            {
-                case "ahe":
-                    return "稳、勤、话少";
-                case "aya":
-                    return "快、爱偷懒、爱甩锅";
-                case "atu":
-                    return "慢、懂多、爱八卦";
-                default:
-                    return "自定义人设";
-            }
         }
 
         /// <summary>把 HUD 里的一行动态文案截短，避免面板被长句撑开。</summary>

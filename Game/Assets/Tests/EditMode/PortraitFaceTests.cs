@@ -63,8 +63,9 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 六档表情在头像集里各有自己的格位()
+        public void 阿禾与阿芽的六档表情各有自己的格位()
         {
+            // 阿土的头像集只有四张脸，六档里有两对就近共用；这里只对脸够用的两人断言互不相同。
             foreach (var npcId in new[] { FarmDemoBootstrap.AheId, FarmDemoBootstrap.AyaId })
             {
                 var cells = new System.Collections.Generic.HashSet<SpriteCell>();

@@ -73,6 +73,8 @@ namespace ElysFarm.Demo
             Small = Label(12, MutedInk, FontStyle.Normal, TextAnchor.MiddleLeft);
             SmallInk = Label(12, Ink, FontStyle.Normal, TextAnchor.MiddleLeft);
             SmallRight = Label(12, MutedInk, FontStyle.Normal, TextAnchor.UpperRight);
+            SmallWrap = Label(12, MutedInk, FontStyle.Normal, TextAnchor.UpperLeft);
+            SmallWrap.wordWrap = true;
             Count = Label(15, Ink, FontStyle.Bold, TextAnchor.MiddleRight);
             TagText = Label(18, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
 
@@ -105,6 +107,8 @@ namespace ElysFarm.Demo
 
         public GUIStyle SmallRight { get; }
 
+        public GUIStyle SmallWrap { get; }
+
         public GUIStyle Count { get; }
 
         public GUIStyle TagText { get; }
@@ -128,6 +132,7 @@ namespace ElysFarm.Demo
         /// <summary>把 HUD 的字体与光标色套到 IMGUI 皮肤上；每帧调用一次即可。</summary>
         public void Apply()
         {
+            // HUD 是演示里唯一的 IMGUI 层：字体与光标色设到 OnDestroy 为止，不逐帧还原。
             if (font != null)
             {
                 GUI.skin.font = font;
@@ -161,6 +166,7 @@ namespace ElysFarm.Demo
             Destroy(input);
             Destroy(inputFocused);
             Destroy(white);
+            Destroy(font);
         }
 
         GUIStyle Label(int size, Color color, FontStyle fontStyle, TextAnchor anchor)
@@ -309,20 +315,20 @@ namespace ElysFarm.Demo
             return texture;
         }
 
-        static void Destroy(Texture2D texture)
+        static void Destroy(UnityEngine.Object asset)
         {
-            if (texture == null)
+            if (asset == null)
             {
                 return;
             }
 
             if (Application.isPlaying)
             {
-                Object.Destroy(texture);
+                Object.Destroy(asset);
             }
             else
             {
-                Object.DestroyImmediate(texture);
+                Object.DestroyImmediate(asset);
             }
         }
     }

@@ -190,61 +190,7 @@ namespace ElysFarm.Demo
         /// <summary>按名字加载一张图；关掉素材、名字为空或图不存在时返回 null。</summary>
         public static Texture2D LoadTexture(string name)
         {
-            if (!UseArt || string.IsNullOrEmpty(name))
-            {
-                return null;
-            }
-
-            if (Textures.TryGetValue(name, out var cached))
-            {
-                return cached;
-            }
-
-            try
-            {
-                var texture = Resources.Load<Texture2D>(Root + name);
-                Textures[name] = texture;
-                return texture;
-            }
-            catch (Exception ex)
-            {
-                // 素材缺失是常规路径（体块版本必须一直能跑），不能把演示带崩。
-                Debug.LogWarning($"[Elys] 像素图加载失败：{name} · {ex.Message}");
-                return null;
-            }
-        }
-
-        /// <summary>按格位切出一张精灵；任何一步失败都返回 null，由调用方退回体块。</summary>
-        public static Sprite LoadSprite(string name, SpriteCell cell, Vector2 pivot)
-        {
-            if (!UseArt || string.IsNullOrEmpty(name) || !cell.IsValid)
-            {
-                return null;
-            }
-
-            var texture = LoadTexture(name);
-            if (texture == null || texture.width < cell.Column * cell.Width + cell.Width
-                || texture.height < cell.Row * cell.Height + cell.Height)
-            {
-                return null;
-            }
-
-            var key = $"{name}|{cell}|{pivot.x:0.###}|{pivot.y:0.###}";
-            if (Sprites.TryGetValue(key, out var cached))
-            {
-                return cached;
-            }
-
-            var sprite = Sprite.Create(
-                texture,
-                cell.RectIn(texture.height),
-                pivot,
-                PixelsPerTile,
-                0,
-                SpriteMeshType.FullRect);
-            sprite.name = $"{name} {cell}";
-            Sprites[key] = sprite;
-            return sprite;
+            return LoadTexture(name, Textures, true);
         }
 
         /// <summary>
@@ -253,12 +199,29 @@ namespace ElysFarm.Demo
         /// </summary>
         public static Texture2D LoadUiTexture(string name)
         {
-            if (string.IsNullOrEmpty(name))
+            return LoadTexture(name, UiTextures, false);
+        }
+
+        /// <summary>按格位切出一张精灵；任何一步失败都返回 null，由调用方退回体块。</summary>
+        public static Sprite LoadSprite(string name, SpriteCell cell, Vector2 pivot)
+        {
+            return LoadSprite(name, cell, pivot, Sprites, true);
+        }
+
+        /// <summary>按格位切出一张 UI 精灵；缺失时返回 null。</summary>
+        public static Sprite LoadUiSprite(string name, SpriteCell cell, Vector2 pivot)
+        {
+            return LoadSprite(name, cell, pivot, UiSprites, false);
+        }
+
+        static Texture2D LoadTexture(string name, Dictionary<string, Texture2D> cache, bool respectToggle)
+        {
+            if ((respectToggle && !UseArt) || string.IsNullOrEmpty(name))
             {
                 return null;
             }
 
-            if (UiTextures.TryGetValue(name, out var cached))
+            if (cache.TryGetValue(name, out var cached))
             {
                 return cached;
             }
@@ -266,26 +229,30 @@ namespace ElysFarm.Demo
             try
             {
                 var texture = Resources.Load<Texture2D>(Root + name);
-                UiTextures[name] = texture;
+                cache[name] = texture;
                 return texture;
             }
             catch (Exception ex)
             {
-                // 素材缺失是常规路径，HUD 退回文字/占位，不把演示带崩。
-                Debug.LogWarning($"[Elys] UI 图加载失败：{name} · {ex.Message}");
+                // 素材缺失是常规路径（体块版本必须一直能跑），不能把演示带崩。
+                Debug.LogWarning($"[Elys] 素材加载失败：{name} · {ex.Message}");
                 return null;
             }
         }
 
-        /// <summary>按格位切出一张 UI 精灵；缺失时返回 null。</summary>
-        public static Sprite LoadUiSprite(string name, SpriteCell cell, Vector2 pivot)
+        static Sprite LoadSprite(
+            string name,
+            SpriteCell cell,
+            Vector2 pivot,
+            Dictionary<string, Sprite> cache,
+            bool respectToggle)
         {
-            if (string.IsNullOrEmpty(name) || !cell.IsValid)
+            if ((respectToggle && !UseArt) || string.IsNullOrEmpty(name) || !cell.IsValid)
             {
                 return null;
             }
 
-            var texture = LoadUiTexture(name);
+            var texture = respectToggle ? LoadTexture(name) : LoadUiTexture(name);
             if (texture == null || texture.width < cell.Column * cell.Width + cell.Width
                 || texture.height < cell.Row * cell.Height + cell.Height)
             {
@@ -293,7 +260,7 @@ namespace ElysFarm.Demo
             }
 
             var key = $"{name}|{cell}|{pivot.x:0.###}|{pivot.y:0.###}";
-            if (UiSprites.TryGetValue(key, out var cached))
+            if (cache.TryGetValue(key, out var cached))
             {
                 return cached;
             }
@@ -306,7 +273,7 @@ namespace ElysFarm.Demo
                 0,
                 SpriteMeshType.FullRect);
             sprite.name = $"{name} {cell}";
-            UiSprites[key] = sprite;
+            cache[key] = sprite;
             return sprite;
         }
 

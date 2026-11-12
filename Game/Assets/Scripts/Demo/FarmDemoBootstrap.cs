@@ -76,6 +76,9 @@ namespace ElysFarm.Demo
         /// <summary>最近一次农事指令是否接单；只影响表现层，不改变领域状态。</summary>
         public bool LastAccepted { get; private set; }
 
+        /// <summary>最近一次对话是不是 NPC 之间自己聊的；对话框据此换提示。</summary>
+        public bool LastFromNpcChat { get; private set; }
+
         /// <summary>正在等模型回话；此时游戏循环照常推进。</summary>
         public bool IsThinking { get; private set; }
 
@@ -91,7 +94,7 @@ namespace ElysFarm.Demo
         /// <summary>是否让 NPC 自己找活干；开局待命，等玩家第一句话或手动开启。</summary>
         public bool AutonomyEnabled { get; private set; }
 
-        /// <summary>当前是否用素材（false 表示体块回退）。</summary>
+        /// <summary>当前是否用像素素材（false 表示体块回退）。</summary>
         public bool UsingArt => PixelArt.UseArt;
 
         /// <summary>当前是否俯视机位。</summary>
@@ -169,9 +172,18 @@ namespace ElysFarm.Demo
                 return FaceCondition.Resting;
             }
 
-            return IsThinking && SelectedNpc != null && SelectedNpc.Id == npcId
+            return IsThinking && SpeakerId == npcId
                 ? FaceCondition.Thinking
                 : FaceCondition.Idle;
+        }
+
+        /// <summary>换说话人时把「出口 / 是否接单 / 是不是 NPC 自己聊的」一起换掉，避免三处各写一遍。</summary>
+        void RecordSpeaker(string npcId, IntentOutlet outlet, bool accepted, bool fromNpcChat = false)
+        {
+            SpeakerId = npcId;
+            LastOutlet = outlet;
+            LastAccepted = accepted;
+            LastFromNpcChat = fromNpcChat;
         }
 
         /// <summary>切换 HUD 的观察与指挥对象；不影响任何 NPC 的自主行为。</summary>
@@ -215,9 +227,6 @@ namespace ElysFarm.Demo
             return cameraDirector != null && cameraDirector.Rig.IsFollowing(npcId);
         }
 
-        /// <summary>正在跟拍的 NPC id；俯视时为 null。</summary>
-        public string FollowedNpcId => cameraDirector != null ? cameraDirector.FollowNpcId : null;
-
         /// <summary>
         /// 在素材与体块之间切换。素材缺失时用体块是验收项，这里给观察者一个当场验证的开关：
         /// 重建的只是表现层，<see cref="FarmWorld"/> 的时钟、账本与 NPC 状态都不动。
@@ -254,7 +263,7 @@ namespace ElysFarm.Demo
             LastUnderstood = "正在理解…";
             IsThinking = true;
             var target = SelectedNpc;
-            SpeakerId = target.Id;
+            RecordSpeaker(target.Id, IntentOutlet.Query, false);
             var view = ViewOf(target.Id);
             if (view != null)
             {
@@ -284,9 +293,7 @@ namespace ElysFarm.Demo
                 }
 
                 IsThinking = false;
-                SpeakerId = target.Id;
-                LastOutlet = IntentOutlet.Query;
-                LastAccepted = false;
+                RecordSpeaker(target.Id, IntentOutlet.Query, false);
                 LastReply = "我脑子卡了一下，先按本地规矩干活。";
                 LastMessage = LastReply;
                 var view = ViewOf(target.Id);
@@ -302,9 +309,7 @@ namespace ElysFarm.Demo
         void ApplyIntent(IntentResult result, Npc target)
         {
             IsThinking = false;
-            SpeakerId = target.Id;
-            LastOutlet = result.Outlet;
-            LastAccepted = result.Accepted;
+            RecordSpeaker(target.Id, result.Outlet, result.Accepted);
             LastReply = result.Reply;
 
             if (result.Call.Outcome == ModelCallOutcome.Error && !string.IsNullOrWhiteSpace(result.Call.Detail))
@@ -649,9 +654,8 @@ namespace ElysFarm.Demo
                 var line = retold.Line;
                 speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
                 listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
-                SpeakerId = speaker.Npc.Id;
-                LastOutlet = IntentOutlet.Chat;
-                LastAccepted = false;
+                RecordSpeaker(speaker.Npc.Id, IntentOutlet.Chat, false, true);
+                LastReply = line;
                 speaker.NextActionAt = Time.time + ChatHold;
                 listener.NextActionAt = Time.time + ChatHold;
                 LastMessage = $"第 {World.Clock.Day} 天 · "
