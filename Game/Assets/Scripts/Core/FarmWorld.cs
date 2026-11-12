@@ -19,6 +19,8 @@ namespace ElysFarm.Core
         readonly Dictionary<string, Field> fieldsById = new Dictionary<string, Field>();
         readonly Dictionary<string, Npc> npcsById = new Dictionary<string, Npc>();
         readonly Dictionary<string, WorkOrder> workOrdersByNpc = new Dictionary<string, WorkOrder>();
+        readonly Dictionary<string, StepCandidate> lastDecisions = new Dictionary<string, StepCandidate>();
+        readonly MemoryStore memories = new MemoryStore();
         readonly UtilityScorer scorer = new UtilityScorer();
 
         /// <summary>产出仓的位置；随身物品只有在这里才能移交。</summary>
@@ -174,6 +176,51 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
+        /// 该 NPC 此刻的意图：有工单时给出下一步与等待原因，否则给出自主决定；休息中给出剩余时间。
+        /// 决策可视化层直接展示这句话，因此它只能来自领域状态，不能由 HUD 事后编造。
+        /// </summary>
+        public string IntentOf(string npcId)
+        {
+            var npc = GetNpc(npcId);
+            var order = WorkOrderOf(npcId);
+            if (order != null && order.NextStep.HasValue)
+            {
+                var next = order.NextStep.Value;
+                var field = GetField(order.FieldId);
+                var waiting = ActionValidator.Validate(this, npc, field, next, order.SpeciesId, out var reason)
+                    ? string.Empty
+                    : $"（{reason}）";
+
+                return $"工单：{order.FieldId} · {WorkStepLabel.Of(next)}（{order.CompletedCount}/{order.Steps.Count}）{waiting}";
+            }
+
+            if (npc.IsResting)
+            {
+                return $"休息中（还剩 {npc.RestSecondsRemaining:0} 秒）";
+            }
+
+            if (lastDecisions.TryGetValue(npcId, out var decision))
+            {
+                return $"自主：{decision.FieldId} · {WorkStepLabel.Of(decision.Step)}";
+            }
+
+            return "待命";
+        }
+
+        /// <summary>决策可视化层的五项只读快照；lastCall 由演示层从 <see cref="IntentRouter"/> 带来。</summary>
+        public DecisionSnapshot Inspect(string npcId, ModelCallInfo lastCall = default)
+        {
+            return DecisionInspector.Inspect(this, GetNpc(npcId), lastCall);
+        }
+
+        /// <summary>检索某名 NPC 的记忆；最多返回 count 条，按权重降序。</summary>
+        public IReadOnlyList<MemoryHit> RetrieveMemories(string npcId, string cue, int count = DecisionInspector.MemoryCount)
+        {
+            GetNpc(npcId);
+            return memories.Retrieve(npcId, cue, Clock.Day, count);
+        }
+
+        /// <summary>
         /// 带人设计时的决策入口：休息中或还没到决定时刻时返回可读理由；
         /// 成功的决定会消耗本次决定间隔，决定只给出候选，真正执行仍要过 <see cref="ExecuteStep"/> 的动作校验。
         /// </summary>
@@ -202,6 +249,7 @@ namespace ElysFarm.Core
             }
 
             candidate = best.Value;
+            lastDecisions[npcId] = candidate;
             npc.MarkDecided();
             reason = null;
             return true;
@@ -236,12 +284,16 @@ namespace ElysFarm.Core
             var npc = GetNpc(npcId);
             var field = GetField(fieldId);
 
+            // 一次执行尝试会消耗掉上一次自主决定：无论成败，NPC 都不该继续声称自己「正要去」那件事。
+            lastDecisions.Remove(npcId);
+
             if (!ActionValidator.Validate(this, npc, field, step, sowSpeciesId, out var reason))
             {
                 return StepResult.Rejected(npcId, fieldId, step, reason);
             }
 
             var produced = 0;
+            string memoryText;
 
             switch (step)
             {
@@ -257,26 +309,68 @@ namespace ElysFarm.Core
                     }
 
                     field.Apply(step, species);
+                    memoryText = $"在 {field.Id} 播下了{species.DisplayName}";
                     break;
 
                 case WorkStep.Harvest:
                     var speciesId = field.Crop?.Id ?? npc.PreferredSpeciesId;
+                    var cropName = field.Crop?.DisplayName ?? "作物";
                     produced = field.Apply(step);
                     if (produced > 0)
                     {
                         Ledger.AddProduce(speciesId, produced);
                     }
 
+                    memoryText = produced > 0
+                        ? $"在 {field.Id} 收了 {produced} 个{cropName}"
+                        : $"在 {field.Id} 收了{cropName}";
                     break;
 
                 default:
                     field.Apply(step);
+                    memoryText = MemoryTextOf(field.Id, step);
                     break;
             }
 
             npc.ExertStep();
+            memories.Remember(npc.Id, memoryText, Clock.Day, MemoryImportanceOf(step));
             log.Add(new WorkLogEntry(Clock.Day, npc.Id, field.Id, step, produced));
             return StepResult.Success(npcId, fieldId, step, produced);
+        }
+
+        /// <summary>工步记成记忆时的自然语句；决策可视化直接展示它。</summary>
+        static string MemoryTextOf(string fieldId, WorkStep step)
+        {
+            switch (step)
+            {
+                case WorkStep.Water:
+                    return $"给 {fieldId} 浇了水";
+                case WorkStep.Fertilize:
+                    return $"给 {fieldId} 施了肥";
+                case WorkStep.Weed:
+                    return $"除了 {fieldId} 的草";
+                default:
+                    return $"在 {fieldId} 做了{WorkStepLabel.Of(step)}";
+            }
+        }
+
+        /// <summary>工步的记忆重要性：收获最值得记住，日常维护最轻。</summary>
+        static int MemoryImportanceOf(WorkStep step)
+        {
+            switch (step)
+            {
+                case WorkStep.Harvest:
+                    return 8;
+                case WorkStep.Sow:
+                    return 6;
+                case WorkStep.Weed:
+                    return 5;
+                case WorkStep.Water:
+                case WorkStep.Fertilize:
+                    return 4;
+                default:
+                    return 3;
+            }
         }
 
         /// <summary>
@@ -312,6 +406,7 @@ namespace ElysFarm.Core
 
             order = new WorkOrder(npcId, fieldId, resolvedSpeciesId, steps);
             workOrdersByNpc[npcId] = order;
+            lastDecisions.Remove(npcId);
             return true;
         }
 

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using ElysFarm.Core;
 using UnityEngine;
 
@@ -13,6 +14,9 @@ namespace ElysFarm.Demo
     {
         static readonly Color StaminaColor = new Color(0.45f, 0.8f, 0.4f);
         static readonly Color RestColor = new Color(0.9f, 0.65f, 0.25f);
+        static readonly Color MoodColor = new Color(0.45f, 0.68f, 0.95f);
+        static readonly Color HungerColor = new Color(0.92f, 0.62f, 0.28f);
+        static readonly Color MemoryColor = new Color(0.62f, 0.78f, 0.95f);
 
         FarmDemoBootstrap demo;
         Font font;
@@ -23,6 +27,7 @@ namespace ElysFarm.Demo
         GUIStyle inputStyle;
         GUIStyle buttonStyle;
         bool stylesReady;
+        bool inspectorOpen;
         string commandInput = string.Empty;
 
         void Start()
@@ -114,7 +119,14 @@ namespace ElysFarm.Demo
             var wheat = CropCatalog.WheatId;
 
             GUILayout.BeginArea(new Rect(12f, 8f, 372f, 326f), GUI.skin.box);
+            GUILayout.BeginHorizontal();
             GUILayout.Label("Elys · 三名 NPC", titleStyle);
+            if (GUILayout.Button(inspectorOpen ? "关闭可视化" : "决策可视化", buttonStyle, GUILayout.Width(86f)))
+            {
+                inspectorOpen = !inspectorOpen;
+            }
+
+            GUILayout.EndHorizontal();
             GUILayout.Label(
                 $"第 {clock.Day} 天 · 当天已过 {clock.DayProgress:P0} · 自主{(demo.AutonomyEnabled ? "开" : "关")}",
                 labelStyle);
@@ -197,6 +209,12 @@ namespace ElysFarm.Demo
 
         void DrawDecisionPanel()
         {
+            if (inspectorOpen)
+            {
+                DrawInspectorPanel();
+                return;
+            }
+
             const float panelWidth = 400f;
             GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 326f), GUI.skin.box);
 
@@ -214,6 +232,11 @@ namespace ElysFarm.Demo
                 {
                     demo.SelectNpc(each.Id);
                 }
+            }
+
+            if (GUILayout.Button("决策可视化", buttonStyle, GUILayout.Width(86f)))
+            {
+                inspectorOpen = true;
             }
 
             GUILayout.EndHorizontal();
@@ -265,8 +288,120 @@ namespace ElysFarm.Demo
             GUILayout.EndArea();
         }
 
+        /// <summary>
+        /// 决策可视化层（#6）：只呈现五项，数据全部来自 <see cref="FarmWorld.Inspect"/> 的只读快照。
+        /// 关闭时这个分支不会执行；临时状态面板与流水照旧。
+        /// </summary>
+        void DrawInspectorPanel()
+        {
+            const float panelWidth = 412f;
+
+            // 547 高度下五项刚好放满；再高会压到下方的输入面板。
+            GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 406f), GUI.skin.box);
+
+            var npc = demo.SelectedNpc;
+            var snapshot = demo.World.Inspect(npc.Id, demo.LastCall);
+
+            DrawMemories(snapshot.Memories);
+            DrawIntent(npc.DisplayName, snapshot.Intent);
+            DrawCandidates(snapshot.Candidates);
+            DrawModelCall(snapshot.ModelCall);
+            DrawStatus(snapshot.Status);
+
+            GUILayout.EndArea();
+        }
+
+        void DrawMemories(IReadOnlyList<MemoryHit> memories)
+        {
+            GUILayout.Label("① 检索命中的记忆", boldStyle);
+            if (memories.Count == 0)
+            {
+                GUILayout.Label("还没有记忆，干点活就会留下。", smallStyle);
+                return;
+            }
+
+            foreach (var hit in memories)
+            {
+                GUILayout.BeginHorizontal();
+                DrawBar(hit.Weight, 52f, MemoryColor);
+                GUILayout.Label($"{hit.Weight:0.00}", smallStyle, GUILayout.Width(34f));
+                GUILayout.Label($"第 {hit.Day} 天 · {FarmDemoText.Shorten(hit.Text, 20)}", smallStyle);
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        void DrawIntent(string npcName, string intent)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("②", boldStyle, GUILayout.Width(18f));
+            GUILayout.Label($"{npcName}的当前意图：{intent}", labelStyle);
+            GUILayout.EndHorizontal();
+        }
+
+        void DrawCandidates(IReadOnlyList<StepCandidate> candidates)
+        {
+            GUILayout.Space(2f);
+            GUILayout.Label("③ 候选动作与否决原因", boldStyle);
+
+            var validShown = 0;
+            var rejectedShown = 0;
+            foreach (var candidate in candidates)
+            {
+                if (validShown + rejectedShown >= 3)
+                {
+                    break;
+                }
+
+                if (candidate.IsValid && validShown < 2)
+                {
+                    validShown++;
+                    GUILayout.Label(
+                        $"✓ {FarmDemoText.StepName(candidate.Step)} {candidate.FieldId}  {candidate.Score:0.00}",
+                        smallStyle);
+                }
+                else if (!candidate.IsValid && rejectedShown < 2)
+                {
+                    rejectedShown++;
+                    GUILayout.Label(
+                        $"✕ {FarmDemoText.StepName(candidate.Step)} {candidate.FieldId} · {candidate.RejectionReason}",
+                        smallStyle);
+                }
+            }
+        }
+
+        void DrawModelCall(ModelCallInfo call)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("④", boldStyle, GUILayout.Width(18f));
+            GUILayout.Label($"最近一次模型调用：{FarmDemoText.Call(call)}", smallStyle);
+            GUILayout.EndHorizontal();
+        }
+
+        void DrawStatus(NpcStatus status)
+        {
+            GUILayout.Space(2f);
+            GUILayout.Label("⑤ 状态", boldStyle);
+            DrawStatusBar("体力", status.Stamina, StaminaColor);
+            DrawStatusBar("心情", status.Mood, MoodColor);
+            DrawStatusBar("饥饿", status.Hunger, HungerColor);
+        }
+
+        void DrawStatusBar(string name, float value, Color color)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(name, smallStyle, GUILayout.Width(30f));
+            DrawBar(value, 150f, color);
+            GUILayout.Label($"{value:P0}", smallStyle, GUILayout.Width(40f));
+            GUILayout.EndHorizontal();
+        }
+
         void DrawLogPanel()
         {
+            if (inspectorOpen)
+            {
+                return;
+            }
+
             GUILayout.BeginArea(
                 new Rect(12f, Screen.height - 208f, Screen.width - 24f, 76f),
                 GUI.skin.box);

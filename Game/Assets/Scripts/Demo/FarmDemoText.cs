@@ -12,21 +12,7 @@ namespace ElysFarm.Demo
     {
         public static string StepName(WorkStep step)
         {
-            switch (step)
-            {
-                case WorkStep.Sow:
-                    return "播种";
-                case WorkStep.Water:
-                    return "浇水";
-                case WorkStep.Fertilize:
-                    return "施肥";
-                case WorkStep.Weed:
-                    return "除草";
-                case WorkStep.Harvest:
-                    return "收获";
-                default:
-                    return step.ToString();
-            }
+            return WorkStepLabel.Of(step);
         }
 
         public static string StateName(FieldState state)

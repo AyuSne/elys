@@ -4,7 +4,8 @@ namespace ElysFarm.Core
 {
     /// <summary>
     /// NPC：农场中的自主角色（见 GLOSSARY）。
-    /// 领域层只保留会影响决策的状态——位置、体力与人设参数；台词、表情与背景故事不在这一层。
+    /// 领域层保留会影响决策的状态——位置、体力与人设参数；心情与饥饿只供决策可视化的状态条展示，
+    /// 不参与效用打分。台词、表情与背景故事不在这一层。
     /// </summary>
     public sealed class Npc
     {
@@ -13,6 +14,27 @@ namespace ElysFarm.Core
 
         /// <summary>每个游戏日恢复的体力。</summary>
         public const float StaminaPerDay = 0.35f;
+
+        /// <summary>每执行一个工步增加的饥饿。</summary>
+        public const float HungerPerStep = 0.05f;
+
+        /// <summary>跨日进食后回落的饥饿。</summary>
+        public const float HungerRecoveryPerDay = 0.30f;
+
+        /// <summary>每执行一个工步下降的心情。</summary>
+        public const float MoodPerStep = 0.015f;
+
+        /// <summary>跨日恢复的心情。</summary>
+        public const float MoodRecoveryPerDay = 0.06f;
+
+        /// <summary>一次休息结束恢复的心情。</summary>
+        public const float MoodRecoveryPerRest = 0.05f;
+
+        /// <summary>饥饿到该值后，每干一个工步额外掉心情。</summary>
+        public const float HungerMoodThreshold = 0.70f;
+
+        /// <summary>太饿时每个工步额外掉的心情。</summary>
+        public const float HungerMoodPenalty = 0.02f;
 
         /// <summary>休息中尝试干活时的统一理由。</summary>
         public const string RestingReason = "正在休息，得缓一缓";
@@ -33,6 +55,15 @@ namespace ElysFarm.Core
 
         /// <summary>体力，0..1；影响效用打分的体力项，低于阈值时无法执行工步。</summary>
         public float Stamina { get; private set; } = 1f;
+
+        /// <summary>
+        /// 心情，0..1。只由工步消耗、休息与跨日结算驱动，供决策可视化的状态条展示；
+        /// 效用打分仍按 ADR-0002 只使用体力，不把心情混进决策。
+        /// </summary>
+        public float Mood { get; private set; } = 0.65f;
+
+        /// <summary>饥饿，0..1（1 = 最饿）；干活上升，跨日进食后回落。</summary>
+        public float Hunger { get; private set; } = 0.10f;
 
         /// <summary>是否在休息；休息期间不接活，体力按人设参数恢复。</summary>
         public bool IsResting { get; private set; }
@@ -95,6 +126,10 @@ namespace ElysFarm.Core
         internal void ExertStep()
         {
             Stamina = FarmMath.Clamp01(Stamina - Persona.ExertionPerStep);
+            Hunger = FarmMath.Clamp01(Hunger + HungerPerStep);
+
+            var hungerPenalty = Hunger >= HungerMoodThreshold ? HungerMoodPenalty : 0f;
+            Mood = FarmMath.Clamp01(Mood - MoodPerStep - hungerPenalty);
 
             if (Stamina <= Persona.RestThreshold)
             {
@@ -148,12 +183,15 @@ namespace ElysFarm.Core
             IsResting = false;
             RestSecondsRemaining = 0f;
             Stamina = FarmMath.Clamp01(Stamina + Persona.RestRecovery);
+            Mood = FarmMath.Clamp01(Mood + MoodRecoveryPerRest);
             MarkDecided();
         }
 
         internal void RecoverDay()
         {
             Stamina = FarmMath.Clamp01(Stamina + StaminaPerDay);
+            Hunger = FarmMath.Clamp01(Hunger - HungerRecoveryPerDay);
+            Mood = FarmMath.Clamp01(Mood + MoodRecoveryPerDay);
         }
     }
 }
