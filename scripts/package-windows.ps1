@@ -25,6 +25,8 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $windowsDirectory = Join-Path $repoRoot 'Builds/Windows'
 $exePath = Join-Path $windowsDirectory 'Elys.exe'
 $zipPath = Join-Path $repoRoot 'Builds/Elys-Windows.zip'
+# 构建本身会改写 URP/ProjectSettings 三个文件；这里先记下构建前的状态，报告与 manifest 用 provenance 的 source.dirty。
+$sourceDirty = [bool](& git -C $repoRoot status --porcelain)
 
 if (-not $SkipBuild) {
     if ($RequireClean) {
@@ -75,7 +77,7 @@ if (Test-Path $provenancePath) {
 
 $commit = (& git -C $repoRoot rev-parse HEAD).Trim()
 $shortCommit = $commit.Substring(0, 7)
-$dirty = [bool](& git -C $repoRoot status --porcelain)
+$buildDirty = if ($provenance -and $null -ne $provenance.source) { [bool]$provenance.source.dirty } else { $sourceDirty }
 $zipHash = ''
 
 if (-not $SkipZip) {
@@ -94,7 +96,7 @@ if (-not $SkipZip) {
         builtAt          = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
         unityVersion     = if ($provenance) { $provenance.editor.version } else { '' }
         commit           = $commit
-        worktreeDirty    = $dirty
+        worktreeDirty    = $buildDirty
         fileCount        = $files.Count
         uncompressedBytes = $bytes
         zip              = [ordered]@{
@@ -207,5 +209,5 @@ if (-not $SkipZip) {
     Write-Host "压缩包：$zipPath（$([math]::Round($zipBytes / 1MB, 1)) MB，sha256 $zipHash）" -ForegroundColor Green
 }
 Write-Host "交付目录：$deliveryDirectory（$([math]::Round($deliveryBytes / 1MB, 1)) MB）" -ForegroundColor Green
-Write-Host "提交：$shortCommit · 工作树脏：$dirty"
+Write-Host "提交：$shortCommit · 构建时工作树脏：$buildDirty"
 exit 0
