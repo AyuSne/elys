@@ -5,7 +5,7 @@
 > 模型不可用时整条链路自动回退本地模板，演示不会卡死。
 > 三名 NPC 在同一批地块上各自用效用打分决定此刻做什么，行为差异来自人设与体力，而不是台词。
 
-这是 #16 收口后的 2D 像素版：正交相机、16px 瓦片农场、羊皮纸风格的四件常驻 HUD，
+这是 #16 换皮、#10 收口后的 2D 像素版：正交相机、16px 瓦片农场、羊皮纸风格的四件常驻 HUD，
 决策可视化退到 `Tab` 召唤的右侧抽屉。`main` 合并前的历史保留 #9 的 3D 可交付版本；
 3D 旧素材已从 `Assets/Resources`（Unity 的打包目录）移出，见[素材与许可](#素材与许可)。
 
@@ -34,6 +34,7 @@
 
 ## 目录
 
+- [交付与复现](#交付与复现)
 - [跑起来](#跑起来)
 - [跑测试与看报告](#跑测试与看报告)
 - [打 Windows 包](#打-windows-包)
@@ -43,6 +44,33 @@
 - [仓库结构](#仓库结构)
 - [文档与设计](#文档与设计)
 - [已知边界](#已知边界)
+
+## 交付与复现
+
+#10 把 demo 收成一件可交付的东西：三条固定剧本、录屏、压测与干净环境验收。
+完整说明见 [docs/delivery.md](docs/delivery.md)。
+
+| 交付物 | 位置 | 怎么复现 |
+|---|---|---|
+| 录屏（三条剧本） | [docs/video/elys-demo.mp4](docs/video/elys-demo.mp4) | `scripts/record-demo.ps1` |
+| 固定剧本回放 | 包内 `Elys.exe -elysScenario full-flow`（或 `refusal` / `memory`） | 见下 |
+| 三次一致证据 | `TestResults/scenarios/summary.md`（生成物） | `scripts/run-scenarios.ps1` |
+| 帧率压测 | `TestResults/perf/perf-report.md`（生成物） | `scripts/perf-test.ps1` |
+| 干净环境验收 | `TestResults/clean-environment/report.md`（生成物） | `scripts/verify-clean-environment.ps1` |
+| 可交付包 | `Builds/Windows/` + `Builds/Elys-Windows.zip` | `scripts/package-windows.ps1 -RequireClean` |
+
+三条剧本与预期结局：
+
+| 剧本 | 玩家输入 | 可观察结局 |
+|---|---|---|
+| 一 · 全流程 | `把中间那块地收了` → `把中间那块地种满萝卜` | 五步工单按序执行；第 4 天收获；萝卜种子 12→9，产出仓 0→8（小麦 5 + 萝卜 3） |
+| 二 · 拒绝与抱怨 | `去种月亮`、`把西边那块地收了`、四步农活、`你怎么不去干活` | 两次拒绝都给出可读理由且不改状态；阿芽体力降到 52% 后自己抱怨要歇会儿 |
+| 三 · 记忆体现 | 第 1 天 `给西边的地浇水`；第 2 天 `上次你让我浇的是西边那块吗` | 回答引用第 1 天的记忆「西边（A1）」，不产生新工单 |
+
+剧本回放**不调模型**，走本地解析与动作校验，所以结果可重复；域参考由
+`ElysFarm.EditorTools.ScenarioEvidence` 用同一份台本在 `FarmWorld` 上生成，
+`scripts/run-scenarios.ps1` 把交付包连续三次跑出的 trace 与它逐字比对。
+领域测试 `ScenarioTests` 同时断言三条剧本的结局。
 
 ## 跑起来
 
@@ -101,10 +129,10 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 
 ### 报告里看什么
 
-`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。全量 170 个用例，
+`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。全量 174 个用例，
 覆盖领域闭环、时钟、三本账、三人效用打分与休息、决策可视化五项、记忆的两段式与向量检索、
-追问、闲聊与转述、意图路由（含模型失败降级）、模型协议与密钥来源，以及 2D 表现层的
-机位、作物阶段、像素切格、布局、排序与头顶表情。
+追问、闲聊与转述、意图路由（含模型失败降级）、模型协议与密钥来源、2D 表现层的
+机位、作物阶段、像素切格、布局、排序与头顶表情，以及 #10 的三条固定剧本。
 
 题目要求与各票验收的对应关系：
 
@@ -113,6 +141,7 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 五个工步完整（题面「步骤完整」） | `AcceptanceTests.五个工步完整_按序执行并留下流水` | 五个工步按顺序执行、每条都留下流水、最后一步是收获 |
 | 时间、背包功能正常 | `AcceptanceTests.背包守恒_全流程结束后三本账收支相抵` | 入账减出账等于持有；播 1 颗种子、收 3 个萝卜 |
 | 时间推进 | `AcceptanceTests.时间推进_不跨日不会成熟且萝卜第4天收获` | 不跨日不生长；第 1 天播种、第 4 天收获 |
+| 固定剧本（#10） | `ScenarioTests.*` | 全流程五步 + 背包收支；拒绝与抱怨；跨日记忆；三条剧本连续三次证据逐字一致 |
 | 三名 NPC 的差异（#5） | `NpcDecisionTests.*` | 同一批地块上，决定速度、出勤率与休息时长可区分 |
 | 打分可解释（#5） | `NpcDecisionTests.候选工步带需求人设体力与距离的分项权重` | 总分 = 需求 × 人设 × 体力 − 距离，分项可单独展示 |
 | 体力耗尽中断（#5） | `NpcDecisionTests.体力耗尽会中断工单并去休息` | 休息时工单不推进、地块不变；休息后可继续 |
@@ -338,12 +367,14 @@ Game/                        Unity 工程（Unity Hub 打开这一层）
   Assets/Scripts/Model/      DeepSeek 对话 + 硅基流动 embedding 客户端与密钥来源
   Assets/Scripts/Demo/       演示引导器、2D 相机、农场布局与 IMGUI HUD
   Assets/Scripts/Demo/Art/   像素素材加载与切格、作物五阶段、NPC 替身、表情、排序与 HUD 皮肤
+  Assets/Scripts/Demo/Scenarios 固定剧本台本、领域跑与回放、证据文本、逐帧录制与压测探针
   Assets/Resources/PixelArt  只提交演示要用的 PNG（原作图集，仅私有演示）
   Assets/Tests/EditMode/     EditMode 回归测试
-  Assets/Editor/             场景生成器、像素导入规则、密钥防线与 Windows 构建入口
-scripts/                     跑测试、打包、冒烟验收的 PowerShell 脚本
-TestResults/                 测试报告与截图生成目录（不入库）
+  Assets/Editor/             场景生成器、像素导入规则、密钥防线、固定剧本参考与 Windows 构建入口
+scripts/                     跑测试、剧本证据、录屏、压测、打包与干净环境验收的脚本
+TestResults/                 测试报告、剧本证据、压测与截图生成目录（不入库）
 docs/                        规格、ADR、调研、领域词汇表、素材许可存档与 agent 笔记
+  docs/video/                交付录屏与章节（mp4 入库，便于评审直接看）
   docs/licenses/             3D 旧素材（Quaternius）的来源与许可存档
 ```
 
@@ -355,12 +386,13 @@ docs/                        规格、ADR、调研、领域词汇表、素材许
 | [GLOSSARY.md](GLOSSARY.md) | 领域词汇表：地块、作物、工步、工单、种子库、产出仓、随身、心情、饥饿、闲聊、传闻、转述、决策可视化、表情 |
 | [docs/spec/ai-farm-npc.md](docs/spec/ai-farm-npc.md) | 规格：分层、模块、时间、背包、降级与测试接缝 |
 | [docs/spec/2d-presentation.md](docs/spec/2d-presentation.md) | 2D 表现层的规格：画面、HUD、素材、回退与接缝 |
+| [docs/delivery.md](docs/delivery.md) | #10 交付说明：三条剧本、录屏、压测、干净环境验收与包清单 |
 | [docs/adr/](docs/adr/) | 五条难回退的决策：确定性任务层 + 生成式表达层、效用打分而非 GOAP、自写 HTTP 客户端、出口判定以玩家原话为准、3D 低模切 2D 像素 |
 | [docs/agents/unity-pitfalls.md](docs/agents/unity-pitfalls.md) | 这个 Unity 工程实际踩过的坑（编码、测试、排序、打包、驱动编辑器） |
 
 ## 已知边界
 
-这是 #16 收口后的 2D 版本，刻意只做到这里：
+这是 #10 收口后的 2D 版本，刻意只做到这里：
 
 - **画面**是 2D 像素瓦片：三块地、三名 NPC、四座地标与一条土路；相机只有俯视 3×
   与跟拍 4× 两档，不做自由平移。HUD 按 1280×720 设计。
@@ -372,6 +404,11 @@ docs/                        规格、ADR、调研、领域词汇表、素材许
   只有农事指令能改状态。模型只提供细节，本地规则做最终裁决。
 - **决策可视化**按五项实现，`Tab` 开关，只读快照；它和底部对话框、三人卡不是同一层。
 - 只是 Windows 单机包；没有存档、多人、语音、音效与设置界面。
+- **固定剧本回放**是演示模式：离线路由、固定步长、不打开自主，因此可重复；正常游玩仍是
+  可变帧率、可接模型、三人自主。回放只换时间来源与路由，不改领域规则。
+- **录屏**由游戏内逐帧抓后缓冲得到（1280×720 / 20fps / 无音轨），不是桌面录屏；
+  **压测**在关闭垂直同步下测渲染与脚本吞吐，不是显示器刷新率；
+  **干净环境验收**是同机隔离运行（临时目录、清空密钥、最小 PATH），不是全新 Windows 虚拟机。
 - 数值平衡不在考察范围，没有调；模型延迟以实际网络为准，超时即回退。
 
 > 技术说明：像素 PNG 按点采样、无压缩、无 mipmap 导入，切图在运行时按 `SpriteCell`

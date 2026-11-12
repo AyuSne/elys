@@ -48,6 +48,15 @@ namespace ElysFarm.Demo
         string commandInput = string.Empty;
         Vector2 drawerScroll;
 
+        /// <summary>决策抽屉是否打开；压测与 script eval 也会读它。</summary>
+        public bool InspectorOpen => inspectorOpen;
+
+        /// <summary>剧本回放与压测用的抽屉开关；正常游玩仍由 Tab / 关闭按钮驱动。</summary>
+        public void SetInspectorOpen(bool open)
+        {
+            inspectorOpen = open;
+        }
+
         void Start()
         {
             demo = GetComponent<FarmDemoBootstrap>();
@@ -80,6 +89,7 @@ namespace ElysFarm.Demo
                 DrawTopControls();
             }
 
+            DrawCaption();
             DrawNpcCard();
             DrawBag();
             DrawDialogue();
@@ -244,6 +254,31 @@ namespace ElysFarm.Demo
             var rect = new Rect(x + index * (width + gap), y, width, 30f);
             index++;
             return rect;
+        }
+
+        /// <summary>
+        /// 剧本字幕：夹在三人卡与右侧抽屉之间的横幅。只在剧本回放与压测里出现，
+        /// 正常游玩时为空、不占地方。
+        /// </summary>
+        void DrawCaption()
+        {
+            if (string.IsNullOrEmpty(demo.CaptionTitle))
+            {
+                return;
+            }
+
+            var left = CardX + CardWidth + 18f;
+            var right = inspectorOpen ? Screen.width - DrawerWidth - 12f : Screen.width - 36f;
+            var rect = new Rect(left, CardY, Mathf.Max(320f, right - left), 96f);
+            skin.DrawPanel(rect, skin.Panel);
+            GUI.Label(
+                new Rect(rect.x + 14f, rect.y + 2f, rect.width - 28f, 30f),
+                demo.CaptionTitle,
+                skin.Title);
+            GUI.Label(
+                new Rect(rect.x + 14f, rect.y + 30f, rect.width - 28f, rect.height - 34f),
+                demo.CaptionDetail,
+                skin.BodyWrap);
         }
 
         void DrawNpcCard()

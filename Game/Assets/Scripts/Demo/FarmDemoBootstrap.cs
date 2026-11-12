@@ -31,6 +31,12 @@ namespace ElysFarm.Demo
         const float RestRefresh = 0.3f;
         const float ArriveRadius = 0.05f;
 
+        /// <summary>剧本回放的固定步长；时间只在整步上推进，证据才不会被帧率影响。</summary>
+        public const float FixedStepSeconds = 1f / 60f;
+
+        /// <summary>一帧最多补几步，避免掉帧时越追越远。</summary>
+        const int MaxStepsPerFrame = 8;
+
         /// <summary>两名 NPC 之间多久试着搭一次话；没有听来的事就什么也不发生。</summary>
         const float ChatPause = 4f;
 
@@ -91,6 +97,20 @@ namespace ElysFarm.Demo
         /// <summary>最近一次模型调用摘要。</summary>
         public ModelCallInfo LastCall => Router != null ? Router.LastCall : ModelCallInfo.None;
 
+        /// <summary>最近一次对话的完整结果；固定剧本回放靠它记录证据，和玩家手动输入走同一条路。</summary>
+        public IntentResult LastResult { get; private set; }
+
+        /// <summary>剧本回放模式：固定步长、不自主干活、不互相搭话，台词与结局可重复。</summary>
+        public bool ScriptedMode { get; private set; }
+
+        /// <summary>暂停领域推进与 NPC 动作；画面与 HUD 仍然刷新，用来让观众读完字幕。</summary>
+        public bool SimulationPaused { get; set; }
+
+        /// <summary>剧本回放时画在 HUD 上方的字幕；空字符串表示不画。</summary>
+        public string CaptionTitle { get; private set; } = string.Empty;
+
+        public string CaptionDetail { get; private set; } = string.Empty;
+
         /// <summary>是否让 NPC 自己找活干；开局待命，等玩家第一句话或手动开启。</summary>
         public bool AutonomyEnabled { get; private set; }
 
@@ -108,6 +128,8 @@ namespace ElysFarm.Demo
         readonly EmoteBoard emotes = new EmoteBoard();
         float nextChatAt;
         int chatSlot;
+        float simulationNow;
+        float stepAccumulator;
 
         sealed class NpcView
         {
@@ -127,29 +149,178 @@ namespace ElysFarm.Demo
 
         void Awake()
         {
+            // 交付证据与压测都在后台跑：窗口失焦时也要继续推进，否则帧率与剧本时长全是假的。
+            Application.runInBackground = true;
             PixelArt.ApplyEnvironmentOverride();
             SetUpWorld();
             BuildScene();
         }
 
-        void Update()
+        void Start()
         {
-            World.Tick(Time.deltaTime);
+            var options = DemoLaunchOptions.FromCommandLine(Environment.GetCommandLineArgs());
+            if (!string.IsNullOrEmpty(options.UnknownScenario))
+            {
+                Debug.LogError($"[Elys] 不认识的剧本：{options.UnknownScenario}（可选 full-flow / refusal / memory）");
+            }
+
+            if (options.Scenario.HasValue)
+            {
+                StartScenario(
+                    options.Scenario.Value,
+                    options.TracePath,
+                    options.RecordDirectory,
+                    options.RecordFps,
+                    options.QuitAfter);
+            }
+            else if (options.PerfSeconds > 0f)
+            {
+                StartPerformanceProbe(options.PerfSeconds, options.PerfOutput);
+            }
+        }
+
+        /// <summary>开始回放一条固定剧本；编辑器里也能由 script eval 直接调用。</summary>
+        public ScenarioPlayer StartScenario(
+            FixedScenario scenario,
+            string tracePath = null,
+            string recordDirectory = null,
+            float recordFps = 20f,
+            float quitAfter = 0f)
+        {
+            var player = GetComponent<ScenarioPlayer>();
+            if (player == null)
+            {
+                player = gameObject.AddComponent<ScenarioPlayer>();
+            }
+
+            player.Initialize(this, scenario, tracePath, recordDirectory, recordFps, quitAfter);
+            return player;
+        }
+
+        /// <summary>打开压测：三人自主、16x、决策抽屉常开。</summary>
+        public PerformanceProbe StartPerformanceProbe(float seconds, string outputPath = null)
+        {
+            var probe = GetComponent<PerformanceProbe>();
+            if (probe == null)
+            {
+                probe = gameObject.AddComponent<PerformanceProbe>();
+            }
+
+            probe.Initialize(this, seconds, outputPath);
+            return probe;
+        }
+
+        /// <summary>
+        /// 进入剧本回放：固定步长、离线路由、不自主、不闲聊。
+        /// 只由 <see cref="ScenarioPlayer"/> 调用；正常游玩不受影响。
+        /// </summary>
+        public void BeginScriptedDemo()
+        {
+            ScriptedMode = true;
+            SimulationPaused = true;
+            stepAccumulator = 0f;
+            simulationNow = 0f;
+            Router = new IntentRouter(null);
+            AutonomyEnabled = false;
+            SelectedNpc = World.GetNpc(DefaultNpcId);
+            World.Clock.Speed = 1f;
+            LastMessage = "固定剧本回放";
+            LastReply = string.Empty;
+            LastPlayerText = string.Empty;
+            LastUnderstood = "剧本回放";
+            LastResult = null;
+            IsThinking = false;
 
             foreach (var view in npcViews)
             {
-                UpdateNpc(view);
+                view.NextActionAt = 0f;
+                view.Intent = "等着剧本开口";
+            }
+        }
+
+        /// <summary>压测姿态：三名 NPC 一起自主、16x、决策抽屉常开，取最重的常规负载。</summary>
+        public void BeginStressDemo()
+        {
+            AutonomyEnabled = true;
+            World.Clock.Speed = 16f;
+            SelectedNpc = World.GetNpc(AyaId);
+            LastMessage = "压测：三名 NPC 自主 · 16x · 决策抽屉打开";
+
+            foreach (var view in npcViews)
+            {
+                view.NextActionAt = 0f;
+                view.Intent = "压测中…";
+            }
+
+            var demoHud = GetComponent<FarmDemoHud>();
+            if (demoHud != null)
+            {
+                demoHud.SetInspectorOpen(true);
+            }
+        }
+
+        /// <summary>剧本字幕；传空字符串即清掉。</summary>
+        public void SetCaption(string title, string detail)
+        {
+            CaptionTitle = title ?? string.Empty;
+            CaptionDetail = detail ?? string.Empty;
+        }
+
+        void Update()
+        {
+            if (SimulationPaused)
+            {
+                return;
+            }
+
+            if (!ScriptedMode)
+            {
+                Simulate(Time.deltaTime);
+                return;
+            }
+
+            // 剧本回放只按固定步长推进：同样的台本在第 3 遍仍得到同样的日数与库存。
+            stepAccumulator += Time.deltaTime;
+            var steps = Mathf.Min(MaxStepsPerFrame, (int)(stepAccumulator / FixedStepSeconds));
+            if (steps <= 0)
+            {
+                return;
+            }
+
+            stepAccumulator -= steps * FixedStepSeconds;
+            for (var i = 0; i < steps; i++)
+            {
+                Simulate(FixedStepSeconds);
+            }
+        }
+
+        /// <summary>推进一整步；正常游玩与剧本回放共用，只有步长来源不同。</summary>
+        void Simulate(float deltaSeconds)
+        {
+            World.Tick(deltaSeconds);
+            simulationNow += deltaSeconds;
+
+            foreach (var view in npcViews)
+            {
+                UpdateNpc(view, deltaSeconds);
                 view.Avatar.SetWalking(view.Walking);
             }
 
-            TryNpcConversation();
-            UpdateOverheadEmotes(Time.time);
+            if (!ScriptedMode)
+            {
+                TryNpcConversation();
+            }
+
+            UpdateOverheadEmotes(Now);
 
             foreach (var view in fieldViews)
             {
                 view.Refresh();
             }
         }
+
+        /// <summary>表现层的时间轴：正常游玩跟墙钟，剧本回放跟固定步长累计。</summary>
+        float Now => ScriptedMode ? simulationNow : Time.time;
 
         /// <summary>把表情板里还在冒的表情同步到各 NPC 头顶；过期的收起。</summary>
         void UpdateOverheadEmotes(float now)
@@ -169,7 +340,7 @@ namespace ElysFarm.Demo
 
         void PostEmote(string npcId, EmoteEvent emote)
         {
-            emotes.Post(npcId, emote, Time.time);
+            emotes.Post(npcId, emote, Now);
         }
 
         /// <summary>某名 NPC 此刻的意图文案，供 HUD 与观察者对照它的行为。</summary>
@@ -277,6 +448,7 @@ namespace ElysFarm.Demo
         /// </summary>
         public void SubmitPlayerText(string text)
         {
+            LastResult = null;
             if (IsThinking || Router == null || string.IsNullOrWhiteSpace(text) || SelectedNpc == null)
             {
                 return;
@@ -333,6 +505,7 @@ namespace ElysFarm.Demo
         void ApplyIntent(IntentResult result, Npc target)
         {
             IsThinking = false;
+            LastResult = result;
             RecordSpeaker(target.Id, result.Outlet, result.Accepted);
             LastReply = result.Reply;
 
@@ -360,7 +533,12 @@ namespace ElysFarm.Demo
                     view.Intent = "按工单开工";
                 }
 
-                AutonomyEnabled = true;
+                // 剧本回放里不打开自主：否则等待期间其余 NPC 会自己找活，证据就不可重复了。
+                if (!ScriptedMode)
+                {
+                    AutonomyEnabled = true;
+                }
+
                 foreach (var other in npcViews)
                 {
                     other.NextActionAt = 0f;
@@ -392,33 +570,8 @@ namespace ElysFarm.Demo
 
         void SetUpWorld()
         {
-            World = new FarmWorld(new FarmClock());
-
-            foreach (var footprint in FarmLayout.Fields)
-            {
-                World.AddField(
-                    footprint.Id,
-                    FarmLayout.ToFarmPosition(footprint.Center),
-                    FarmStartup.FieldFertility);
-            }
-
-            foreach (var spawn in FarmLayout.NpcSpawns)
-            {
-                World.AddNpc(
-                    spawn.Id,
-                    DisplayNameOf(spawn.Id),
-                    FarmLayout.ToFarmPosition(spawn.World),
-                    PersonaOf(spawn.Id));
-            }
-
-            World.SetProduceStore(ProduceStoreSpot);
-            World.AddSeeds(CropCatalog.RadishId, 12);
-            World.AddSeeds(CropCatalog.WheatId, 4);
-
-            // 开局三块地各停在一个阶段：幼苗的萝卜、熟了的小麦、快熟的萝卜。
-            // 种子库要先入账——播种照实数扣种，不能凭空长出三块地。
-            FarmStartup.Seed(World);
-
+            // 地块、NPC、种子与开局作物只有一份定义：固定剧本也从同一个工厂取世界。
+            World = FarmDemoWorld.Create();
             Router = new IntentRouter(DemoModelSettings.CreateClient());
             SelectedNpc = World.GetNpc(DefaultNpcId);
             World.DaySettled += day => LastMessage = $"第 {day} 天开始，作物结算完毕";
@@ -519,7 +672,7 @@ namespace ElysFarm.Demo
             }
         }
 
-        static NpcPersona PersonaOf(string npcId)
+        internal static NpcPersona PersonaOf(string npcId)
         {
             switch (npcId)
             {
@@ -567,7 +720,7 @@ namespace ElysFarm.Demo
             DemoCamera.ApplyOverheadTo(camera);
         }
 
-        void UpdateNpc(NpcView view)
+        void UpdateNpc(NpcView view, float deltaSeconds)
         {
             var npc = view.Npc;
 
@@ -588,11 +741,11 @@ namespace ElysFarm.Demo
 
             if (view.Walking)
             {
-                Walk(view);
+                Walk(view, deltaSeconds);
                 return;
             }
 
-            if (Time.time < view.NextActionAt)
+            if (Now < view.NextActionAt)
             {
                 return;
             }
@@ -607,7 +760,7 @@ namespace ElysFarm.Demo
                 else
                 {
                     view.Intent = $"歇着（体力 {npc.Stamina:P0}，还剩 {npc.RestSecondsRemaining:0} 秒）";
-                    view.NextActionAt = Time.time + RestRefresh;
+                    view.NextActionAt = Now + RestRefresh;
                 }
 
                 return;
@@ -637,7 +790,7 @@ namespace ElysFarm.Demo
             if (!npc.CanDecide)
             {
                 view.Intent = FarmWorld.ThinkingReason;
-                view.NextActionAt = Time.time + 0.2f;
+                view.NextActionAt = Now + 0.2f;
                 return;
             }
 
@@ -650,7 +803,7 @@ namespace ElysFarm.Demo
             if (!World.TryDecide(npc.Id, out var candidate, out var reason))
             {
                 view.Intent = $"没活干（{reason}）";
-                view.NextActionAt = Time.time + IdlePause;
+                view.NextActionAt = Now + IdlePause;
                 return;
             }
 
@@ -664,12 +817,12 @@ namespace ElysFarm.Demo
         /// </summary>
         void TryNpcConversation()
         {
-            if (npcViews.Count < 2 || Time.time < nextChatAt)
+            if (npcViews.Count < 2 || Now < nextChatAt)
             {
                 return;
             }
 
-            nextChatAt = Time.time + ChatPause;
+            nextChatAt = Now + ChatPause;
             chatSlot = (chatSlot + 1) % npcViews.Count;
             var speaker = npcViews[chatSlot];
             if (speaker.Walking || speaker.Npc.IsResting)
@@ -695,8 +848,8 @@ namespace ElysFarm.Demo
                 listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
                 RecordSpeaker(speaker.Npc.Id, IntentOutlet.Chat, false, true);
                 LastReply = line;
-                speaker.NextActionAt = Time.time + ChatHold;
-                listener.NextActionAt = Time.time + ChatHold;
+                speaker.NextActionAt = Now + ChatHold;
+                listener.NextActionAt = Now + ChatHold;
                 LastMessage = $"第 {World.Clock.Day} 天 · "
                     + $"{speaker.Npc.DisplayName}把听来的事讲给{listener.Npc.DisplayName}：{line}";
                 return;
@@ -739,12 +892,12 @@ namespace ElysFarm.Demo
             return new Vector2(spot.x + (view.Slot - 1) * 0.8f, spot.y);
         }
 
-        void Walk(NpcView view)
+        void Walk(NpcView view, float deltaSeconds)
         {
             var next = Vector2.MoveTowards(
                 view.Avatar.Feet,
                 view.WalkTarget,
-                view.WalkSpeed * Time.deltaTime);
+                view.WalkSpeed * deltaSeconds);
             view.Avatar.SetFeet(next);
             World.MoveNpc(view.Npc.Id, new FarmPosition(next.x, next.y));
 
@@ -764,7 +917,7 @@ namespace ElysFarm.Demo
             if (string.IsNullOrEmpty(view.PendingFieldId))
             {
                 view.Intent = "歇着";
-                view.NextActionAt = Time.time + RestRefresh;
+                view.NextActionAt = Now + RestRefresh;
                 return;
             }
 
@@ -790,13 +943,13 @@ namespace ElysFarm.Demo
                     + (result.Yield > 0 ? $"，收得 {result.Yield} 个产出" : string.Empty);
                 view.Intent = npc.IsResting ? "太累了，去歇会儿" : action;
                 LastMessage = $"第 {World.Clock.Day} 天 · {npc.DisplayName}{action}";
-                view.NextActionAt = Time.time + WorkPause;
+                view.NextActionAt = Now + WorkPause;
             }
             else
             {
                 view.Intent = npc.IsResting ? "太累了，去歇会儿" : $"没做成：{result.Reason}";
                 LastMessage = $"{npc.DisplayName}想{FarmDemoText.StepName(view.PendingStep)}，但{result.Reason}";
-                view.NextActionAt = Time.time + IdlePause;
+                view.NextActionAt = Now + IdlePause;
             }
 
             view.PendingFieldId = null;

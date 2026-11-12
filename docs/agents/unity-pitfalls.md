@@ -162,3 +162,18 @@
 - 玩家日志在 `%USERPROFILE%\AppData\LocalLow\Elys\Elys\Player.log`（跟着 companyName / productName 变）。冒烟脚本用它确认引导器跑过、没有异常。
 - 冒烟截图时游戏窗口会弹到桌面上，可能被人手最小化或关掉；脚本要能自己还原窗口，失败信息要说清是「窗口被最小化」而不是笼统的「截图失败」。
 - PowerShell 5.1 读无 BOM 的 `.ps1` 会按 GBK 解中文，脚本必须存 **UTF-8 带 BOM**；`.cs` 仍是无 BOM UTF-8。
+
+## 交付与证据（#10）
+
+- **剧本回放不能直接沿用 `Time.deltaTime` 与 `Time.time`。** 正常游玩用 `Time.time` 做动作冷却；回放改为固定步长（1/60）累计的 `Now`，`World.Tick` 也按整步走。帧率变化只改变「每帧补几步」，不改变日界与工步顺序，三遍 trace 才会逐字一致。改 `FarmDemoBootstrap.UpdateNpc` / `Walk` 时不要漏掉 `deltaSeconds` 参数。
+- **回放期间要暂停。** 台词、字幕、等待都用 `SimulationPaused` 冻结领域；否则「你怎么不去干活」的回答里剩余休息秒数会随帧率变化，trace 对不上。暂停只冻结领域与 NPC 动作，`OnGUI` 与逐帧录制照常跑。
+- **`FarmDemoWorld.Create()` 是开局世界的唯一来源。** 演示引导器与固定剧本都从这里取地块、NPC、种子与开局作物；不要在剧本里另抄一份 `AddField`/`AddSeeds`，否则测试通过但录屏里是另一个农场。
+- **证据参考由 `ElysFarm.EditorTools.ScenarioEvidence.Generate()` 生成**，写入 `TestResults/scenarios/reference/`；交付包用 `-elysScenario` 回放同一份 `FixedScreenplays`。比对必须严格 UTF-8 解码后 `-ceq`，PowerShell 的 `Get-Content -Raw` 在 5.1 下会按 GBK 解中文。
+- **`run-scenarios.ps1` 的本地变量不要叫 `$runs`。** PowerShell 变量名大小写不敏感，`$runs = @()` 实际在给 `[int]$Runs` 参数赋数组，报 `Cannot convert System.Object[] to Int32`。用 `$executions` 之类的名字。
+- **录屏用游戏内抓帧，不要抓窗口。** `FrameRecorder` 在 `WaitForEndOfFrame` 后 `ScreenCapture.CaptureScreenshotAsTexture()` 再 `EncodeToPNG`，不受窗口位置、DPI 缩放、遮挡与标题栏影响；窗口抓取在 125% 缩放下会裁边。20fps 的 PNG 序列交给 ffmpeg 编码，1280×720 的像素画约 1–2 MB/分钟成片。
+- **录制会拖慢游戏，但不要因此改台本。** 回放的等待条件都是领域状态（第几天、工步完成、是否在休息），固定步长保证内容一致；录制只影响成片时长。屏幕越慢，同样的 20fps 视频里动作越慢，这是可接受的。
+- **压测先关垂直同步。** `PerformanceProbe` 设 `QualitySettings.vSyncCount = 0`、`Application.targetFrameRate = -1`，采 `Time.unscaledDeltaTime`；不关的话 60Hz 显示器会把所有机器都压成 60fps，看不出瓶颈。报告要同时给 p99 帧时与低于 30/60fps 的帧数，别只给平均。
+- **播放器命令行才是交付入口。** `-elysScenario <full-flow|refusal|memory> -elysTrace <path> -elysRecord <dir> -elysQuit <sec>`；Editor 里没有这些参数，用 `script eval` 调 `demo.StartScenario(...)` 验证。`Application.Quit()` 在播放器里退出码为 0，Editor 里不退出。
+- **`Builds/Windows` 先删再打包。** Unity 只覆盖同名文件，上一版残留会叠进新包；`package-windows.ps1` 已处理。要「从干净提交构建」时先提交，再 `-RequireClean`，provenance 里 `dirty` 才是 false。
+- **干净环境验收**把 `Builds/Windows` 拷到 `%TEMP%`，清空 `DEEPSEEK_*` / `SILICONFLOW_*` / `ELYS_SECRETS_FILE`，PATH 只留 System32，再跑 memory 剧本并比对 trace。Unity 的 `Player.log` 仍可能落到真实用户的 `LocalLow`（Known Folder 由 shell 解析），脚本两处都找；这不是全新虚拟机，报告里要如实写。
+- **PowerShell 脚本改完先 `Parser::ParseFile` 检查语法。** 中文注释在编码坏掉时 `pwsh` 的报错会变成一串乱码 token，直接看行号比猜编码快。
