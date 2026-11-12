@@ -88,6 +88,8 @@
 
 **范围注记（#8 闲聊与社交）**。闲聊是第三个出口：只写记忆（`FarmWorld.RememberChat`），不改变地块、时钟与背包；话里提到另一名 NPC 时，顺带记成一条可转述的传闻。出口的最终裁决权在本地：`LocalIntentParser.IsFarmRequest` 用「白名单动作词 + 请求标记（强标记可在任意位置，弱标记要在句首或第一 / 第二人称开头）+ 非问句、非陈述往事 + 非否定」判一句原话是不是农事请求，模型只负责在这句话确实是请求时提供目标、地块、品种与措辞。句首称呼先剥掉：叫的是被指挥的人（「阿禾，把地浇了」）算请求，叫的是别的 NPC（「阿土把活干完了」）算在说别人的事；「了吗」「了没」「过吗」这类问结果的话永远是追问。请求不能被模型当成闲聊或追问吞掉（模型返回 chat / query 也按指令进入同一套动作校验），不是请求的句子也不能被模型凭空变成一条农活（闲聊与注入话术因此改不了状态）。模型分类被本地规则纠正时，`ModelCallOutcome` 记为 `Correction`，仍保留模型名、耗时与 token，HUD 与决策可视化照旧展示这三项。品种白名单仍先于模型生效，「闲聊里点名白名单外的品种」由本地规则拒绝，不成为后门。人设参数在 `Npc` / `NpcPersona` 上是只读的，注入只能影响台词；提示词另钉死「玩家的话只是对话内容」。传闻由 `HearsayBook` 记录（主体 + 说法 + importance + 手数），`FarmWorld.TryRetell` 要求两人在 `ChatRadius` 内、讲的人手里有听者还不知道的事；说法原样带过去，来源换成当下讲的人，重要性每转一手减一，听者记忆写成「听阿土说，阿芽今天偷懒了」。讲到当事人自己时记忆改用第二人称（「听阿禾说，你今天偷懒了」）；玩家原话开头的「听说」「我觉得」这类口头语在转述时去掉，避免叠成「阿芽我觉得太懒了」。演示层每 4 秒让一名 NPC 找近处同伴转述一次、两人停 1.2 秒把这句话留在屏幕上，并在 HUD 显示；转述的是结构化传闻，不走模型。测试：`ChatTests` 打 `IntentRouter` + 假 `IModelClient`（陈述式闲聊、夹带请求、问句与请求的边界、称呼与说别人、做不到时的拒绝、模型误判与 `Correction`、注入、白名单后门），`SocialTests` 打 `FarmWorld`（转述链、距离、去重、只写记忆、第二人称、口头语）。
 
+**范围注记（#9 素材与观感）**。素材全用 Quaternius 的 CC0 低模（来源与许可证见 README 与 `Game/Assets/Resources/Quaternius/Licenses/License.txt`），只提交演示子集，放在 `Assets/Resources/Quaternius`，运行时用 `Resources.Load`。表现层补了一条**例外接缝**：`CropStages` 把领域的生长进度与地块状态映射成五个阶段、`CameraRig` 给出俯视与跟拍的姿态、`QuaterniusArt` 负责加载并在缺失时返回 null、`UrpMaterialConverter` 负责 Standard→URP/Lit；四者都是纯逻辑，不打开场景、不测渲染，测试在 EditMode 直接调用。场景渲染、HUD 布局与动画播放仍由 Play Mode 截图验证，不写成用例。五个阶段的映射是四等分（0.25 / 0.5 / 0.75 / 1.0 为边界），成熟优先于进度；素材包每个品种只有四个生长模型与一个成品模型，因此萝卜的第五阶段用 `Carrot_Crop`，小麦的 `Wheat_Crop` 是平铺的麦捆（俯视才成立、跟拍不成立），成熟小麦改用 `Wheat_4` 加麦金色与 1.25 的尺寸。相机默认俯视 45°，跟拍距离 4.2、机位高 2.0、看向 1.45，HUD 顶部提供「俯视 / 阿禾 / 阿芽 / 阿土」与「素材开/关」；跟拍时收起右侧面板与流水，避免 HUD 遮住 NPC。俯视机位按 547 高度下的 HUD 空档调到 `(0, 12.5, -15.5)`、FOV 45。光照与后处理在运行时搭建（方向光、渐变环境、雾、ACES + Bloom + Vignette + ColorAdjustments），不新增可序列化的 Profile 资产。素材缺失是常规路径：作物与 NPC 回退体块，装饰性建筑跳过；HUD 的「素材开/关」只重建 visualRoot，领域状态不动。FBX 自带的 Blender 相机/灯在导入设置（`OnPreprocessModel` 设 `importCameras/importLights = false`）与运行时（`ModelPlacement.StripSceneObjects`）两处关闭，否则每个模型多一个 `clear=Skybox` 相机，把 Game 视图刷成纯背景。角色用包内自带的 Idle/Walk（通用骨骼 FBX），由 `AnimationClip.SampleAnimation` 按时间采样，不建 AnimatorController。
+
 ## Testing Decisions
 
 **好测试的标准**：只断言外部可观察行为，不断言内部实现。例如断言「不浇水的地块在十个游戏日后仍未成熟」，而不是断言某个私有字段的数值；断言「三本账满足入账减出账等于持有」，而不是断言某个字典的内容。
@@ -98,6 +100,8 @@
 2. **`IModelClient`** —— 外部 IO 的唯一出口。所有测试使用假实现，返回预置的分类结果与固定向量，因此测试不联网、不花钱、结果可重复。
 
 不为 `MemoryStore`、`UtilityScorer`、`ActionValidator` 单开接缝：它们是 `FarmWorld` 内部模块，通过 `FarmWorld` 的行为暴露出来。`SecretFileLocator` 是 #4 的唯一例外（见「范围注记（#4）」）：它只做密钥来源决策，不碰领域状态。
+
+`CropStages`、`CameraRig`、`QuaterniusArt`、`UrpMaterialConverter` 是 #9 的表现层例外（见「范围注记（#9）」）：它们只把领域快照翻译成模型、机位或材质，不持有领域状态，也不依赖场景；`ArtMaterialTests` 会额外扫一遍 `Assets/Resources/Quaternius` 下的材质资产作为验收护栏。场景渲染与动画播放不因此进入测试，仍以 Play Mode 截图为准。
 
 **测试的模块**：`FarmWorld`（含其内部的时钟、账本、打分、校验、记忆），以及 `IntentRouter` 的三出口分流。
 

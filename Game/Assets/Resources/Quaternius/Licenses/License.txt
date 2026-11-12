@@ -1,0 +1,46 @@
+Quaternius 素材来源与许可
+=========================
+
+本目录下的模型来自 Quaternius（https://quaternius.com），全部为
+CC0 1.0 Universal（公有领域贡献）：
+https://creativecommons.org/publicdomain/zero/1.0/
+
+具体素材包与下载来源
+--------------------
+
+1. Ultimate Crops Pack（作物，FBX）
+   - 页面：https://quaternius.com/packs/ultimatecrops.html
+   - 镜像：https://opengameart.org/content/lowpoly-crops-pack
+   - 作者：Quaternius
+   - 许可：CC0 1.0
+
+2. Farm Buildings Pack（农舍、风车、水井、围栏等，FBX）
+   - 页面：https://quaternius.com/packs/farmbuildings.html
+   - 镜像：https://quaternius.itch.io/lowpoly-farm-buildings
+   - 作者：Quaternius
+   - 许可：CC0 1.0
+
+3. Nature pack vol.3（树、灌木、草、石头，FBX）
+   - 页面：https://quaternius.com/packs/simplenature.html
+   - 镜像：https://opengameart.org/content/lowpoly-nature-pack
+   - 作者：Quaternius
+   - 许可：CC0 1.0
+
+4. Ultimate Animated Character Pack（角色与 Idle/Walk 动画，FBX）
+   - 页面：https://quaternius.com/packs/ultimatedanimatedcharacter.html
+   - 镜像：https://opengameart.org/content/animated-characters-pack
+   - 作者：Quaternius
+   - 许可：CC0 1.0
+
+本仓库只提交了上述素材包的一个子集（作物 10 个模型、农舍 8 个、
+自然 13 个、角色 4 个），用于演示。原始 Blends/OBJ/纹理没有入库。
+
+许可说明
+--------
+
+CC0 素材可以自由使用与再分发，但本仓库仍保持私有：Quaternius 新素材
+使用 QAL v1.0，禁止把素材本身单独再分发；如果以后仓库转为公开，
+应先移除本目录下的模型，只保留下载脚本/说明。
+
+模型由 @Quaternius 制作。如果你觉得素材好用，可以在
+https://www.patreon.com/quaternius 支持作者。

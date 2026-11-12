@@ -3,7 +3,9 @@
     "rootNamespace": "ElysFarm.Demo",
     "references": [
         "ElysFarm",
-        "ElysFarm.Model"
+        "ElysFarm.Model",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Universal.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

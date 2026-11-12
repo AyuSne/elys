@@ -28,6 +28,7 @@ namespace ElysFarm.EditorTools
             var root = new GameObject("Farm Demo");
             root.AddComponent<FarmDemoBootstrap>();
             root.AddComponent<FarmDemoHud>();
+            root.AddComponent<DemoCamera>();
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             EnsureInBuildSettings();

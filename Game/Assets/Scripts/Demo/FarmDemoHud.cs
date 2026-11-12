@@ -57,9 +57,75 @@ namespace ElysFarm.Demo
             }
 
             DrawStatusPanel();
+            DrawCameraBar();
             DrawDecisionPanel();
             DrawLogPanel();
             DrawCommandPanel();
+        }
+
+        /// <summary>
+        /// 镜头与素材开关。放在左右面板之间的顶部：俯视时两侧面板都开，
+        /// 跟拍时右侧面板与流水收起，把画面让给 NPC。
+        /// </summary>
+        void DrawCameraBar()
+        {
+            const float leftEdge = 384f;
+            var rightEdge = Screen.width - 424f;
+            var gap = rightEdge - leftEdge;
+            var width = Mathf.Min(520f, gap);
+            if (width < 280f)
+            {
+                return;
+            }
+
+            var x = leftEdge + (gap - width) * 0.5f;
+            GUILayout.BeginArea(new Rect(x, 8f, width, 58f), GUI.skin.box);
+            GUILayout.Label(
+                demo.IsOverheadCamera ? "镜头 · 俯视 45°" : $"镜头 · 跟拍{FollowedName()}",
+                smallStyle);
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(demo.IsOverheadCamera ? "●俯视" : "俯视", buttonStyle, GUILayout.Width(58f)))
+            {
+                demo.UseOverheadCamera();
+            }
+
+            foreach (var npc in demo.World.Npcs)
+            {
+                var label = demo.IsFollowing(npc.Id) ? $"●{npc.DisplayName}" : npc.DisplayName;
+                if (GUILayout.Button(label, buttonStyle, GUILayout.Width(58f)))
+                {
+                    demo.SelectNpc(npc.Id);
+                    demo.FollowCamera(npc.Id);
+                }
+            }
+
+            if (GUILayout.Button(demo.UsingArt ? "素材开" : "素材关", buttonStyle, GUILayout.Width(58f)))
+            {
+                demo.ToggleArt();
+            }
+
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+        }
+
+        string FollowedName()
+        {
+            var followed = demo.FollowedNpcId;
+            if (string.IsNullOrEmpty(followed))
+            {
+                return string.Empty;
+            }
+
+            foreach (var npc in demo.World.Npcs)
+            {
+                if (npc.Id == followed)
+                {
+                    return npc.DisplayName;
+                }
+            }
+
+            return string.Empty;
         }
 
         void InitStyles()
@@ -223,6 +289,11 @@ namespace ElysFarm.Demo
 
         void DrawDecisionPanel()
         {
+            if (!demo.IsOverheadCamera)
+            {
+                return;
+            }
+
             if (inspectorOpen)
             {
                 DrawInspectorPanel();
@@ -413,7 +484,7 @@ namespace ElysFarm.Demo
 
         void DrawLogPanel()
         {
-            if (inspectorOpen)
+            if (inspectorOpen || !demo.IsOverheadCamera)
             {
                 return;
             }

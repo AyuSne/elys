@@ -5,16 +5,28 @@
 > 模型不可用时整条链路自动回退本地模板，演示不会卡死。
 > 三名 NPC 在同一批地块上各自用效用打分决定此刻做什么，行为差异来自人设与体力，而不是台词。
 
+![俯视 45° 的农场：三名 NPC 在田边，三块地的萝卜处在不同生长阶段，农舍、风车、水井、树木与自然物件都换成了 Quaternius 素材](docs/images/art-overview.png)
+
+这是 #9 之后的状态：农场换成了 Quaternius 的低模素材，作物按五个生长阶段换模型，
+农舍、风车、水井、树木与角色都从 `Resources` 里加载；相机默认俯视 45°，也可以切到
+任一 NPC 的第三人称跟拍。素材缺失或想对照 #3 的纯体块版本时，HUD 顶部的「素材开/关」
+会当场重建表现层，领域状态不动。
+
+![作物的五个生长阶段：萝卜（前）与小麦（后）从左到右依次是第 1–5 阶段；成熟小麦用麦金色区分](docs/images/crop-stages.png)
+
+![跟拍阿芽：右侧决策面板与流水收起，镜头在阿芽身后上方，田里的萝卜和远处的农舍、风车都看得清](docs/images/art-follow.png)
+
+![关掉素材后的体块回退：作物变回色块、NPC 变回胶囊体，田块、时钟与背包仍照常运行](docs/images/art-fallback.png)
+
 ![三名 NPC 在同一批地块上自主干活：阿芽体力见底去草垛休息，阿禾与阿土继续找活](docs/images/three-npc-autonomy.png)
 
-这是 #8 之后的状态：农场里同时跑着阿禾、阿芽、阿土三名 NPC，右侧的决策可视化层可以
-当场摊开选中 NPC 的记忆、意图、候选与否决原因、最近一次模型调用与状态条。追问「你在干什么」
-「你怎么不去干活」会带上当前状态与检索到的记忆；隔一天再问「上次你让我浇的是西边那块」，
-NPC 仍对得上是哪块地。玩家也可以闲聊：话只记进记忆（importance 由模型打分），提到第三个人时
-会变成一条传闻，由近处的 NPC 互相转述——阿禾听说了阿芽偷懒，会讲给阿土，阿土再讲给阿芽。
-闲聊永远不改变地块、时钟与背包；闲聊里夹带的农活请求仍要走同一套白名单与动作校验，
-做不到就当场用话拒绝。完整的种田闭环、可复核的 EditMode 回归报告、可直接双击运行的
-Windows 包，以及这份 README 都保留着。见
+#8 的状态仍在：右侧的决策可视化层可以当场摊开选中 NPC 的记忆、意图、候选与否决原因、
+最近一次模型调用与状态条。追问「你在干什么」「你怎么不去干活」会带上当前状态与检索到的记忆；
+隔一天再问「上次你让我浇的是西边那块」，NPC 仍对得上是哪块地。玩家也可以闲聊：话只记进记忆
+（importance 由模型打分），提到第三个人时会变成一条传闻，由近处的 NPC 互相转述——阿禾听说了
+阿芽偷懒，会讲给阿土，阿土再讲给阿芽。闲聊永远不改变地块、时钟与背包；闲聊里夹带的农活请求
+仍要走同一套白名单与动作校验，做不到就当场用话拒绝。完整的种田闭环、可复核的 EditMode 回归报告、
+可直接双击运行的 Windows 包，以及这份 README 都保留着。见
 [GitHub Issues](https://github.com/AyuSne/elys/issues)。
 
 ![决策可视化层：阿禾的当前意图是等 A3 成熟，两条有效候选与一条播种的否决原因同时可见；记忆带权重条，模型调用带模型名、耗时与 token](docs/images/decision-inspector.png)
@@ -30,6 +42,7 @@ Windows 包，以及这份 README 都保留着。见
 - [打 Windows 包](#打-windows-包)
 - [配置模型密钥](#配置模型密钥)
 - [怎么玩](#怎么玩)
+- [素材与许可](#素材与许可)
 - [仓库结构](#仓库结构)
 - [文档与设计](#文档与设计)
 - [已知边界](#已知边界)
@@ -121,12 +134,18 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 注入防线（#8） | `ChatTests.注入提示词改不了人设与游戏状态`、`ChatTests.闲聊里点名白名单外的品种仍由本地规则拒绝` | 人设只读、状态不变；闲聊不是白名单后门 |
 | 转述（#8） | `SocialTests.一条传闻能从阿土传到阿禾再传到阿苗`、`SocialTests.玩家聊起的传闻会被听的人转述出去` | A→B→C；记忆写成「听某人说，……」且重要性递减 |
 | 转述只读（#8） | `SocialTests.转述只写记忆不改变地块时钟与背包`、`SocialTests.隔着老远的两名NPC说不上话` | 转述不改状态；距离与去重都有效 |
+| 五个生长阶段（#9） | `CropStageTests.*` | 空地无作物；进度按四分之一推进五阶段；五阶段颜色与尺寸两两可区分；成熟用成品模型 |
+| 双机位（#9） | `CameraRigTests.*` | 默认俯视 45°；跟拍落在 NPC 身后上方并随朝向绕背；可切回俯视；空 id 不切机位 |
+| 素材缺失回退（#9） | `QuaterniusArtTests.*` | 缺素材/关素材返回 null 不抛异常；两个品种的五个阶段、农舍、自然、角色都在工程里 |
+| 无粉色材质（#9） | `UrpMaterialTests.*`、`ArtMaterialTests.*` | Standard→URP 保留颜色/贴图/金属度/光滑度；工程里的美术材质（含 FBX 内嵌）全部 URP 兼容 |
 | 密钥不泄露 | `SecretFileLocatorTests.*` | 编辑器只读仓库根；打包后的播放器不隐式读任何密钥文件 |
 
-全部用例共 113 个，覆盖领域闭环、时钟、三本账、三人效用打分与休息、决策可视化五项、
+全部用例共 131 个，覆盖领域闭环、时钟、三本账、三人效用打分与休息、决策可视化五项、
 记忆的两段式与向量检索、追问的四类本地回答、三出口（闲聊只写记忆、夹带请求、注入防线）、
-传闻与转述链、意图路由（含模型失败降级与失败调用摘要）、模型协议（对话 + embedding）与密钥来源。
-领域测试只打 `FarmWorld` 这条缝，模型测试用假客户端，不联网、不花钱。
+传闻与转述链、意图路由（含模型失败降级与失败调用摘要）、模型协议（对话 + embedding）与密钥来源，
+以及 #9 的作物五阶段、双机位、素材缺失回退与 URP 材质转换。领域测试只打 `FarmWorld` 这条缝，
+模型测试用假客户端，不联网、不花钱；#9 的表现层测试打在纯逻辑接缝（`CropStages`、`CameraRig`、
+`QuaterniusArt`、`UrpMaterialConverter`）上，不打开场景、不测渲染。
 包本身的装配由构建脚本固定（`FarmBuild` 只把 `FarmDemo.unity` 传给 `BuildPlayer`），
 运行证据由 `scripts/smoke-test-build.ps1` 与上面的截图给出，不写成 EditMode 用例。
 
@@ -235,6 +254,10 @@ $env:ELYS_SECRETS_FILE = 'D:\keys\elys.json'
 
 三名 NPC 开局**待命**，不会抢在玩家输入前把地种掉。
 
+顶部中间的「镜头」条可以在 `俯视 45°` 与 `阿禾 / 阿芽 / 阿土` 的第三人称跟拍之间随时切换；
+跟拍时右侧决策面板与底部流水会自动收起，把画面让给 NPC（左侧状态与底部输入保留）。旁边的
+「素材开/关」在 Quaternius 素材与纯体块之间当场切换：只重建表现层，时钟、账本与 NPC 状态都不动。
+
 1. 在底部输入框输入一句话，按回车或点「下达」。右侧面板顶部的「阿禾 / 阿芽 / 阿土」按钮决定
    这句话说给谁听；左侧三行也可以直接点名字切换观察对象。
 2. 试这些：
@@ -271,6 +294,30 @@ $env:ELYS_SECRETS_FILE = 'D:\keys\elys.json'
 7. 「暂停自主」只影响之后的选择；正在走的路或工单会先干完。
 8. 一个游戏日等于 5 分钟真实时间。萝卜 3 个游戏日成熟，想快点看收获就切 16x。
 
+## 素材与许可
+
+农场里的模型全部来自 [Quaternius](https://quaternius.com)，许可为
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)。仓库只提交了演示要用的子集
+（约 6 MB FBX，放在 `Game/Assets/Resources/Quaternius/`），完整来源与许可见
+[License.txt](Game/Assets/Resources/Quaternius/Licenses/License.txt)：
+
+| 用途 | 素材包 | 下载来源 |
+|---|---|---|
+| 作物（萝卜 / 小麦各 5 个阶段） | Ultimate Crops Pack | [OpenGameArt 镜像](https://opengameart.org/content/lowpoly-crops-pack) |
+| 农舍、风车、水井、围栏、鸡舍 | Farm Buildings Pack | [itch.io 镜像](https://quaternius.itch.io/lowpoly-farm-buildings) |
+| 树、灌木、草、石头 | Nature pack vol.3 | [OpenGameArt 镜像](https://opengameart.org/content/lowpoly-nature-pack) |
+| 角色与 Idle / Walk 动画 | Ultimate Animated Character Pack | [OpenGameArt 镜像](https://opengameart.org/content/animated-characters-pack) |
+
+- 素材包是给通用管线做的低模，导入后由 `QuaterniusMaterialPostprocessor` 统一转成 URP/Lit；
+  编辑器里也可以用 **Elys → 资源 → 把 Quaternius 材质全部转为 URP/Lit** 手动扫一遍。
+- 仓库保持**私有**：Quaternius 新素材使用 QAL v1.0，禁止把素材本身单独再分发。如果仓库转为公开，
+  应先移除 `Assets/Resources/Quaternius` 下的模型，只保留这里的来源说明。
+- 角色只有 Idle 与 Walk 两段动画；成熟小麦没有合适的成品模型（素材包的 `Wheat_Crop` 是平铺麦捆，
+  第三人称下不成立），因此用 `Wheat_4` 加麦金色与略大的尺寸表示成熟。这些选择都写进了
+  [规格的范围注记](docs/spec/ai-farm-npc.md)。
+- 没有素材或想强制体块：设置 `$env:ELYS_FORCE_BLOCKS = '1'` 再启动；也可以直接在游戏里用
+  HUD 顶部的「素材开/关」切换。
+
 ## 仓库结构
 
 ```
@@ -281,7 +328,9 @@ Game/                        Unity 工程（Unity Hub 打开这一层）
   Assets/Scripts/Core/Social 传闻台账与转述
   Assets/Scripts/Core/Intent 意图解析：模型出口、本地模板、三出口路由与追问回答
   Assets/Scripts/Model/      DeepSeek 对话 + 硅基流动 embedding 客户端与密钥来源
-  Assets/Scripts/Demo/       体块演示场景的引导器与 IMGUI HUD
+  Assets/Scripts/Demo/       体块与素材演示场景的引导器、IMGUI HUD 与双机位相机
+  Assets/Scripts/Demo/Art/   素材加载与回退、作物五阶段、NPC 替身、场景装饰、URP 材质转换
+  Assets/Resources/Quaternius  作物五阶段、农舍、自然物件与角色的 FBX（CC0，见上文）
   Assets/Tests/EditMode/     EditMode 回归测试
   Assets/Editor/             场景生成器、密钥防线与 Windows 构建入口
 scripts/                     跑测试、打包、冒烟验收的 PowerShell 脚本
@@ -301,17 +350,23 @@ docs/                        规格、ADR、调研、领域词汇表与 agent �
 
 ## 已知边界
 
-这是完成 #8 后的版本，刻意只做到这里：
+这是完成 #9 后的版本，刻意只做到这里：
 
+- **素材**是 Quaternius 低模（无贴图、靠材质色）。作物有五个生长阶段；角色只有 Idle 与 Walk
+  两段动画；成熟小麦用 `Wheat_4` 染色表示。素材缺失时作物与 NPC 回退体块，装饰性建筑直接跳过。
+- **双机位**可自由切换：默认俯视 45°，跟拍任一 NPC 时右侧面板与流水收起。俯视时 HUD 仍占掉
+  大半画面，农场只在中间空档可见。
 - **三名 NPC 与 3 块地**已就位；NPC 之间会把玩家说起的传闻转述给第三个人；转述的是结构化传闻，不走模型。
+  NPC 直线移动，没有 NavMesh、碰撞与避障。
 - **决策可视化层**已按五项实现，左侧顶部或右侧临时面板都能开关；临时状态 HUD 仍在，两者不是同一个东西。
 - **记忆与追问**已做到「自己做过的事 + 玩家说过的话」，两段式检索（召回 10 → 加权 3）、
   在线 embedding 余弦与离线关键词都可用；闲聊写回记忆并留下传闻，NPC 之间会转述（#8）。
 - **三个出口**里只有农事指令能改状态；闲聊与追问都只读。出口判定以玩家原话为准，
   模型误判不会凭空派活，注入话术也改不了人设与背包。
-- **素材是纯体块**，Quaternius 导入与双机位在 #9。
 - 只是 Windows 单机包；没有存档、多人、语音。
 - 数值平衡不在考察范围，没有调；模型延迟以实际网络为准，超时即回退。
 
 > 技术说明：运行时创建的方块材质用 `Shader.Find("Universal Render Pipeline/Lit")`，
 > 因此 URP Lit 已加入 GraphicsSettings 的 Always Included Shaders，避免打包后材质丢失。
+> Quaternius 的 FBX 自带 Blender 场景的相机与灯，导入设置里已关闭并在运行时兜底删除；
+> 否则每个模型都会带一个 `clear=Skybox` 的相机，把 Game 视图刷成纯背景色。

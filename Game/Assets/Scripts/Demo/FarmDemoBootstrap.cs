@@ -6,10 +6,11 @@ using UnityEngine;
 namespace ElysFarm.Demo
 {
     /// <summary>
-    /// 体块化演示场景的引导器：搭出地块、产出仓、休息点与三名 NPC 的方块替身，
-    /// 用真实时间推进 <see cref="FarmWorld"/>，并让每名 NPC 按自己的人设决定间隔与体力节奏
-    /// 独立跑效用打分。玩家输入经 <see cref="IntentRouter"/> 变成工单后，接单的 NPC 再按工单执行。
+    /// 演示场景的引导器：搭出地块、产出仓、休息点、农舍与三名 NPC，用真实时间推进
+    /// <see cref="FarmWorld"/>，并让每名 NPC 按自己的人设决定间隔与体力节奏独立跑效用打分。
+    /// 玩家输入经 <see cref="IntentRouter"/> 变成工单后，接单的 NPC 再按工单执行。
     /// 引导器不持有领域状态——只读 <see cref="FarmWorld"/> 的快照。
+    /// 表现层用 Quaternius 素材；素材缺失时自动退回体块，场景不会崩。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class FarmDemoBootstrap : MonoBehaviour
@@ -25,8 +26,6 @@ namespace ElysFarm.Demo
         /// <summary>默认指挥对象；HUD 可切到另外两名。</summary>
         public const string DefaultNpcId = AheId;
 
-        const float FieldTop = 0.15f;
-        const float NpcGroundY = 0.8f;
         const float WorkPause = 0.5f;
         const float IdlePause = 0.8f;
         const float RestRefresh = 0.3f;
@@ -38,17 +37,15 @@ namespace ElysFarm.Demo
         /// <summary>搭话时两人停下手里的事，让观察者看清这句转述。</summary>
         const float ChatHold = 1.2f;
 
-        static readonly Color DrySoil = new Color(0.47f, 0.34f, 0.23f);
-        static readonly Color WetSoil = new Color(0.24f, 0.17f, 0.12f);
-        static readonly Color CropGreen = new Color(0.22f, 0.62f, 0.24f);
-        static readonly Color CropMature = new Color(0.95f, 0.74f, 0.16f);
-        static readonly Color WeedGreen = new Color(0.55f, 0.62f, 0.20f);
         static readonly Color AheColor = new Color(0.25f, 0.55f, 0.72f);
         static readonly Color AyaColor = new Color(0.88f, 0.55f, 0.25f);
         static readonly Color AtuColor = new Color(0.52f, 0.42f, 0.72f);
 
         /// <summary>休息点；体力见底的 NPC 会走到这里待着。</summary>
         public static readonly FarmPosition RestSpot = new FarmPosition(2.2f, -1.5f);
+
+        /// <summary>产出仓的标记点；NPC 走到这里就算到了仓库。</summary>
+        public static readonly FarmPosition ProduceStoreSpot = new FarmPosition(-3.4f, -1.8f);
 
         /// <summary>领域世界（唯一状态来源）。</summary>
         public FarmWorld World { get; private set; }
@@ -83,25 +80,24 @@ namespace ElysFarm.Demo
         /// <summary>是否让 NPC 自己找活干；开局待命，等玩家第一句话或手动开启。</summary>
         public bool AutonomyEnabled { get; private set; }
 
+        /// <summary>当前是否用素材（false 表示体块回退）。</summary>
+        public bool UsingArt => QuaterniusArt.UseArt;
+
+        /// <summary>当前是否俯视机位。</summary>
+        public bool IsOverheadCamera => cameraDirector == null || cameraDirector.Mode == CameraMode.Overhead;
+
+        Transform visualRoot;
         Transform npcRoot;
-        readonly List<FieldView> fieldViews = new List<FieldView>();
+        DemoCamera cameraDirector;
+        readonly List<CropFieldView> fieldViews = new List<CropFieldView>();
         readonly List<NpcView> npcViews = new List<NpcView>();
         float nextChatAt;
         int chatSlot;
 
-        sealed class FieldView
-        {
-            public Field Field;
-            public Transform Crop;
-            public Transform Weeds;
-            public Material Soil;
-            public Material CropMaterial;
-        }
-
         sealed class NpcView
         {
             public Npc Npc;
-            public Transform Body;
+            public NpcAvatar Avatar;
             public int Slot;
             public float WalkSpeed;
             public string PendingFieldId;
@@ -114,8 +110,9 @@ namespace ElysFarm.Demo
 
         void Awake()
         {
+            QuaterniusArt.ApplyEnvironmentOverride();
             SetUpWorld();
-            BuildBlockScene();
+            BuildScene();
         }
 
         void Update()
@@ -128,7 +125,11 @@ namespace ElysFarm.Demo
             }
 
             TryNpcConversation();
-            UpdateViews();
+
+            foreach (var view in fieldViews)
+            {
+                view.Refresh();
+            }
         }
 
         /// <summary>某名 NPC 此刻的意图文案，供 HUD 与观察者对照它的行为。</summary>
@@ -153,6 +154,53 @@ namespace ElysFarm.Demo
                 view.NextActionAt = 0f;
                 view.Intent = AutonomyEnabled ? "自己找活干" : "待命，等玩家开口";
             }
+        }
+
+        /// <summary>切回俯视 45°。</summary>
+        public void UseOverheadCamera()
+        {
+            cameraDirector?.SetOverhead();
+        }
+
+        /// <summary>切到指定 NPC 的第三人称跟拍；未知 NPC 不改变机位。</summary>
+        public void FollowCamera(string npcId)
+        {
+            var view = ViewOf(npcId);
+            if (view == null || cameraDirector == null)
+            {
+                return;
+            }
+
+            cameraDirector.Follow(npcId, view.Avatar.transform);
+        }
+
+        /// <summary>当前是否正在跟拍某名 NPC。</summary>
+        public bool IsFollowing(string npcId)
+        {
+            return cameraDirector != null && cameraDirector.Rig.IsFollowing(npcId);
+        }
+
+        /// <summary>正在跟拍的 NPC id；俯视时为 null。</summary>
+        public string FollowedNpcId => cameraDirector != null ? cameraDirector.FollowNpcId : null;
+
+        /// <summary>
+        /// 在素材与体块之间切换。素材缺失时用体块是验收项，这里给观察者一个当场验证的开关：
+        /// 重建的只是表现层，<see cref="FarmWorld"/> 的时钟、账本与 NPC 状态都不动。
+        /// </summary>
+        public void ToggleArt()
+        {
+            var following = cameraDirector != null ? cameraDirector.FollowNpcId : null;
+            QuaterniusArt.UseArt = !QuaterniusArt.UseArt;
+            BuildScene();
+
+            if (!string.IsNullOrEmpty(following))
+            {
+                FollowCamera(following);
+            }
+
+            LastMessage = QuaterniusArt.UseArt
+                ? "切到 Quaternius 素材"
+                : "素材已关闭，退回体块（领域状态不变）";
         }
 
         /// <summary>
@@ -230,6 +278,7 @@ namespace ElysFarm.Demo
                 if (view != null)
                 {
                     view.Walking = false;
+                    view.Avatar.SetWalking(false);
                     view.PendingFieldId = null;
                     view.NextActionAt = 0f;
                     view.Intent = "按工单开工";
@@ -276,7 +325,7 @@ namespace ElysFarm.Demo
             World.AddNpc(AyaId, "阿芽", new FarmPosition(0f, -3f), NpcPersona.Aya);
             World.AddNpc(AtuId, "阿土", new FarmPosition(1.5f, -3f), NpcPersona.Atu);
 
-            World.SetProduceStore(new FarmPosition(-3.4f, -1.8f));
+            World.SetProduceStore(ProduceStoreSpot);
             World.AddSeeds(CropCatalog.RadishId, 12);
             World.AddSeeds(CropCatalog.WheatId, 4);
 
@@ -288,124 +337,68 @@ namespace ElysFarm.Demo
                 + (UsingModel ? "（模型在线）" : "（本地模板）");
         }
 
-        void BuildBlockScene()
+        void BuildScene()
         {
-            CreateBlock("Ground", new Vector3(2f, -0.1f, 0f), new Vector3(38f, 0.2f, 28f), new Color(0.32f, 0.46f, 0.26f));
-
-            foreach (var field in World.Fields)
+            if (visualRoot != null)
             {
-                CreateFieldView(field);
+                Destroy(visualRoot.gameObject);
             }
 
-            CreateBlock(
-                "Produce Store",
-                new Vector3(-3.4f, 0.8f, -1.8f),
-                new Vector3(2.4f, 1.6f, 2.4f),
-                new Color(0.58f, 0.38f, 0.22f));
+            visualRoot = new GameObject("Farm Visuals").transform;
+            visualRoot.SetParent(transform, false);
 
-            CreateBlock(
-                "Rest Spot",
-                new Vector3(RestSpot.X, 0.35f, RestSpot.Z),
-                new Vector3(3.2f, 0.7f, 1.4f),
-                new Color(0.82f, 0.70f, 0.30f));
+            FarmDressing.ApplyLighting();
+            FarmDressing.Build(visualRoot);
+
+            fieldViews.Clear();
+            foreach (var field in World.Fields)
+            {
+                var view = new CropFieldView(field);
+                view.Build(visualRoot);
+                fieldViews.Add(view);
+            }
 
             npcRoot = new GameObject("NPCs").transform;
-            npcRoot.SetParent(transform, false);
+            npcRoot.SetParent(visualRoot, false);
 
+            npcViews.Clear();
             CreateNpc(World.GetNpc(AheId), AheColor);
             CreateNpc(World.GetNpc(AyaId), AyaColor);
             CreateNpc(World.GetNpc(AtuId), AtuColor);
 
-            FrameCamera();
+            SetUpCamera();
         }
 
-        void CreateFieldView(Field field)
+        void SetUpCamera()
         {
-            var fieldBase = CreateBlock(
-                $"Field {field.Id}",
-                new Vector3(field.Position.X, FieldTop * 0.5f, field.Position.Z),
-                new Vector3(3f, FieldTop, 3f),
-                DrySoil);
-
-            var crop = CreateBlock($"Crop {field.Id}", Vector3.zero, Vector3.one, CropGreen);
-            crop.SetActive(false);
-
-            var view = new FieldView
+            var camera = Camera.main;
+            if (camera == null)
             {
-                Field = field,
-                Crop = crop.transform,
-                CropMaterial = crop.GetComponent<Renderer>().sharedMaterial,
-                Soil = fieldBase.GetComponent<Renderer>().sharedMaterial
-            };
-
-            CreateWeeds(field, view);
-            CreateFence(field);
-            fieldViews.Add(view);
-        }
-
-        void CreateFence(Field field)
-        {
-            var postColor = new Color(0.72f, 0.62f, 0.46f);
-            var corners = new[]
-            {
-                new Vector3(field.Position.X - 1.7f, 0.4f, field.Position.Z - 1.7f),
-                new Vector3(field.Position.X + 1.7f, 0.4f, field.Position.Z - 1.7f),
-                new Vector3(field.Position.X - 1.7f, 0.4f, field.Position.Z + 1.7f),
-                new Vector3(field.Position.X + 1.7f, 0.4f, field.Position.Z + 1.7f)
-            };
-
-            foreach (var corner in corners)
-            {
-                CreateBlock("Fence Post", corner, new Vector3(0.16f, 0.8f, 0.16f), postColor);
-            }
-        }
-
-        void CreateWeeds(Field field, FieldView view)
-        {
-            var weeds = new GameObject($"Weeds {field.Id}").transform;
-            weeds.SetParent(transform, false);
-            weeds.position = new Vector3(field.Position.X, FieldTop + 0.1f, field.Position.Z);
-
-            var tuftMaterial = CreateMaterial("Weed", WeedGreen);
-            var offsets = new[]
-            {
-                new Vector3(-1.05f, 0f, -1.05f),
-                new Vector3(1.05f, 0f, -1.05f),
-                new Vector3(-1.05f, 0f, 1.05f),
-                new Vector3(1.05f, 0f, 1.05f)
-            };
-
-            foreach (var offset in offsets)
-            {
-                var tuft = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                tuft.name = "Weed Tuft";
-                tuft.transform.SetParent(weeds, false);
-                tuft.transform.localPosition = offset;
-                tuft.transform.localScale = new Vector3(0.45f, 0.5f, 0.45f);
-                tuft.GetComponent<Renderer>().sharedMaterial = tuftMaterial;
+                var cameraObject = new GameObject("Main Camera") { tag = "MainCamera" };
+                camera = cameraObject.AddComponent<Camera>();
+                if (UnityEngine.Object.FindFirstObjectByType<AudioListener>() == null)
+                {
+                    cameraObject.AddComponent<AudioListener>();
+                }
             }
 
-            weeds.gameObject.SetActive(false);
-            view.Weeds = weeds;
+            cameraDirector = GetComponent<DemoCamera>();
+            if (cameraDirector == null)
+            {
+                cameraDirector = gameObject.AddComponent<DemoCamera>();
+            }
+
+            cameraDirector.Configure(camera);
+            FarmDressing.ApplyPostProcessing(camera);
         }
 
         void CreateNpc(Npc npc, Color color)
         {
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.name = $"NPC {npc.DisplayName}";
-            body.transform.SetParent(npcRoot, false);
-            body.transform.position = new Vector3(npc.Position.X, NpcGroundY, npc.Position.Z);
-            body.transform.localScale = new Vector3(0.65f, 0.8f, 0.65f);
-            body.GetComponent<Renderer>().sharedMaterial = CreateMaterial($"Npc {npc.Id}", color);
-
-            var nose = CreateBlock("Nose", Vector3.zero, new Vector3(0.22f, 0.22f, 0.4f), new Color(0.92f, 0.85f, 0.7f));
-            nose.transform.SetParent(body.transform, false);
-            nose.transform.localPosition = new Vector3(0f, 0.45f, 0.5f);
-
+            var avatar = NpcAvatar.Create(npc, npcRoot, color);
             npcViews.Add(new NpcView
             {
                 Npc = npc,
-                Body = body.transform,
+                Avatar = avatar,
                 Slot = npcViews.Count,
                 WalkSpeed = WalkSpeedOf(npc.Id)
             });
@@ -427,22 +420,6 @@ namespace ElysFarm.Demo
             }
         }
 
-        void FrameCamera()
-        {
-            ApplyCameraPose(Camera.main);
-
-            var sun = FindFirstObjectByType<Light>();
-            if (sun == null)
-            {
-                var lightObject = new GameObject("Sun");
-                sun = lightObject.AddComponent<Light>();
-                sun.type = LightType.Directional;
-            }
-
-            sun.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
-            sun.intensity = 1.15f;
-        }
-
         /// <summary>把相机摆到俯视 45° 的演示机位；场景生成器与运行时共用同一组数值。</summary>
         public static void ApplyCameraPose(Camera camera)
         {
@@ -451,10 +428,11 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            camera.transform.SetPositionAndRotation(new Vector3(0f, 12f, -16f), Quaternion.Euler(42f, 0f, 0f));
-            camera.fieldOfView = 45f;
+            var pose = CameraRig.OverheadPose;
+            camera.transform.SetPositionAndRotation(pose.Position, pose.Rotation);
+            camera.fieldOfView = pose.FieldOfView;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.13f, 0.19f, 0.24f);
+            camera.backgroundColor = new Color(0.55f, 0.66f, 0.78f);
         }
 
         void UpdateNpc(NpcView view)
@@ -465,6 +443,7 @@ namespace ElysFarm.Demo
             if (view.Walking && string.IsNullOrEmpty(view.PendingFieldId) && !npc.IsResting)
             {
                 view.Walking = false;
+                view.Avatar.SetWalking(false);
                 view.Intent = "歇好了，接着干";
             }
 
@@ -482,7 +461,7 @@ namespace ElysFarm.Demo
             if (npc.IsResting)
             {
                 var restTarget = RestTargetOf(view);
-                if (Vector3.Distance(view.Body.position, restTarget) > 0.35f)
+                if (Vector3.Distance(view.Avatar.transform.position, restTarget) > 0.35f)
                 {
                     BeginWalk(view, restTarget, $"去歇会儿（体力 {npc.Stamina:P0}）");
                 }
@@ -586,12 +565,13 @@ namespace ElysFarm.Demo
         {
             var field = World.GetField(fieldId);
             var lateral = (view.Slot - 1) * 0.55f;
-            var target = new Vector3(field.Position.X + lateral, NpcGroundY, field.Position.Z - 2.6f);
+            var target = new Vector3(field.Position.X + lateral, 0f, field.Position.Z - 2.6f);
 
             view.PendingFieldId = fieldId;
             view.PendingStep = step;
             view.WalkTarget = target;
             view.Walking = true;
+            view.Avatar.SetWalking(true);
             view.Intent = intentHint ?? $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
         }
 
@@ -601,27 +581,29 @@ namespace ElysFarm.Demo
             view.PendingStep = default;
             view.WalkTarget = target;
             view.Walking = true;
+            view.Avatar.SetWalking(true);
             view.Intent = intent;
         }
 
         Vector3 RestTargetOf(NpcView view)
         {
             var lateral = (view.Slot - 1) * 0.9f;
-            return new Vector3(RestSpot.X + lateral, NpcGroundY, RestSpot.Z);
+            return new Vector3(RestSpot.X + lateral, 0f, RestSpot.Z);
         }
 
         void Walk(NpcView view)
         {
-            var position = view.Body.position;
+            var body = view.Avatar.transform;
+            var position = body.position;
             var next = Vector3.MoveTowards(position, view.WalkTarget, view.WalkSpeed * Time.deltaTime);
-            next.y = NpcGroundY;
-            view.Body.position = next;
+            next.y = 0f;
+            body.position = next;
             World.MoveNpc(view.Npc.Id, new FarmPosition(next.x, next.z));
 
             var direction = new Vector3(view.WalkTarget.x - next.x, 0f, view.WalkTarget.z - next.z);
             if (direction.sqrMagnitude > 0.0004f)
             {
-                view.Body.rotation = Quaternion.LookRotation(direction);
+                body.rotation = Quaternion.LookRotation(direction);
             }
 
             var flatDistance = Vector2.Distance(
@@ -633,6 +615,7 @@ namespace ElysFarm.Demo
             }
 
             view.Walking = false;
+            view.Avatar.SetWalking(false);
 
             if (string.IsNullOrEmpty(view.PendingFieldId))
             {
@@ -675,32 +658,6 @@ namespace ElysFarm.Demo
             view.PendingFieldId = null;
         }
 
-        void UpdateViews()
-        {
-            foreach (var view in fieldViews)
-            {
-                var field = view.Field;
-                view.Soil.SetColor("_BaseColor", Color.Lerp(DrySoil, WetSoil, field.Water));
-
-                var sown = field.IsSown;
-                view.Crop.gameObject.SetActive(sown);
-                if (sown)
-                {
-                    var height = 0.15f + field.Growth * 1.2f;
-                    view.Crop.position = new Vector3(field.Position.X, FieldTop + height * 0.5f, field.Position.Z);
-                    view.Crop.localScale = new Vector3(0.9f, height, 0.9f);
-                    view.CropMaterial.SetColor("_BaseColor", Color.Lerp(CropGreen, CropMature, field.Growth));
-                }
-
-                view.Weeds.gameObject.SetActive(field.Weeds > 0.01f);
-                if (field.Weeds > 0.01f)
-                {
-                    var spread = 0.25f + field.Weeds * 0.9f;
-                    view.Weeds.localScale = new Vector3(spread, spread, spread);
-                }
-            }
-        }
-
         NpcView ViewOf(string npcId)
         {
             foreach (var view in npcViews)
@@ -712,42 +669,6 @@ namespace ElysFarm.Demo
             }
 
             return null;
-        }
-
-        static GameObject CreateBlock(string name, Vector3 position, Vector3 scale, Color color)
-        {
-            var block = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            block.name = name;
-            block.transform.position = position;
-            block.transform.localScale = scale;
-            block.GetComponent<Renderer>().sharedMaterial = CreateMaterial(name, color);
-            return block;
-        }
-
-        static Material CreateMaterial(string name, Color color)
-        {
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null)
-            {
-                shader = Shader.Find("Standard");
-            }
-
-            if (shader == null)
-            {
-                shader = Shader.Find("Sprites/Default");
-            }
-
-            var material = new Material(shader) { name = name };
-            if (material.HasProperty("_BaseColor"))
-            {
-                material.SetColor("_BaseColor", color);
-            }
-            else if (material.HasProperty("_Color"))
-            {
-                material.SetColor("_Color", color);
-            }
-
-            return material;
         }
     }
 }

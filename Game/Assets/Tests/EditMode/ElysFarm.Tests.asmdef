@@ -3,6 +3,7 @@
     "rootNamespace": "ElysFarm.Tests",
     "references": [
         "ElysFarm",
+        "ElysFarm.Demo",
         "ElysFarm.Model",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
