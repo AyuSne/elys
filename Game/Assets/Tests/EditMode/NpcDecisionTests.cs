@@ -99,9 +99,12 @@ namespace ElysFarm.Tests
             Assert.IsFalse(world.TryDecide("aya", out _, out var decidedReason), "一次决定要消耗决定间隔");
             Assert.AreEqual("还没拿定主意", decidedReason);
 
+            world.Tick(NpcPersona.Aya.DecisionSeconds / 2f);
             Assert.IsTrue(world.ExecuteStep("aya", ayaCandidate.FieldId, ayaCandidate.Step).Executed);
             Assert.IsFalse(world.TryDecide("aya", out _, out var cooldownReason), "执行不会重置已经开始的间隔");
             Assert.AreEqual("还没拿定主意", cooldownReason);
+            world.Tick(NpcPersona.Aya.DecisionSeconds / 2f);
+            Assert.IsTrue(world.TryDecide("aya", out _, out _), "间隔从决定时开始算，不从执行时重算");
             Assert.IsFalse(world.TryDecide("ahe", out _, out _), "阿禾还没轮到");
 
             world.Tick(NpcPersona.Ahe.DecisionSeconds);
@@ -110,11 +113,10 @@ namespace ElysFarm.Tests
 
             world.Tick(NpcPersona.Atu.DecisionSeconds);
             Assert.IsTrue(world.TryDecide("atu", out _, out _), "阿土最后也拿定主意");
-            Assert.IsTrue(world.TryDecide("aya", out _, out _), "等够决定间隔后又能决定");
         }
 
         [Test]
-        public void 体力耗尽会中断当前工步并去休息()
+        public void 体力耗尽会中断工单并去休息()
         {
             var fragile = new NpcPersona(
                 "fragile",
@@ -147,6 +149,7 @@ namespace ElysFarm.Tests
             Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第一步播种");
             Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第二步浇水后体力见底");
 
+            // 工步是原子的：浇水这一步照常记录，随后被中断的是下一步施肥。
             var npc = world.GetNpc("ahe");
             Assert.IsTrue(npc.IsResting, "体力降到阈值应中断农活去休息");
             var completed = order.CompletedCount;

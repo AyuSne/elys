@@ -56,12 +56,6 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            if (npc.Stamina < Npc.MinStamina)
-            {
-                reason = Npc.TooTiredReason;
-                return false;
-            }
-
             if (step == WorkStep.Sow)
             {
                 return TryResolveSow(world, npc, sowSpeciesId, out _, out reason);

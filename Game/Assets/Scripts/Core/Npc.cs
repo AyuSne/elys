@@ -8,7 +8,7 @@ namespace ElysFarm.Core
     /// </summary>
     public sealed class Npc
     {
-        /// <summary>低于该体力时拒绝任何工步，理由是「太累了」。</summary>
+        /// <summary>体力下限：人设的休息阈值与休息恢复量都不得让它继续下探。</summary>
         public const float MinStamina = 0.15f;
 
         /// <summary>每个游戏日恢复的体力。</summary>
@@ -16,9 +16,6 @@ namespace ElysFarm.Core
 
         /// <summary>休息中尝试干活时的统一理由。</summary>
         public const string RestingReason = "正在休息，得缓一缓";
-
-        /// <summary>体力低于下限时尝试干活时的统一理由。</summary>
-        public const string TooTiredReason = "太累了，得歇会儿";
 
         string preferredSpeciesId = CropCatalog.RadishId;
 
@@ -151,7 +148,7 @@ namespace ElysFarm.Core
             IsResting = false;
             RestSecondsRemaining = 0f;
             Stamina = FarmMath.Clamp01(Stamina + Persona.RestRecovery);
-            DecisionSecondsRemaining = Persona.DecisionSeconds;
+            MarkDecided();
         }
 
         internal void RecoverDay()

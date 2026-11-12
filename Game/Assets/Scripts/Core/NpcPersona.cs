@@ -51,8 +51,15 @@ namespace ElysFarm.Core
             RequireNonNegative(decisionSeconds, nameof(decisionSeconds));
             RequireNonNegative(exertionPerStep, nameof(exertionPerStep));
             RequireNonNegative(restSeconds, nameof(restSeconds));
-            RequireNonNegative(restRecovery, nameof(restRecovery));
             RequireNonNegative(distanceWeight, nameof(distanceWeight));
+
+            if (restRecovery < Npc.MinStamina)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(restRecovery),
+                    restRecovery,
+                    "休息恢复量不得低于体力下限");
+            }
 
             if (restThreshold < Npc.MinStamina || restThreshold > 1f)
             {
@@ -110,7 +117,7 @@ namespace ElysFarm.Core
             diligence: 0.90f,
             distanceWeight: 0.06f);
 
-        /// <summary>未指定人设时的兼容基线：不额外拖延，体力与休息沿用原来的领域常量。</summary>
+        /// <summary>未指定人设时的兼容基线：决定间隔 0、每步 0.08 体力，沿用单 NPC 版本的手感。</summary>
         public static readonly NpcPersona Default = new NpcPersona(
             "default",
             decisionSeconds: 0f,

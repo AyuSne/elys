@@ -395,6 +395,8 @@ namespace ElysFarm.Demo
         {
             switch (npcId)
             {
+                case AheId:
+                    return 2.6f;
                 case AyaId:
                     return 3.4f;
                 case AtuId:
