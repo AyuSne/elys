@@ -20,5 +20,46 @@ namespace ElysFarm.Tests
             var largest = SortingOrder.At(-12f, 5);
             Assert.That(largest, Is.InRange(short.MinValue, short.MaxValue), "排序值必须落在 16 位范围内");
         }
+
+        /// <summary>#13：土路铺在草地上，耕地画在土路之上。</summary>
+        [Test]
+        public void 土路铺在草地之上耕地在土路之上()
+        {
+            Assert.Less(SortingOrder.Ground, SortingOrder.Road, "土路铺在草地上");
+            Assert.Less(SortingOrder.Road, SortingOrder.Soil, "耕地画在土路之上");
+        }
+
+        /// <summary>
+        /// #13：人和建筑、树按 Y 排。站在地标/装饰北侧的人先画、被挡住；
+        /// 站到南侧就画在它前面。这是「遮挡关系正确」的可断言部分。
+        /// </summary>
+        [Test]
+        public void 站在地标与装饰北侧的人被挡住()
+        {
+            foreach (var landmark in FarmLayout.Landmarks)
+            {
+                AssertOccludesAt(landmark.SortBase, landmark.Kind.ToString());
+            }
+
+            foreach (var decoration in FarmLayout.Decorations)
+            {
+                AssertOccludesAt(decoration.SortBase, decoration.Kind.ToString());
+            }
+        }
+
+        static void AssertOccludesAt(float sortBase, string what)
+        {
+            var order = SortingOrder.At(sortBase);
+
+            Assert.Greater(order, SortingOrder.Soil, $"{what} 要画在耕地之上");
+            Assert.Less(
+                SortingOrder.At(sortBase + 0.5f),
+                order,
+                $"站在 {what} 北侧（身后）的人应先画，被它挡住");
+            Assert.Greater(
+                SortingOrder.At(sortBase - 0.5f),
+                order,
+                $"站在 {what} 南侧（身前）的人应后画，盖住它");
+        }
     }
 }

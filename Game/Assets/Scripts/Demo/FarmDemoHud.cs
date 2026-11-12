@@ -584,9 +584,9 @@ namespace ElysFarm.Demo
                 Submit();
             }
 
-            if (GUILayout.Button("种满萝卜", buttonStyle, GUILayout.Width(82f)))
+            if (GUILayout.Button("除草", buttonStyle, GUILayout.Width(82f)))
             {
-                commandInput = "把东边那块地种满萝卜";
+                commandInput = "去东边那块地除草";
                 Submit();
             }
 

@@ -122,6 +122,259 @@ namespace ElysFarm.Tests
             Assert.AreEqual(FarmDemoBootstrap.FieldA1, field.Id);
         }
 
+        /// <summary>#13：农舍在东、鸡舍在南，水井与产出仓各一处。</summary>
+        [Test]
+        public void 农场有四座地标且农舍在东鸡舍在南()
+        {
+            var kinds = new HashSet<LandmarkKind>();
+            foreach (var landmark in FarmLayout.Landmarks)
+            {
+                Assert.IsTrue(kinds.Add(landmark.Kind), $"地标重复：{landmark.Kind}");
+                Assert.Greater(landmark.Tiles.width, 0, $"{landmark.Kind} 占位不能为空");
+                Assert.Greater(landmark.Tiles.height, 0, $"{landmark.Kind} 占位不能为空");
+                Assert.AreEqual(
+                    landmark.Tiles.yMin,
+                    landmark.SortBase,
+                    0.0001f,
+                    "地标的排序基准是它的地面接触边，不是中心");
+                Assert.AreEqual(landmark.Tiles.xMin + landmark.Tiles.width * 0.5f, landmark.Anchor.x, 0.0001f);
+                Assert.AreEqual(landmark.Tiles.yMin, landmark.Anchor.y, 0.0001f);
+            }
+
+            CollectionAssert.AreEquivalent(
+                new[]
+                {
+                    LandmarkKind.Farmhouse,
+                    LandmarkKind.Coop,
+                    LandmarkKind.Well,
+                    LandmarkKind.ProduceStore
+                },
+                kinds,
+                "农舍、鸡舍、水井、产出仓各一座");
+
+            Assert.IsTrue(FarmLayout.TryGetLandmark(LandmarkKind.Farmhouse, out var farmhouse));
+            Assert.IsTrue(FarmLayout.TryGetLandmark(LandmarkKind.Coop, out var coop));
+
+            var fieldEast = FieldOf(FarmDemoBootstrap.FieldA3).Tiles.xMax;
+            Assert.GreaterOrEqual(farmhouse.Tiles.xMin, fieldEast, "农舍在地块以东");
+            Assert.LessOrEqual(coop.Tiles.yMin, FieldOf(FarmDemoBootstrap.FieldA1).Tiles.yMin, "鸡舍在地块以南");
+
+            foreach (var landmark in FarmLayout.Landmarks)
+            {
+                foreach (var field in FarmLayout.Fields)
+                {
+                    Assert.IsFalse(
+                        field.Tiles.Overlaps(landmark.Tiles),
+                        $"{landmark.Kind} 不该压在地块 {field.Id} 上");
+                }
+            }
+        }
+
+        static FieldFootprint FieldOf(string fieldId)
+        {
+            Assert.IsTrue(FarmLayout.TryGetField(fieldId, out var footprint), $"找不到地块 {fieldId}");
+            return footprint;
+        }
+
+        /// <summary>#13：一条土路把农舍、三块地、产出仓连成一条动线。</summary>
+        [Test]
+        public void 土路把农舍三块地与产出仓连成一条动线()
+        {
+            Assert.GreaterOrEqual(FarmLayout.RoadTiles.Count, 20, "土路要横穿一屏，不能只有几格");
+
+            var reached = RoadReachableFrom(FarmLayout.RoadTiles[0]);
+            Assert.AreEqual(
+                FarmLayout.RoadTiles.Count,
+                reached.Count,
+                "土路必须连成一条，不能断成几截");
+
+            foreach (var field in FarmLayout.Fields)
+            {
+                Assert.IsTrue(TouchesRoad(field.Tiles), $"{field.Id} 没有路通到地块边");
+            }
+
+            Assert.IsTrue(
+                TouchesRoad(LandmarkOf(LandmarkKind.Farmhouse).Tiles),
+                "农舍门口没有路");
+            Assert.IsTrue(
+                TouchesRoad(LandmarkOf(LandmarkKind.ProduceStore).Tiles),
+                "产出仓没有路");
+        }
+
+        [Test]
+        public void 地标不站在路中间()
+        {
+            foreach (var landmark in FarmLayout.Landmarks)
+            {
+                var anchorTile = new Vector2Int(
+                    Mathf.FloorToInt(landmark.Anchor.x),
+                    Mathf.FloorToInt(landmark.Anchor.y));
+                Assert.IsFalse(
+                    FarmLayout.IsRoad(anchorTile),
+                    $"{landmark.Kind} 的落点压在路上：{anchorTile}");
+            }
+        }
+
+        static Landmark LandmarkOf(LandmarkKind kind)
+        {
+            Assert.IsTrue(FarmLayout.TryGetLandmark(kind, out var landmark), $"找不到地标 {kind}");
+            return landmark;
+        }
+
+        /// <summary>#13：树与草丛沿画面外圈落位，把农场围在中间。</summary>
+        [Test]
+        public void 树和草丛压在画面边缘()
+        {
+            Assert.GreaterOrEqual(FarmLayout.Decorations.Count, 8, "外圈要有足够的树与草丛");
+
+            foreach (var decoration in FarmLayout.Decorations)
+            {
+                Assert.That(
+                    decoration.Variant,
+                    Is.InRange(0, FarmLayout.VariantCountOf(decoration.Kind) - 1),
+                    $"{decoration.Kind} 的变体号越界");
+                Assert.AreEqual(decoration.Tiles.yMin, decoration.SortBase, 0.0001f, "排序基准是地面接触边");
+                Assert.AreEqual(decoration.Tiles.xMin + decoration.Tiles.width * 0.5f, decoration.Anchor.x, 0.0001f);
+                Assert.AreEqual(decoration.Tiles.yMin, decoration.Anchor.y, 0.0001f);
+                Assert.IsTrue(
+                    IsInside(FarmLayout.Drawn, decoration.Tiles),
+                    $"{decoration.Kind} 落在没铺地面的地方：{decoration.Tiles}");
+            }
+
+            var fields = FieldsBounds();
+            Assert.IsTrue(HasTree(test => test.Tiles.xMax <= fields.xMin), "西侧要有树");
+            Assert.IsTrue(HasDecoration(test => test.Tiles.yMin >= fields.yMax), "北侧要有树或草丛");
+            Assert.IsTrue(HasDecoration(test => test.Tiles.yMax <= fields.yMin), "南侧要有树或草丛");
+
+            var eastLandmark = false;
+            foreach (var landmark in FarmLayout.Landmarks)
+            {
+                if (landmark.Tiles.xMin >= fields.xMax)
+                {
+                    eastLandmark = true;
+                }
+            }
+
+            Assert.IsTrue(eastLandmark, "东侧要有农舍或鸡舍");
+        }
+
+        [Test]
+        public void 装饰不压在地块与地标上()
+        {
+            foreach (var decoration in FarmLayout.Decorations)
+            {
+                foreach (var field in FarmLayout.Fields)
+                {
+                    Assert.IsFalse(
+                        decoration.Tiles.Overlaps(field.Tiles),
+                        $"{decoration.Kind} 压在 {field.Id} 上");
+                }
+
+                foreach (var landmark in FarmLayout.Landmarks)
+                {
+                    Assert.IsFalse(
+                        decoration.Tiles.Overlaps(landmark.Tiles),
+                        $"{decoration.Kind} 压在 {landmark.Kind} 上");
+                }
+            }
+        }
+
+        static bool HasDecoration(System.Predicate<Decoration> test)
+        {
+            foreach (var decoration in FarmLayout.Decorations)
+            {
+                if (test(decoration))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        static bool HasTree(System.Predicate<Decoration> test)
+        {
+            foreach (var decoration in FarmLayout.Decorations)
+            {
+                if (decoration.Kind == DecorationKind.Tree && test(decoration))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        static RectInt FieldsBounds()
+        {
+            var xMin = int.MaxValue;
+            var yMin = int.MaxValue;
+            var xMax = int.MinValue;
+            var yMax = int.MinValue;
+            foreach (var field in FarmLayout.Fields)
+            {
+                xMin = Mathf.Min(xMin, field.Tiles.xMin);
+                yMin = Mathf.Min(yMin, field.Tiles.yMin);
+                xMax = Mathf.Max(xMax, field.Tiles.xMax);
+                yMax = Mathf.Max(yMax, field.Tiles.yMax);
+            }
+
+            return new RectInt(xMin, yMin, xMax - xMin, yMax - yMin);
+        }
+
+        static HashSet<Vector2Int> RoadReachableFrom(Vector2Int start)
+        {
+            var reached = new HashSet<Vector2Int>();
+            if (!FarmLayout.IsRoad(start))
+            {
+                return reached;
+            }
+
+            var queue = new Queue<Vector2Int>();
+            queue.Enqueue(start);
+            reached.Add(start);
+
+            var steps = new[]
+            {
+                new Vector2Int(1, 0),
+                new Vector2Int(-1, 0),
+                new Vector2Int(0, 1),
+                new Vector2Int(0, -1)
+            };
+
+            while (queue.Count > 0)
+            {
+                var tile = queue.Dequeue();
+                foreach (var step in steps)
+                {
+                    var next = tile + step;
+                    if (FarmLayout.IsRoad(next) && reached.Add(next))
+                    {
+                        queue.Enqueue(next);
+                    }
+                }
+            }
+
+            return reached;
+        }
+
+        /// <summary>路面有没有碰到这块占位：压在上面或贴着边都算通。</summary>
+        static bool TouchesRoad(RectInt tiles)
+        {
+            for (var y = tiles.yMin - 1; y <= tiles.yMax; y++)
+            {
+                for (var x = tiles.xMin - 1; x <= tiles.xMax; x++)
+                {
+                    if (FarmLayout.IsRoad(new Vector2Int(x, y)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         static bool IsInside(RectInt area, RectInt rect)
         {
             return rect.xMin >= area.xMin

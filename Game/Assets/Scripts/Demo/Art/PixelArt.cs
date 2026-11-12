@@ -115,6 +115,12 @@ namespace ElysFarm.Demo
 
         public const string HoeDirtAtlasPath = "Tiles/hoeDirt";
 
+        /// <summary>
+        /// 立在地面上的东西（地标、树、草丛、角色）的落点：底边中点。
+        /// 落点就是排序基准，换成中心会让「谁挡谁」和脚底位置一起偏。
+        /// </summary>
+        public static readonly Vector2 GroundPivot = new Vector2(0.5f, 0f);
+
         /// <summary>是否使用像素素材；演示启动时会读环境变量 <c>ELYS_FORCE_BLOCKS=1</c> 强制退回体块。</summary>
         public static bool UseArt { get; set; } = true;
 
@@ -302,6 +308,78 @@ namespace ElysFarm.Demo
         public static Sprite LoadShadow()
         {
             return LoadSprite("LooseSprites/shadow", new SpriteCell(0, 0, 12, 7), new Vector2(0.5f, 0.35f));
+        }
+
+        /// <summary>地标用哪张图。素材关掉或缺失时由调用方跳过这个地标。</summary>
+        public static string LandmarkAtlasOf(LandmarkKind kind)
+        {
+            switch (kind)
+            {
+                case LandmarkKind.Farmhouse:
+                    return "Buildings/farmhouse";
+                case LandmarkKind.Coop:
+                    return "Buildings/coop";
+                case LandmarkKind.Well:
+                    return "Buildings/well";
+                case LandmarkKind.ProduceStore:
+                    return "Buildings/barrel";
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>装饰用哪张图；变体越界返回 null，由调用方跳过。</summary>
+        public static string DecorationAtlasOf(DecorationKind kind, int variant)
+        {
+            if (variant < 0 || variant >= FarmLayout.VariantCountOf(kind))
+            {
+                return null;
+            }
+
+            switch (kind)
+            {
+                case DecorationKind.Tree:
+                    return variant == 0 ? "Nature/tree1" : "Nature/tree2";
+                case DecorationKind.Stump:
+                    return "Nature/stump";
+                case DecorationKind.GrassTuft:
+                    switch (variant)
+                    {
+                        case 0:
+                            return "Nature/grass1";
+                        case 1:
+                            return "Nature/grass2";
+                        default:
+                            return "Nature/grass3";
+                    }
+
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>整张图当一张精灵：地标与装饰都是单独的 PNG，不需要切格。</summary>
+        public static Sprite LoadWhole(string name, Vector2 pivot)
+        {
+            var texture = LoadTexture(name);
+            if (texture == null)
+            {
+                return null;
+            }
+
+            return LoadSprite(name, new SpriteCell(0, 0, texture.width, texture.height), pivot);
+        }
+
+        /// <summary>一座地标的图；缺失时返回 null，场景跳过它。</summary>
+        public static Sprite LoadLandmark(LandmarkKind kind)
+        {
+            return LoadWhole(LandmarkAtlasOf(kind), GroundPivot);
+        }
+
+        /// <summary>一棵树、一段树桩或一丛草的图；缺失时返回 null，场景跳过它。</summary>
+        public static Sprite LoadDecoration(DecorationKind kind, int variant)
+        {
+            return LoadWhole(DecorationAtlasOf(kind, variant), GroundPivot);
         }
     }
 }

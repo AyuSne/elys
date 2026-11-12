@@ -7,6 +7,9 @@ namespace ElysFarm.Demo
     {
         public const int Ground = -10000;
 
+        /// <summary>土路铺在草地上，但仍在耕地与所有立起来的东西之下。</summary>
+        public const int Road = -9500;
+
         public const int Soil = -9000;
 
         public static int At(float worldY, int bias = 0)

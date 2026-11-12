@@ -29,8 +29,8 @@
 
 - 需要 `await` 的 EditMode 测试直接写 `[Test] public async Task ...`，不需要 `[UnityTest]` 协程。用 `Task.WhenAny` + 很小的 deadline 测超时，别用 `.Result` / `.Wait()` 阻塞主线程。
 - 测试程序集 `overrideReferences: true` 时，引用新 asmdef（例如 `ElysFarm.Model`）要显式加进 `references`；想在测试里直接用 Newtonsoft 还要加 `precompiledReferences`，否则编译不到。
-- 全套 130+ 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
-- #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。2D 的纯逻辑测试（`CameraRig`、`CropStages`、`PixelArt`、`FarmLayout`、`SortingOrder`）同样只引这个程序集。
+- 全套 150 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
+- #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。2D 的纯逻辑测试（`CameraRig`、`CropStages`、`PixelArt`、`FarmLayout`、`SortingOrder`、`FarmStartup`）同样只引这个程序集。
 - 2D 的素材测试不 `Resources.Load` 真实 PNG（贴图被移走就红）；切格与四方向都用纯函数断言，素材本身由 Play Mode 截图验收。3D 版本（`main`）仍用 `Resources/Quaternius` 与 `ArtMaterialTests`。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
 
 ## 驱动 Editor 与验证演示
@@ -43,6 +43,7 @@
 - 结束时 `editor.playmode stop`，把 `set_run_in_background` / `set_auto_tick` 关掉，再 `editor quit`。
 - **`script eval` 的引号很脆。** 代码里带 `|`、双引号或多个语句时，PowerShell 容易拆坏参数，报 `Bad Request. Give either code or file, not both`。把代码写到 `Game/Temp/<name>.cs`（`Temp/` 被 gitignore），用 `--file Temp/<name>.cs`。
 - **Editor 不一定自动重编译。** 改完 `.cs` 后 Play 里仍是旧行为、`script eval` 反射不到新方法时，执行 `unity command script recompile`，轮询 `script recompile_status` 到 `status: completed`（不是 `idle`），再重开 Play；并用反射确认新程序集已加载。
+- **别在 Play Mode 里 `script recompile`。** 域重载会把场景对象重建在帧中间，`FarmDemoBootstrap.Update` 与 `FarmDemoHud.OnGUI` 会刷出成百上千条 `NullReferenceException`（`World` 还是 null），日志看起来像场景崩了。顺序是 `editor.playmode stop` → `script recompile` → `editor.playmode start`。
 - 人设参数里不要放行走速度这类纯表现数据：`NpcPersona` 只留影响决策的字段，走路速度由 `FarmDemoBootstrap.WalkSpeedOf` 映射；否则范围注记与实现会打架。
 - `capture` / `scene open` / `--file` 的路径都相对于 **Unity 工程根目录**（`Game/`），不是仓库根目录。
 
@@ -68,10 +69,14 @@
 - `--source camera` 的 IMGUI 叠层按渲染分辨率合成，右侧决策面板会被裁或错位（真实 Game 窗口里没有这个问题）；文档截图优先用 `--source screen` 并先 `editor focus`。
 - **演示层截图前先清掉临时对象。** `script eval` 里创建的相机/灯如果不 parent 到临时 root 并 `DestroyImmediate(root)`，会留在打开的场景里、被带进 Play（例如作物展示台的 `Showcase Camera` 会盖住主相机）。重建 `FarmDemo.unity` 能清掉。
 - 顶部「镜头」条放在左右面板之间的空档（`PanelMargin + LeftPanelWidth` 到 `Screen.width - PanelMargin - InspectorPanelWidth`），547 高度下五个按钮刚好放下；窗口再窄时顶部条会隐藏，用键盘 `C` 俯视、`1/2/3` 跟拍兜底。跟拍时右侧决策面板与流水收起，靠 `demo.IsOverheadCamera` 判断，不要用 `SelectedNpc` 判断跟拍对象（观察对象和跟拍对象可以不同）。
-- **像素素材**：`Assets/Resources/PixelArt` 的 PNG 走 `PixelArtImportPostprocessor`（点采样、无压缩、无 mipmap）。切图在 `PixelArt` 里按 `SpriteCell` 运行时创建，别把 PNG 改成 Sprite 资产，否则 `Resources.Load<Texture2D>` 与切格测试都会变。
-- **排序**：`Renderer.sortingOrder` 是 16 位有符号整数；`100000 - y*100` 会回绕成负数，被地面盖住。用 `SortingOrder.At`（`-y*100 + bias`）：地面 Tilemap -10000、耕地 -9000，作物与角色按 y。
+- **像素素材**：`Assets/Resources/PixelArt` 的 PNG 走 `PixelArtImportPostprocessor`（点采样、无压缩、无 mipmap）。切图在 `PixelArt` 里按 `SpriteCell` 运行时创建，别把 PNG 改成 Sprite 资产，否则 `Resources.Load<Texture2D>` 与切格测试都会变。整张就是一件东西的图（农舍、树、草丛）走 `PixelArt.LoadWhole` / `LoadLandmark` / `LoadDecoration`，不要为它们再切格。
+- **排序**：`Renderer.sortingOrder` 是 16 位有符号整数；`100000 - y*100` 会回绕成负数，被地面盖住。用 `SortingOrder.At`（`-y*100 + bias`）：地面 Tilemap -10000、土路 -9500、耕地 -9000，作物、角色、地标与装饰按 y。
+- **立在地面上的东西统一用底边中点**：地标与装饰的落点、排序基准都是占位底边的中点（`Landmark/Decoration.Anchor` 与 `SortBase`，`PixelArt.GroundPivot`）。换成中心会让「谁挡谁」和脚底位置一起偏；改占位尺寸时同步 `FarmLayout.TileSizeOf` 与 `VariantCountOf`。
 - **作物图集**：每个品种是一条 8 格横条；行号是 `rowInSpriteSheet / 2`，奇数行占右半边（列再 +8）。成熟格因品种不同：萝卜第 6 格、小麦第 5 格；最后一格常是空的（留茬再生用），别把 7 当成熟。
 - **Play 截图**：`capture game_view --source camera --overlay false` 不画 IMGUI，能单独看像素场景；`--source screen` 会叠上旧 HUD，旧 HUD 仍在时别拿它判断「场景没画出来」。
+- **`capture` 的取景比 Game 视图窄**：正交半高由 `Screen.height`（547）算，`capture` 却按 1280×720 出图 —— 720 高、48px/格时只看到约 20.3 格宽、11.4 格高，而 Game 视图有约 24.5 格宽。构图照 `farm2d_hud.png` 验收时按截图的 20 格宽摆东西：摆在 x=±11 之外的树只剩一条边。
+- **开局三个月阶段**：`FarmStartup.Seed` 用 `Field` 的公开工步与 `AdvanceDay` 往前推（不走时钟），所以开局仍是第 1 天；改肥力常量或生长公式后，`FarmStartupTests` 会先红。三块地因此都是「已经种上」的状态，示范播种要么先收一茬，要么用别的例句。
+- **`FarmLayout` 是唯一布局来源**：土路（`RoadTiles`）、地标（`Landmarks`）、装饰（`Decorations`）都在这里，`FarmDressing`/`FarmProps` 只照着摆。新加的东西要过四条测试：不压地块、两两不重叠、落点不在路中间、树与草丛压住画面外圈。
 
 ## 领域与规格
 
@@ -84,6 +89,7 @@
 - 决策可视化五项是记忆 / 意图 / 候选与否决原因 / 最近一次模型调用 / 状态条；面板只能读快照，不要把 prompt、token 流、工单进度或人设注脚塞进去。
 - 先读 `GLOSSARY.md` 再命名。`仓库` / `carry` 都是明文 Avoid 的词；本票因此做了一次大范围重命名（产出仓 / 随身 / held）。
 - 三个出口的最终裁决点在 `LocalIntentParser.IsFarmRequest`（#8）：请求一定进动作校验，非请求一定不产生工单；模型只提供细节。改词表后跑 `ChatTests`。`种子` / `种类` 里的「种」是名词，`FirstActionIndex` 会跳过；新增动作词时要同步 `DetectGoal`，否则会出现「是请求但没有目标」的拒绝。
+- 动作词必须是**连写的**才算数：「除草」能识别，「把…的草除了」里没有相邻的动作词，整句会被判成闲聊。演示里的例句照 `ActionWords` 写（「去东边那块地除草」），别用「把…的草除一下」这种拆开的说法。
 - 闲聊只走 `FarmWorld.RememberChat`：它一次写「玩家说「…」」记忆并提取传闻。`FarmWorld.TryRetell` 只写听者的记忆（说法原样、来源换人、importance 每转一手减一），不要顺手给讲者补记忆或流水，否则 A→B→C 的断言会被重复条目搅乱。
 - 演示层的 NPC 对话每 4 秒触发一次：挑一名不走路、不休息的 NPC，找一名不走路且听得见的同伴；把两人的 `NextActionAt` 往后推 1.2 秒，意图文案才留得住（`UpdateNpc` 在 `NextActionAt` 之前直接返回）。
 - 规格「收获进产出仓」与「随身只在产出仓移交」存在歧义。本票的选择是收获直接进产出仓，随身移交只在 `FarmWorld` API 层测试；演示场景里随身为 0。要加送货/出售任务前，先在 issue 里把语义定死。

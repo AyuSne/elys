@@ -323,8 +323,14 @@ namespace ElysFarm.Demo
 
             foreach (var footprint in FarmLayout.Fields)
             {
-                World.AddField(footprint.Id, FarmLayout.ToFarmPosition(footprint.Center), 0.3f);
+                World.AddField(
+                    footprint.Id,
+                    FarmLayout.ToFarmPosition(footprint.Center),
+                    FarmStartup.FieldFertility);
             }
+
+            // 开局三块地各停在一个阶段：幼苗的萝卜、熟了的小麦、快熟的萝卜。
+            FarmStartup.Seed(World);
 
             foreach (var spawn in FarmLayout.NpcSpawns)
             {
@@ -366,6 +372,7 @@ namespace ElysFarm.Demo
             visualRoot.SetParent(transform, false);
 
             FarmDressing.Build(visualRoot);
+            FarmProps.Build(visualRoot);
 
             fieldViews.Clear();
             foreach (var field in World.Fields)

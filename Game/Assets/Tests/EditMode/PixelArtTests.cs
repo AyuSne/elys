@@ -114,5 +114,58 @@ namespace ElysFarm.Tests
 
             Assert.AreEqual(Rect.zero, default(SpriteCell).RectIn(288), "无效格位不产生矩形");
         }
+
+        /// <summary>#13：农舍、鸡舍、水井、产出仓各用一张图，树、树桩、草丛也一样。</summary>
+        [Test]
+        public void 地标与装饰各有自己的素材()
+        {
+            var landmarkPaths = new System.Collections.Generic.HashSet<string>();
+            foreach (LandmarkKind kind in System.Enum.GetValues(typeof(LandmarkKind)))
+            {
+                var path = PixelArt.LandmarkAtlasOf(kind);
+                Assert.IsNotNull(path, $"{kind} 应有素材");
+                Assert.IsTrue(landmarkPaths.Add(path), $"{kind} 的素材不该与别人重复");
+            }
+
+            var decorationPaths = new System.Collections.Generic.HashSet<string>();
+            foreach (DecorationKind kind in System.Enum.GetValues(typeof(DecorationKind)))
+            {
+                var variants = FarmLayout.VariantCountOf(kind);
+                for (var variant = 0; variant < variants; variant++)
+                {
+                    var path = PixelArt.DecorationAtlasOf(kind, variant);
+                    Assert.IsNotNull(path, $"{kind} 的第 {variant} 种应有素材");
+                    Assert.IsTrue(decorationPaths.Add(path), $"{kind} 第 {variant} 种的素材重复了");
+                }
+
+                Assert.IsNull(
+                    PixelArt.DecorationAtlasOf(kind, variants),
+                    $"{kind} 没有第 {variants} 种图，越界要返回 null");
+                Assert.IsNull(PixelArt.DecorationAtlasOf(kind, -1), "变体号不能为负");
+            }
+        }
+
+        [Test]
+        public void 关掉素材后地标与装饰取图为空()
+        {
+            PixelArt.UseArt = false;
+
+            foreach (LandmarkKind kind in System.Enum.GetValues(typeof(LandmarkKind)))
+            {
+                Assert.IsNull(PixelArt.LoadLandmark(kind), $"{kind} 也要回退");
+            }
+
+            foreach (DecorationKind kind in System.Enum.GetValues(typeof(DecorationKind)))
+            {
+                Assert.IsNull(PixelArt.LoadDecoration(kind, 0), $"{kind} 也要回退");
+            }
+        }
+
+        [Test]
+        public void 地标与装饰以底边中点为落点()
+        {
+            Assert.AreEqual(new Vector2(0.5f, 0f), PixelArt.GroundPivot, "立在地面上的东西脚底要对齐落点");
+            Assert.AreNotEqual(PixelArt.GroundPivot, new Vector2(0.5f, 0.5f), "不能用中心，否则排序与落点都会偏");
+        }
     }
 }
