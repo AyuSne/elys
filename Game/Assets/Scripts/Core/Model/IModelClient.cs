@@ -11,6 +11,9 @@ namespace ElysFarm.Core
     /// </summary>
     public interface IModelClient
     {
+        /// <summary>模型名；失败调用没有响应可读，也必须能从客户端拿到。</summary>
+        string ModelName { get; }
+
         /// <summary>发起一次对话补全请求。</summary>
         Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default);
     }

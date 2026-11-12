@@ -89,7 +89,7 @@
 - 开关放在左侧标题行，右侧临时面板也留一个入口；关闭时 `OnGUI` 不调用 `World.Inspect`，也不构造快照。
 - 截图验证时可用 `script eval` 反射 `FarmDemoHud.inspectorOpen` 私有字段；这是演示层字段，不要为截图加公开 API。
 - 16x 下 1 个游戏日约 18.75 秒，`Start-Sleep` 会睡过头；截状态图前先切回 1x，否则有序工单可能已经干完、意图变成「待命」。
-- 面板的「模型/耗时/token」直接来自 `Router.LastCall`；实测 deepseek-flash 意图解析 0.99–1.57 秒，`ModelCallInfo.None` 显示「未调用（本地模式）」。
+- 面板的「模型/耗时/token」直接来自 `Router.LastCall`；实测 deepseek-flash 意图解析 0.99–1.57 秒，`ModelCallInfo.None` 显示「未调用（本地模式）」。失败/超时也带客户端模型名与实测耗时；token 未返回时显示「token 未返回」，不要拿 0+0 冒充测量值。
 
 - Game 视图实际是 1175×547 时，`capture` 输出 1280×720；按 720 摆 HUD 会重叠。布局要按 `Screen.width/height` 算，并在 547 高度下截图验收。
 - 左侧状态面板与右侧决策面板在 547 高度下各只有约 326 逻辑像素。`GUILayout.Label` 不设宽度会换行，直接把面板撑到下方日志区；三块地并排成一行、账本压成一行能省出 60+ 像素。相机也要避开底部 HUD：本票把机位从 z=-10 退到 z=-16，NPC 和草垛才不会被日志面板挡住。

@@ -32,6 +32,9 @@ namespace ElysFarm.Model
             }
         }
 
+        /// <summary>本次接入使用的模型名；失败时决策可视化也要能展示它。</summary>
+        public string ModelName => settings.Model;
+
         /// <summary>发起一次对话补全。</summary>
         public async Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default)
         {

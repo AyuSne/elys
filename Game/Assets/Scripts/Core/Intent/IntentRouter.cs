@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -77,6 +78,7 @@ namespace ElysFarm.Core
             }
 
             using var timeout = new CancellationTokenSource();
+            var startedAt = Stopwatch.StartNew();
             ChatRequest request;
             Task<ChatResponse> callTask;
             try
@@ -87,11 +89,18 @@ namespace ElysFarm.Core
             }
             catch (Exception ex)
             {
+                startedAt.Stop();
                 return Finish(LocalFallback(
                     text,
                     world,
                     npc,
-                    new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Error, ex.Message)));
+                    new ModelCallInfo(
+                        client.ModelName,
+                        startedAt.Elapsed.TotalSeconds,
+                        0,
+                        0,
+                        ModelCallOutcome.Error,
+                        ex.Message)));
             }
 
             var deadlineTask = Task.Delay(TimeSpan.FromSeconds(deadline), timeout.Token);
@@ -104,7 +113,7 @@ namespace ElysFarm.Core
             {
                 Observe(callTask);
                 var timedOut = new ModelCallInfo(
-                    null,
+                    client.ModelName,
                     deadline,
                     0,
                     0,
@@ -120,15 +129,23 @@ namespace ElysFarm.Core
             }
             catch (Exception ex)
             {
+                startedAt.Stop();
                 return Finish(LocalFallback(
                     text,
                     world,
                     npc,
-                    new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Error, ex.Message)));
+                    new ModelCallInfo(
+                        client.ModelName,
+                        startedAt.Elapsed.TotalSeconds,
+                        0,
+                        0,
+                        ModelCallOutcome.Error,
+                        ex.Message)));
             }
 
+            var responseModel = string.IsNullOrWhiteSpace(response.Model) ? client.ModelName : response.Model;
             var call = new ModelCallInfo(
-                response.Model,
+                responseModel,
                 response.LatencySeconds,
                 response.PromptTokens,
                 response.CompletionTokens,
@@ -137,7 +154,7 @@ namespace ElysFarm.Core
             if (!ModelIntentParser.TryParse(response.Content, out var draft, out _))
             {
                 var unusable = new ModelCallInfo(
-                    response.Model,
+                    responseModel,
                     response.LatencySeconds,
                     response.PromptTokens,
                     response.CompletionTokens,

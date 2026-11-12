@@ -106,9 +106,9 @@ namespace ElysFarm.Demo
                 case ModelCallOutcome.Ok:
                     return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens}";
                 case ModelCallOutcome.Timeout:
-                    return $"超时 {call.LatencySeconds:0.0}s · {tokens} · 回退模板";
+                    return $"{ModelName(call)} 超时 {call.LatencySeconds:0.0}s 上限 · token 未返回 · 回退模板";
                 case ModelCallOutcome.Error:
-                    return $"失败 {call.LatencySeconds:0.00}s · {tokens} · 回退模板";
+                    return $"{ModelName(call)} 失败 {call.LatencySeconds:0.00}s · token 未返回 · 回退模板";
                 case ModelCallOutcome.Unusable:
                     return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens} · 回退模板";
                 case ModelCallOutcome.Guard:

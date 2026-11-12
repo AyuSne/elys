@@ -114,7 +114,7 @@ namespace ElysFarm.Tests
 
             var attempt = world.ExecuteStep("ahe", rejected.FieldId, rejected.Step);
             Assert.IsFalse(attempt.Executed, "被否决的候选不能再执行");
-            Assert.AreEqual(attempt.Reason, rejected.RejectionReason, "快照里的否决原因必须就是动作校验的返回值");
+            Assert.AreEqual(attempt.Reason, rejected.RejectionReason, "快照里的否决原因必须就是执行时动作校验给出的理由");
         }
 
         [Test]

@@ -45,6 +45,8 @@ namespace ElysFarm.Tests
                 this.onChat = onChat;
             }
 
+            public string ModelName => "fake-deepseek";
+
             public Task<ChatResponse> CompleteAsync(ChatRequest request, CancellationToken cancellationToken = default)
             {
                 Calls++;
@@ -385,6 +387,32 @@ namespace ElysFarm.Tests
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId));
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
             Assert.IsNull(world.WorkOrderOf("ahe"));
+        }
+
+        [Test]
+        public async Task 模型失败与超时也记录模型名与耗时()
+        {
+            var world = NewWorld();
+            var failed = new IntentRouter(new ScriptedModelClient((_, __) =>
+                throw new InvalidOperationException("模拟断网")));
+
+            var error = await failed.RouteAsync("把东边那块地种满萝卜", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual(ModelCallOutcome.Error, error.Call.Outcome);
+            Assert.AreEqual("fake-deepseek", error.Call.Model, "失败也要能展示模型名");
+            Assert.GreaterOrEqual(error.Call.LatencySeconds, 0d, "失败也要记录耗时");
+
+            var never = new TaskCompletionSource<ChatResponse>();
+            var slow = new IntentRouter(new ScriptedModelClient((_, __) => never.Task));
+            var timeout = await slow.RouteAsync(
+                "把东边那块地种满萝卜",
+                world,
+                world.GetNpc("ahe"),
+                deadlineSeconds: 0.05f);
+
+            Assert.AreEqual(ModelCallOutcome.Timeout, timeout.Call.Outcome);
+            Assert.AreEqual("fake-deepseek", timeout.Call.Model, "超时也要能展示模型名");
+            Assert.AreEqual(0.05d, timeout.Call.LatencySeconds, 0.01d, "超时应记录等待上限");
         }
 
         [Test]
