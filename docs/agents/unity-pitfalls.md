@@ -17,7 +17,7 @@
 
 - 编辑模式测试不需要开 Editor：`unity test Game --mode EditMode --timeout 900`。Editor 开着（尤其 Play Mode）时 `unity test` 会拒绝。
 - 退出码 6 + `TEST_RUN_ERROR` 通常只是编译失败；真正的 `error CSxxxx` 在 `%LOCALAPPDATA%\Unity\Editor\Editor.log`，CLI 也可能只打印「编辑器日志报告了以下错误」。JSON 里没有编译错误详情。
-- **编译失败时 `TestResults/editmode.xml` 不会被覆盖**，留在那里的是上一次的成功报告。看到 CLI 说「Scripts have compiler errors」就不要再读报告，否则会把上一次的 132/132 当成这一次通过。隔壁 `Editor.log` 不是合法 UTF-8，严格解码会抛 `DecoderFallbackException`；用 `[Text.Encoding]::GetEncoding(28591)`（Latin1）读，再过滤 `error CS\d+` 即可（这些行是 ASCII）。
+- **编译失败时 `TestResults/editmode.xml` 不会被覆盖**，留在那里的是上一次的成功报告。看到 CLI 说「Scripts have compiler errors」就不要再读报告，否则会把上一次的报告（例如 170/170）当成这一次通过。隔壁 `Editor.log` 不是合法 UTF-8，严格解码会抛 `DecoderFallbackException`；用 `[Text.Encoding]::GetEncoding(28591)`（Latin1）读，再过滤 `error CS\d+` 即可（这些行是 ASCII）。
 - 测试引用尚不存在的 API 会让整个测试程序集编译失败。一次只加一个纵向切片；红灯先看是「编译错」还是「断言错」。
 - `unity test` 成功时通常**没有 stdout**，报告默认写到**当前工作目录**的 `test-results.xml`（不是 `Game/`）。读报告要严格按 UTF-8 解码；PowerShell 的 `[xml](Get-Content ...)` 遇到中文测试名会报「意外标记」：
 
@@ -29,9 +29,9 @@
 
 - 需要 `await` 的 EditMode 测试直接写 `[Test] public async Task ...`，不需要 `[UnityTest]` 协程。用 `Task.WhenAny` + 很小的 deadline 测超时，别用 `.Result` / `.Wait()` 阻塞主线程。
 - 测试程序集 `overrideReferences: true` 时，引用新 asmdef（例如 `ElysFarm.Model`）要显式加进 `references`；想在测试里直接用 Newtonsoft 还要加 `precompiledReferences`，否则编译不到。
-- 全套 150 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
+- 全套 170 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
 - #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。2D 的纯逻辑测试（`CameraRig`、`CropStages`、`PixelArt`、`FarmLayout`、`SortingOrder`、`FarmStartup`）同样只引这个程序集。
-- 2D 的素材测试不 `Resources.Load` 真实 PNG（贴图被移走就红）；切格与四方向都用纯函数断言，素材本身由 Play Mode 截图验收。3D 版本（`main`）仍用 `Resources/Quaternius` 与 `ArtMaterialTests`。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
+- 2D 的素材测试不 `Resources.Load` 真实 PNG（贴图被移走就红）；切格与四方向都用纯函数断言，素材本身由 Play Mode 截图验收。3D 版本（`main` 合并前的历史）仍用 `Resources/Quaternius` 与 `ArtMaterialTests`，2D 分支已把这两样都移出。`AssetLayoutTests` 只断言 `Assets/Resources` 里没有 3D 模型/材质，是 #16 的打包护栏，不加载任何贴图。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
 
 ## 驱动 Editor 与验证演示
 
@@ -60,7 +60,7 @@
 - 体块回退用 `Universal Render Pipeline/Unlit`（`DemoMaterials.BlockShaderName`），不参与光照；URP 里 `GameObject.CreatePrimitive` 的默认材质属于内置管线（粉色），必须显式赋 shader。
 - 本工程 `activeInputHandler: 1`（只启用新 Input System），`Input.GetKeyDown` 会在运行时抛异常。演示输入用 IMGUI 按钮或新 Input System。
 - 新建场景会生成 `ProjectSettings/SceneTemplateSettings.json`；不属于本次功能，别顺手提交。
-- **以下四条是 `main` 上 3D 版本（Quaternius FBX）的坑；2D 分支已不用 FBX，保留作历史参考。**
+- **以下四条是 `main` 上 3D 版本（Quaternius FBX）的坑；2D 分支已不用 FBX，3D 素材也从 `Assets/Resources` 移出（#16），保留作历史参考。**
 - **Quaternius 的 FBX 自带 Blender 场景的相机与灯。** 不关掉的话，每实例化一个模型就多一个 `depth=0`、`clear=Skybox` 的相机，Game 视图会变成纯背景色（HUD 却照常刷新，很容易误判成相机或 URP 坏了）。在 `AssetPostprocessor.OnPreprocessModel` 里设 `importCameras = false`、`importLights = false`，并在 `ModelPlacement.Spawn` 里删一遍兜底；改完要 `AssetDatabase.ImportAsset(..., ForceUpdate)` 重导入全部 FBX。`FindObjectsByType<Camera>()` 里莫名多出 20+ 个 `Camera` 就是这个。
 - **Nature pack vol.3 是白模。** 树、灌木、草、石头的材质全是接近白色，靠使用方染色；`ModelPlacement.Tint` 用 MaterialPropertyBlock 给树四种绿、石头灰、草绿。不染会得到一片白色树石。
 - **模型 pivot 不统一。** 有的在脚底、有的在中心，有的带 270° X 轴校正（作物/农舍）而角色没有。落位统一用 `ModelPlacement.SnapToGround` 按渲染器世界包围盒水平居中、底部贴地；不要直接 `transform.position = target` 后 `localRotation = identity`（会把作物的 Z-up 校正转掉，作物全躺在地上）。
@@ -151,6 +151,7 @@
 
 - 跑测试：`unity test Game --mode EditMode --output TestResults/editmode.xml`，`--output` 会直接覆盖写报告。`scripts/run-tests.ps1` 额外把三个验收项（五个工步完整 / 背包守恒 / 时间推进）的结果打印出来。测试名用「工步」，不用词汇表里的 Avoid 词「步骤」。
 - 打包：`unity build Game --target StandaloneWindows64 --execute-method ElysFarm.EditorTools.FarmBuild.BuildWindows --output-path <绝对路径>\Elys.exe`。CLI 把路径作为 `-buildOutput` 传给 Editor，execute-method 必须自己读这个参数。`scripts/build-windows.ps1` 默认带 `--allow-dirty-build`（`-RequireClean` 可强制干净）：打包本身会弄脏工程文件，第二次打包时 `unity build` 的干净树检查几乎必然失败。
+- **`Builds/Windows` 不会被构建清空**：打包只覆盖同名文件，上一版残留的文件会叠在新包上，脚本报的体积就不是干净包。要报体积或交付，先删掉整个 `Builds/Windows` 再跑 `build-windows.ps1`；#16 量到过「旧 3D 文件还在、新文件只多了 14 MB」的假体积。
 - **打包会顺手改工程文件**：`PC_RPAsset.asset` 的 shader prefilter、`UniversalRenderPipelineGlobalSettings.asset` 的 `m_RuntimeSettings`、`ProjectSettings.asset` 的 `m_BuildTargetBatching`。这些是构建副产物，提交前 `git checkout --` 还原；别把它们混进功能提交。
 - 运行时 `GameObject.CreatePrimitive` + `Shader.Find("Universal Render Pipeline/Lit")` 的材质在包里可能找不到 shader（方块变粉/不可见）。URP Lit 的 GUID 已加进 `GraphicsSettings.asset` 的 Always Included Shaders；升级 URP 版本后要复核这个 GUID。
 - 构建的密钥扫描只按**确切文件名或 `.env` 后缀**判断（`.env`、`.env.local`、`.secrets.local.json`、`secrets.local.json`、`secrets.json`、`*.env`）。第一版按「文件名包含 secret」扫，直接把 `SecretFileLocator.cs` 拦成了密钥文件。`Assets/Editor/BuildSecrets.cs`、`scripts/build-windows.ps1`、`.gitignore` 三处规则要同步改。
