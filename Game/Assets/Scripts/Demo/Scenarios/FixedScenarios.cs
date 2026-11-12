@@ -27,7 +27,7 @@ namespace ElysFarm.Demo
                 Title = ScenarioCatalog.TitleOf(scenario)
             };
             var trace = new ScenarioTrace();
-            trace.Scenario(scenario, report.Title);
+            trace.Header(scenario, report.Title);
 
             try
             {
@@ -164,13 +164,13 @@ namespace ElysFarm.Demo
                             await SayAsync(beat.Text);
                             break;
                         case ScenarioBeatKind.WaitPlan:
-                            DrivePlan(beat.Number);
+                            DrivePlan(beat.Target);
                             break;
                         case ScenarioBeatKind.WaitOrderDone:
                             DriveOrderDone();
                             break;
                         case ScenarioBeatKind.WaitDay:
-                            DriveDay(beat.Number);
+                            DriveDay(beat.Target);
                             break;
                         case ScenarioBeatKind.WaitRest:
                             DriveRest();
@@ -232,14 +232,14 @@ namespace ElysFarm.Demo
                     }
 
                     var result = world.AdvanceWorkOrder(npc.Id);
-                    if (!result.Executed)
+                    if (!result.Executed && !WaitForNpc(world, npc, result.Reason, report))
                     {
-                        world.AdvanceDays(1);
+                        return;
                     }
                 }
 
                 UpdatePerformed(currentCommand);
-                trace.Steps(count, currentCommand.Performed);
+                trace.PlanSteps(count, currentCommand.Performed);
                 if (currentCommand.Performed.Count < count)
                 {
                     report.Fail(
@@ -264,19 +264,50 @@ namespace ElysFarm.Demo
                     }
 
                     var result = world.AdvanceWorkOrder(npc.Id);
-                    if (!result.Executed)
+                    if (!result.Executed && !WaitForNpc(world, npc, result.Reason, report))
                     {
-                        world.AdvanceDays(1);
+                        return;
                     }
                 }
 
                 UpdatePerformed(currentCommand);
-                trace.Steps(currentCommand.PlannedSteps.Count, currentCommand.Performed);
+                trace.PlanSteps(currentCommand.PlannedSteps.Count, currentCommand.Performed);
                 if (currentCommand.Performed.Count < currentCommand.PlannedSteps.Count)
                 {
                     report.Fail(
                         $"「{currentCommand.Text}」没跑完：{currentCommand.Performed.Count}/{currentCommand.PlannedSteps.Count}");
                 }
+            }
+
+            /// <summary>
+            /// 工步没执行时，只有「等作物 / 等杂草 / 等水分下降」与「NPC 在休息」算自然等待；
+            /// 种子不足、地块被占、工单不存在这类错误必须让剧本失败，不能靠过一天掩盖。
+            /// 自然等待分别用游戏日与休息秒数推进，证据里的 day 因此来自时间推进本身。
+            /// </summary>
+            static bool WaitForNpc(FarmWorld world, Npc npc, string reason, ScenarioReport report)
+            {
+                if (npc.IsResting)
+                {
+                    world.Tick(npc.RestSecondsRemaining + 0.01f);
+                    return true;
+                }
+
+                if (IsNaturalFieldWait(reason))
+                {
+                    world.AdvanceDays(1);
+                    return true;
+                }
+
+                report.Fail($"{npc.DisplayName}被挡住了：{reason ?? "没有可执行工步"}");
+                return false;
+            }
+
+            static bool IsNaturalFieldWait(string reason)
+            {
+                return reason == "还没熟"
+                    || reason == "没什么草可除"
+                    || reason == "刚浇过，不渴"
+                    || reason == "肥力还够";
             }
 
             void DriveDay(int day)

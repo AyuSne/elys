@@ -128,7 +128,8 @@ _Avoid_：表情队列、通知中心、emote board
 
 **固定剧本**：
 一串预先写死的玩家输入与等待条件，从固定开局世界跑起；领域跑与演示回放共用一份台本，用来证明同一段演示可重复。
-_Avoid_：脚本、demo、scenario
+英文标识符用 `Scenario`（`FixedScenario` / `ScenarioPlayer` / `-elysScenario`）。
+_Avoid_：脚本、演示脚本
 
 **证据文本**：
 一条剧本跑完后的规范化可观察结局——游戏日、地块状态、三本账、执行过的计划工步——用于逐字比对；英文 `trace`。

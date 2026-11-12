@@ -15,7 +15,8 @@ param(
     [switch]$RequireClean,
     [switch]$SkipBuild,
     [switch]$SkipSmoke,
-    [switch]$SkipZip
+    [switch]$SkipZip,
+    [switch]$AllowMissingEvidence
 )
 
 $ErrorActionPreference = 'Stop'
@@ -124,6 +125,43 @@ if (Test-Path $zipPath) {
     Copy-Item $zipPath (Join-Path $deliveryDirectory 'Elys-Windows.zip')
 }
 
+$required = @(
+    'README.md',
+    'docs/delivery.md',
+    'docs/video/elys-demo.mp4',
+    'docs/video/elys-demo.chapters.txt',
+    'TestResults/scenarios/summary.md',
+    'TestResults/video/video-report.md',
+    'TestResults/perf/perf-report.md',
+    'TestResults/clean-environment/report.md',
+    'TestResults/editmode.xml'
+)
+if (-not $SkipZip) {
+    $required += 'Builds/Elys-Windows.sha256'
+    $required += 'Builds/Elys-Windows.manifest.json'
+}
+
+$missing = @($required | Where-Object { -not (Test-Path (Join-Path $repoRoot $_)) })
+if ($missing.Count -gt 0) {
+    if ($AllowMissingEvidence) {
+        Write-Host ('缺少交付证据（已按 -AllowMissingEvidence 继续）：' + ($missing -join ', ')) -ForegroundColor Yellow
+    } else {
+        Write-Error ("缺少交付证据，拒绝打「完整」交付目录：`n  " + ($missing -join "`n  ") + "`n先跑 run-scenarios / record-demo / perf-test / verify-clean-environment / run-tests，或加 -AllowMissingEvidence 只打开发包。")
+        exit 1
+    }
+}
+
+$testReportPath = Join-Path $repoRoot 'TestResults/editmode.xml'
+if (Test-Path $testReportPath) {
+    $testText = [Text.UTF8Encoding]::new($false, $true).GetString([IO.File]::ReadAllBytes($testReportPath))
+    [xml]$testReport = $testText
+    $totalTests = [int]$testReport.'test-run'.total
+    if ($testText -notmatch 'ScenarioTests' -or $totalTests -lt 174) {
+        Write-Error "TestResults/editmode.xml 里没有 #10 的 ScenarioTests 或总数不足 174（当前 $totalTests）；先跑 scripts/run-tests.ps1 刷新报告。"
+        exit 1
+    }
+}
+
 $copies = @(
     @{ Source = 'README.md'; Target = 'README.md' },
     @{ Source = 'docs/delivery.md'; Target = 'DELIVERY.md' },
@@ -133,6 +171,7 @@ $copies = @(
     @{ Source = 'TestResults/video/video-report.md'; Target = 'evidence/video-report.md' },
     @{ Source = 'TestResults/perf/perf-report.md'; Target = 'evidence/perf-report.md' },
     @{ Source = 'TestResults/clean-environment/report.md'; Target = 'evidence/clean-environment.md' },
+    @{ Source = 'TestResults/clean-environment/window.png'; Target = 'evidence/clean-environment.png' },
     @{ Source = 'TestResults/editmode.xml'; Target = 'evidence/editmode.xml' },
     @{ Source = 'Builds/Elys-Windows.sha256'; Target = 'Elys-Windows.sha256' },
     @{ Source = 'Builds/Elys-Windows.manifest.json'; Target = 'Elys-Windows.manifest.json' }
@@ -150,10 +189,19 @@ foreach ($copy in $copies) {
 }
 
 if (Test-Path (Join-Path $repoRoot 'TestResults/scenarios')) {
+    $scenarioRoot = Join-Path $repoRoot 'TestResults/scenarios'
     $scenarioEvidence = Join-Path $deliveryDirectory 'evidence/scenarios'
     New-Item -ItemType Directory -Force -Path $scenarioEvidence | Out-Null
-    Get-ChildItem (Join-Path $repoRoot 'TestResults/scenarios') -File -Filter '*.trace' |
+    Get-ChildItem $scenarioRoot -File -Filter '*.trace' |
         Copy-Item -Destination $scenarioEvidence -Force
+
+    $referenceRoot = Join-Path $scenarioRoot 'reference'
+    if (Test-Path $referenceRoot) {
+        $referenceEvidence = Join-Path $scenarioEvidence 'reference'
+        New-Item -ItemType Directory -Force -Path $referenceEvidence | Out-Null
+        Get-ChildItem $referenceRoot -File -Filter '*.trace' |
+            Copy-Item -Destination $referenceEvidence -Force
+    }
 }
 
 $deliveryBytes = (Get-ChildItem $deliveryDirectory -Recurse -File | Measure-Object -Property Length -Sum).Sum

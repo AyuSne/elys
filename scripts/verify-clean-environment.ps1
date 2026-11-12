@@ -5,7 +5,7 @@
 .DESCRIPTION
     这不是虚拟机，但能排除「必须装 Unity / 必须在仓库里 / 必须带密钥」这三类依赖：
     交付目录只含 Builds/Windows 里的文件，进程环境里没有任何 DEEPSEEK_* / SILICONFLOW_* / ELYS_* 变量。
-    判据：进程正常退出、memory 剧本的 trace 与领域参考逐字一致、Player.log 没有异常。
+    判据：进程正常退出、full-flow 剧本的 trace 与领域参考逐字一致、Player.log 没有异常。
 .EXAMPLE
     pwsh ./scripts/verify-clean-environment.ps1
 #>
@@ -26,7 +26,7 @@ if (-not (Test-Path $exePath)) {
     exit 1
 }
 
-$referencePath = Join-Path $repoRoot 'TestResults/scenarios/reference/memory.trace'
+$referencePath = Join-Path $repoRoot 'TestResults/scenarios/reference/full-flow.trace'
 if (-not (Test-Path $referencePath)) {
     Write-Error "缺少参考证据：$referencePath。先跑 pwsh ./scripts/run-scenarios.ps1 -RegenerateReference"
     exit 1
@@ -74,14 +74,17 @@ public static class ElysCleanCapture
 
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("elys-clean-" + [guid]::NewGuid().ToString('N'))
 $packageDirectory = Join-Path $tempRoot 'package'
-$tracePath = Join-Path $tempRoot 'clean-memory.trace'
+$tracePath = Join-Path $tempRoot 'clean-full-flow.trace'
 $profileDirectory = Join-Path $tempRoot 'profile'
 New-Item -ItemType Directory -Force -Path $packageDirectory, $profileDirectory | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $profileDirectory 'AppData\LocalLow') | Out-Null
 
-# 真实 LocalLow 里的旧日志先挪走，免得把上一次的启动记录当成本次证据。
+# 真实 LocalLow 里的旧日志先备份再挪走，免得把上一次的启动记录当成本次证据；
+# finally 里会还原，不破坏用户原来的 Player.log。
 $localLowLog = Join-Path $env:USERPROFILE 'AppData\LocalLow\Elys\Elys\Player.log'
+$logBackup = Join-Path $outputPath 'Player.log.before'
 if (Test-Path $localLowLog) {
+    Copy-Item $localLowLog $logBackup -Force
     Remove-Item $localLowLog -Force
 }
 
@@ -105,7 +108,7 @@ try {
     # 只留系统必需变量；模型密钥、ELYS_SECRETS_FILE 与仓库路径都不带进去。
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $packageExe
-    $startInfo.Arguments = '-elysScenario memory -elysTrace "' + $tracePath + '" -elysQuit 1 -screen-width 1280 -screen-height 720 -screen-fullscreen 0'
+    $startInfo.Arguments = '-elysScenario full-flow -elysTrace "' + $tracePath + '" -elysQuit 1 -screen-width 1280 -screen-height 720 -screen-fullscreen 0'
     $startInfo.WorkingDirectory = $packageDirectory
     $startInfo.UseShellExecute = $false
     $startInfo.EnvironmentVariables.Clear()
@@ -124,7 +127,7 @@ try {
     $startInfo.EnvironmentVariables['PROCESSOR_ARCHITECTURE'] = $env:PROCESSOR_ARCHITECTURE
     $startInfo.EnvironmentVariables['NUMBER_OF_PROCESSORS'] = $env:NUMBER_OF_PROCESSORS
 
-    Write-Host '在干净环境里启动交付包（memory 剧本）…'
+    Write-Host '在干净环境里启动交付包（full-flow 剧本）…'
     $process = [System.Diagnostics.Process]::Start($startInfo)
     [void](Focus-GameWindow -ProcessId $process.Id)
     $screenshotPath = Join-Path $repoRoot $Screenshot
@@ -222,12 +225,12 @@ try {
     [void]$report.AppendLine('- 把 `Builds/Windows` 整个拷贝到系统临时目录，不在仓库内运行。')
     [void]$report.AppendLine('- 清空子进程环境变量：没有 `DEEPSEEK_*`、`SILICONFLOW_*`、`ELYS_SECRETS_FILE`，PATH 只留 `C:\Windows\system32;C:\Windows`。')
     [void]$report.AppendLine('- 用户目录指向临时 profile；不依赖 Unity 安装、工程目录或任何仓库文件。')
-    [void]$report.AppendLine('- 运行 `Elys.exe -elysScenario memory -elysQuit 1`，再核对 trace 与 Player.log。')
+    [void]$report.AppendLine('- 运行 `Elys.exe -elysScenario full-flow -elysQuit 1`，再核对 trace 与 Player.log。')
     [void]$report.AppendLine('')
     [void]$report.AppendLine('## 结果')
     [void]$report.AppendLine('')
     [void]$report.AppendLine(("- 退出码：{0}" -f $exitCode))
-    [void]$report.AppendLine(("- memory 剧本 trace 与领域参考逐字一致：{0}" -f $traceMatches))
+    [void]$report.AppendLine(("- full-flow 剧本 trace 与领域参考逐字一致：{0}" -f $traceMatches))
     [void]$report.AppendLine(("- 窗口截图：{0}" -f $(if ($screenshotOk) { '已保存且非空' } else { '未取得（不影响 trace/日志判据）' })))
     [void]$report.AppendLine(("- Player.log：{0}" -f $(if ($logPath) { $logPath } else { '没有找到' })))
     [void]$report.AppendLine(("- `[Elys]` 日志行数：{0}" -f $started.Count))
@@ -238,6 +241,7 @@ try {
     [void]$report.AppendLine('- 这是同一台机器上的隔离运行，不是全新 Windows 虚拟机；没有覆盖显卡驱动缺失或杀毒软件拦截这类环境差异。')
     [void]$report.AppendLine('- Windows 的 Known Folder 由 shell 解析，Unity 的 Player.log 仍可能落到当前用户真实的 `LocalLow`；脚本两处都找，不把「临时 profile」当成强隔离。')
     [void]$report.AppendLine('- 判据是「不装 Unity、不在仓库里、不带密钥也能跑出同一份剧本证据」，这是「干净机器可运行」在本机能给出的最强证据。')
+    [void]$report.AppendLine('- 只跑 full-flow 一条完整剧本作为启动与时间推进证据；三条剧本各三次的主机级证据由 `scripts/run-scenarios.ps1` 覆盖。')
 
     $reportPath = Join-Path $outputPath 'report.md'
     [IO.File]::WriteAllText($reportPath, $report.ToString(), (New-Object Text.UTF8Encoding($false)))
@@ -253,5 +257,10 @@ try {
 } finally {
     if (Test-Path $tempRoot) {
         Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    # 把验收前的 Player.log 还回去；验收产生的新日志已经复制到 TestResults/clean-environment。
+    if (Test-Path $logBackup) {
+        Copy-Item $logBackup $localLowLog -Force -ErrorAction SilentlyContinue
     }
 }

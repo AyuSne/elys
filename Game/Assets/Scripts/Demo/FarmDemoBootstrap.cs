@@ -32,7 +32,7 @@ namespace ElysFarm.Demo
         const float ArriveRadius = 0.05f;
 
         /// <summary>剧本回放的固定步长；时间只在整步上推进，证据才不会被帧率影响。</summary>
-        public const float FixedStepSeconds = 1f / 60f;
+        internal const float FixedStepSeconds = 1f / 60f;
 
         /// <summary>一帧最多补几步，避免掉帧时越追越远。</summary>
         const int MaxStepsPerFrame = 8;
@@ -101,7 +101,7 @@ namespace ElysFarm.Demo
         public IntentResult LastResult { get; private set; }
 
         /// <summary>剧本回放模式：固定步长、不自主干活、不互相搭话，台词与结局可重复。</summary>
-        public bool ScriptedMode { get; private set; }
+        internal bool ScriptedMode { get; private set; }
 
         /// <summary>暂停领域推进与 NPC 动作；画面与 HUD 仍然刷新，用来让观众读完字幕。</summary>
         public bool SimulationPaused { get; set; }
@@ -109,7 +109,9 @@ namespace ElysFarm.Demo
         /// <summary>剧本回放时画在 HUD 上方的字幕；空字符串表示不画。</summary>
         public string CaptionTitle { get; private set; } = string.Empty;
 
+        /// <summary>字幕第二行；标题为空时不画。</summary>
         public string CaptionDetail { get; private set; } = string.Empty;
+
 
         /// <summary>是否让 NPC 自己找活干；开局待命，等玩家第一句话或手动开启。</summary>
         public bool AutonomyEnabled { get; private set; }
@@ -255,7 +257,7 @@ namespace ElysFarm.Demo
             var demoHud = GetComponent<FarmDemoHud>();
             if (demoHud != null)
             {
-                demoHud.SetInspectorOpen(true);
+                demoHud.InspectorOpen = true;
             }
         }
 

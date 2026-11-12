@@ -18,6 +18,10 @@ namespace ElysFarm.Demo
     {
         const float WarmupSeconds = 5f;
 
+        /// <summary>
+        /// 一次压测的可序列化结果。<see cref="JsonUtility"/> 只认公共字段，所以这里用字段而不是属性；
+        /// 字段名就是报告 JSON 的键，改名会破坏已有证据。
+        /// </summary>
         [Serializable]
         public sealed class Stats
         {
@@ -27,6 +31,8 @@ namespace ElysFarm.Demo
             public int height;
             public float warmupSeconds;
             public float sampleSeconds;
+
+            // 帧率与帧时：p99 帧时比平均值更能说明卡顿。
             public int frames;
             public float fpsAvg;
             public float fpsP50;
@@ -38,8 +44,12 @@ namespace ElysFarm.Demo
             public float frameMsP99;
             public int below30;
             public int below60;
+
+            // 测量条件：不关垂直同步的话，60Hz 机器会被压成 60fps。
             public int vSync;
             public int targetFrameRate;
+
+            // 机器与场景：报告里要能说清这组数字是在什么上跑出来的。
             public int processorCount;
             public string graphicsDevice;
             public int graphicsMemoryMB;
@@ -51,6 +61,8 @@ namespace ElysFarm.Demo
             public bool inspectorOpen;
             public float clockSpeed;
             public bool autonomy;
+
+            // 托管 / 总分配内存的起止值，用来判断是否持续增长。
             public long managedStartMB;
             public long managedEndMB;
             public long allocatedStartMB;

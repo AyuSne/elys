@@ -36,13 +36,8 @@ namespace ElysFarm.Demo
         WorkOrder currentOrder;
         FrameRecorder recorder;
 
-        /// <summary>剧本是否已经跑完（不论成败）。</summary>
-        public bool Completed { get; private set; }
-
         /// <summary>最近一次剧本的报告；开始的几帧里可能为 null。</summary>
         public ScenarioReport Report => report;
-
-        public string TraceText => report != null ? report.Trace : string.Empty;
 
         public void Initialize(
             FarmDemoBootstrap bootstrap,
@@ -90,7 +85,7 @@ namespace ElysFarm.Demo
                 Title = ScenarioCatalog.TitleOf(scenario)
             };
             trace = new ScenarioTrace();
-            trace.Scenario(scenario, report.Title);
+            trace.Header(scenario, report.Title);
 
             if (!string.IsNullOrWhiteSpace(recordDirectory))
             {
@@ -123,13 +118,13 @@ namespace ElysFarm.Demo
                         yield return Say(beat);
                         break;
                     case ScenarioBeatKind.WaitPlan:
-                        yield return WaitPlan(beat.Number);
+                        yield return WaitPlan(beat.Target);
                         break;
                     case ScenarioBeatKind.WaitOrderDone:
                         yield return WaitOrderDone();
                         break;
                     case ScenarioBeatKind.WaitDay:
-                        yield return WaitDay(beat.Number);
+                        yield return WaitDay(beat.Target);
                         break;
                     case ScenarioBeatKind.WaitRest:
                         yield return WaitRest();
@@ -140,7 +135,7 @@ namespace ElysFarm.Demo
                     case ScenarioBeatKind.OpenInspector:
                         if (hud != null)
                         {
-                            hud.SetInspectorOpen(beat.Flag);
+                            hud.InspectorOpen = beat.Open;
                         }
 
                         break;
@@ -170,7 +165,6 @@ namespace ElysFarm.Demo
                 }
             }
 
-            Completed = true;
             if (quitAfter > 0f)
             {
                 yield return new WaitForSecondsRealtime(quitAfter);
@@ -234,7 +228,7 @@ namespace ElysFarm.Demo
 
             demo.SimulationPaused = true;
             UpdatePerformed();
-            trace.Steps(count, currentCommand.Performed);
+            trace.PlanSteps(count, currentCommand.Performed);
             if (currentCommand.Performed.Count < count)
             {
                 report.Fail($"「{currentCommand.Text}」只执行了 {currentCommand.Performed.Count}/{count} 个计划工步");
@@ -259,7 +253,7 @@ namespace ElysFarm.Demo
 
             demo.SimulationPaused = true;
             UpdatePerformed();
-            trace.Steps(currentCommand.PlannedSteps.Count, currentCommand.Performed);
+            trace.PlanSteps(currentCommand.PlannedSteps.Count, currentCommand.Performed);
             if (currentCommand.Performed.Count < currentCommand.PlannedSteps.Count)
             {
                 report.Fail(

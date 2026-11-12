@@ -4,7 +4,7 @@
 
 ## 文件与编码
 
-- **不要用 PowerShell 改写带中文注释的 `.cs`。** 本机 `Get-Content -Raw` / `Set-Content` 会把 UTF-8 当 GBK 处理，写回的文件可能变成非法 UTF-8 或乱码；Unity 仍然能编译，肉眼看编辑器也不一定发现。用 `write` / `edit` 工具，或 `git checkout -- <file>` 恢复。
+- **不要用 PowerShell 改写带中文注释的 `.cs`。** 本机 `Get-Content -Raw` / `Set-Content` 会把 UTF-8 当 GBK 处理，写回的文件可能变成非法 UTF-8 或乱码；Unity 仍然能编译，肉眼看编辑器也不一定发现。用 `write` / `edit` 工具，或 `git checkout -- <file>` 恢复。**哪怕只是 `-replace 'beat.Number','beat.Target'` 这种纯 ASCII 替换也会整文件重编码**：#10 就把 `FixedScenarios.cs` 的中文写成了乱码，只能 `git checkout` 后逐处 `edit`。`edit` 工具还会去掉 `.ps1` 的 BOM，改完脚本要按上一节重新补 BOM。
 - 校验编码要严格解码，不要凭显示判断：
 
   ```powershell

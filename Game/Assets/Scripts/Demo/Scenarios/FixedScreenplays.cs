@@ -38,12 +38,13 @@ namespace ElysFarm.Demo
 
         public string NpcId { get; private set; } = string.Empty;
 
-        /// <summary>等待第几个计划工步 / 第几个游戏日。</summary>
-        public int Number { get; private set; }
+        /// <summary>等待的目标：<see cref="ScenarioBeatKind.WaitPlan"/> 是计划工步数，<see cref="ScenarioBeatKind.WaitDay"/> 是游戏日。</summary>
+        public int Target { get; private set; }
 
         public float Speed { get; private set; } = 1f;
 
-        public bool Flag { get; private set; }
+        /// <summary>开关类动作的目标值，目前只有 <see cref="ScenarioBeatKind.OpenInspector"/> 使用。</summary>
+        public bool Open { get; private set; }
 
         /// <summary>这一拍在画面里停留多久（秒，真实时间）；只影响演示，不影响证据。</summary>
         public float Hold { get; private set; }
@@ -70,7 +71,7 @@ namespace ElysFarm.Demo
 
         public static ScenarioBeat WaitPlan(int count)
         {
-            return new ScenarioBeat(ScenarioBeatKind.WaitPlan) { Number = count };
+            return new ScenarioBeat(ScenarioBeatKind.WaitPlan) { Target = count };
         }
 
         public static ScenarioBeat WaitOrderDone()
@@ -80,7 +81,7 @@ namespace ElysFarm.Demo
 
         public static ScenarioBeat WaitDay(int day)
         {
-            return new ScenarioBeat(ScenarioBeatKind.WaitDay) { Number = day };
+            return new ScenarioBeat(ScenarioBeatKind.WaitDay) { Target = day };
         }
 
         public static ScenarioBeat WaitRest()
@@ -95,7 +96,7 @@ namespace ElysFarm.Demo
 
         public static ScenarioBeat OpenInspector(bool open)
         {
-            return new ScenarioBeat(ScenarioBeatKind.OpenInspector) { Flag = open };
+            return new ScenarioBeat(ScenarioBeatKind.OpenInspector) { Open = open };
         }
     }
 

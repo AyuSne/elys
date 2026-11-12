@@ -16,7 +16,8 @@ param(
     [int]$Runs = 3,
     [string]$EvidenceDirectory = 'TestResults/scenarios',
     [string[]]$Scenarios = @('full-flow', 'refusal', 'memory'),
-    [switch]$RegenerateReference
+    [switch]$RegenerateReference,
+    [switch]$AllowPartialRuns
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,6 +33,11 @@ if (-not (Test-Path $exePath)) {
 
 if ($Runs -lt 1) {
     Write-Error '-Runs 至少为 1'
+    exit 1
+}
+
+if ($Runs -lt 3 -and -not $AllowPartialRuns) {
+    Write-Error '交付验收要求每条剧本连续跑 3 次；调试时用 -AllowPartialRuns 降低次数。'
     exit 1
 }
 
@@ -168,7 +174,7 @@ foreach ($scenario in $Scenarios) {
     }
 
     if (-not $allSame) {
-        Write-Host "  $scenario 的三次回放不一致" -ForegroundColor Red
+        Write-Host "  $scenario 的 $Runs 次回放不一致" -ForegroundColor Red
         $failed = $true
     }
 }
@@ -184,7 +190,7 @@ $summary = New-Object Text.StringBuilder
 [void]$summary.AppendLine(("可执行文件：{0}" -f $exePath))
 [void]$summary.AppendLine(("每条剧本运行次数：{0}" -f $Runs))
 [void]$summary.AppendLine('')
-[void]$summary.AppendLine('| 剧本 | 运行次数 | 三次一致 | 与参考逐字一致 | 参考行数 | 总耗时（秒） |')
+[void]$summary.AppendLine(("| 剧本 | 运行次数 | {0} 次逐字一致 | 与参考逐字一致 | 参考行数 | 总耗时（秒） |" -f $Runs))
 [void]$summary.AppendLine('|---|---|---|---|---|---|')
 foreach ($result in $results) {
     [void]$summary.AppendLine(("| {0} | {1} | {2} | {3} | {4} | {5} |" -f $result.Scenario, $result.Runs, $result.AllRunsIdentical, $result.MatchesReference, $result.Lines, $result.Seconds))
@@ -193,6 +199,10 @@ foreach ($result in $results) {
 [void]$summary.AppendLine('')
 [void]$summary.AppendLine('证据文本：`TestResults/scenarios/<剧本>-run-<n>.trace`；参考：`TestResults/scenarios/reference/<剧本>.trace`。')
 [void]$summary.AppendLine('参考由 `ElysFarm.EditorTools.ScenarioEvidence` 用同一份台本在 `FarmWorld` 上生成，不含墙钟时间。')
+if ($Runs -lt 3) {
+    [void]$summary.AppendLine('')
+    [void]$summary.AppendLine('> 本次是调试运行，次数不足三次，不作为 #10「连续三次结果一致」的交付证据。')
+}
 [IO.File]::WriteAllText($summaryPath, $summary.ToString(), (New-Object Text.UTF8Encoding($false)))
 
 if ($failed) {

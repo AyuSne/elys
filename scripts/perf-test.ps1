@@ -109,6 +109,8 @@ foreach ($resolution in $Resolutions) {
         AllocatedEnd = $stats.allocatedEndMB
         Graphics     = $stats.graphicsDevice
         Processor    = $stats.processorCount
+        OperatingSystem = $stats.operatingSystem
+        UnityVersion = $stats.unityVersion
         Raw          = $jsonPath
     }
 }
@@ -140,7 +142,7 @@ $report = New-Object Text.StringBuilder
 [void]$report.AppendLine('')
 [void]$report.AppendLine(("- 处理器：{0}（{1} 逻辑处理器）" -f $cpuName, $first.Processor))
 [void]$report.AppendLine(("- 图形卡：{0}" -f $first.Graphics))
-[void]$report.AppendLine('- 操作系统：Windows 11 10.0.26100；Unity 6000.3.10f1；交付包 StandaloneWindows64。')
+[void]$report.AppendLine(("- 操作系统：{0}；Unity {1}；交付包 StandaloneWindows64。" -f $first.OperatingSystem, $first.UnityVersion))
 [void]$report.AppendLine('')
 [void]$report.AppendLine('## 结果')
 [void]$report.AppendLine('')

@@ -220,6 +220,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-test-build.p
 
 ![Windows 包启动后的 2D 农场：顶部条、三人卡、三本账条与对话框齐全，日志里没有异常](docs/images/windows-build.png)
 
+### 交付包与证据（#10）
+
+开发期用上面的 `build-windows.ps1`；要打「可交付」的包时先提交，再跑：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-windows.ps1 -RequireClean
+```
+
+它会从干净提交构建、跑冒烟验收、生成 `Builds/Elys-Windows.zip` 与 SHA256 /
+文件清单，并把录屏、三条剧本证据、压测与干净环境报告收进 `Builds/Delivery/`。
+默认要求这些证据都存在（避免打出一个「看起来完整」但没录屏的交付目录）；
+只打开发包时加 `-AllowMissingEvidence`。
+
+交付前的完整顺序见 [docs/delivery.md](docs/delivery.md)：
+`run-tests.ps1` → `run-scenarios.ps1` → `record-demo.ps1` → `perf-test.ps1` →
+`verify-clean-environment.ps1` → `package-windows.ps1 -RequireClean`。
+
 ## 配置模型密钥
 
 **不配也能完整跑完种田闭环**：意图解析、追问、闲聊全部回退本地模板，只是不如模型灵活。

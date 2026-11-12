@@ -21,10 +21,6 @@ namespace ElysFarm.Demo
 
         public bool Finished { get; private set; }
 
-        public int FrameCount => frameCount;
-
-        public string DirectoryPath => directory;
-
         public void Initialize(string targetDirectory, float framesPerSecond)
         {
             directory = targetDirectory;

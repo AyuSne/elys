@@ -44,18 +44,11 @@ namespace ElysFarm.Demo
 
         FarmDemoBootstrap demo;
         HudSkin skin;
-        bool inspectorOpen;
         string commandInput = string.Empty;
         Vector2 drawerScroll;
 
-        /// <summary>决策抽屉是否打开；压测与 script eval 也会读它。</summary>
-        public bool InspectorOpen => inspectorOpen;
-
-        /// <summary>剧本回放与压测用的抽屉开关；正常游玩仍由 Tab / 关闭按钮驱动。</summary>
-        public void SetInspectorOpen(bool open)
-        {
-            inspectorOpen = open;
-        }
+        /// <summary>决策抽屉是否打开；Tab、关闭按钮、剧本回放与压测共用这一个开关。</summary>
+        public bool InspectorOpen { get; set; }
 
         void Start()
         {
@@ -84,7 +77,7 @@ namespace ElysFarm.Demo
             skin.Apply();
             HandleKeys();
             DrawTopBar();
-            if (!inspectorOpen)
+            if (!InspectorOpen)
             {
                 DrawTopControls();
             }
@@ -93,7 +86,7 @@ namespace ElysFarm.Demo
             DrawNpcCard();
             DrawBag();
             DrawDialogue();
-            if (inspectorOpen)
+            if (InspectorOpen)
             {
                 DrawDrawer();
             }
@@ -113,16 +106,16 @@ namespace ElysFarm.Demo
 
             if (current.keyCode == KeyCode.Tab)
             {
-                inspectorOpen = !inspectorOpen;
+                InspectorOpen = !InspectorOpen;
                 current.Use();
                 return;
             }
 
             if (current.keyCode == KeyCode.Escape)
             {
-                if (inspectorOpen)
+                if (InspectorOpen)
                 {
-                    inspectorOpen = false;
+                    InspectorOpen = false;
                     current.Use();
                 }
 
@@ -268,7 +261,7 @@ namespace ElysFarm.Demo
             }
 
             var left = CardX + CardWidth + 18f;
-            var right = inspectorOpen ? Screen.width - DrawerWidth - 12f : Screen.width - 36f;
+            var right = InspectorOpen ? Screen.width - DrawerWidth - 12f : Screen.width - 36f;
             var rect = new Rect(left, CardY, Mathf.Max(320f, right - left), 96f);
             skin.DrawPanel(rect, skin.Panel);
             GUI.Label(
@@ -547,7 +540,7 @@ namespace ElysFarm.Demo
             GUI.Label(new Rect(rect.x + 16f, rect.y + 8f, 220f, 30f), "决策可视化", skin.Title);
             if (GUI.Button(new Rect(rect.xMax - 88f, rect.y + 12f, 72f, 26f), "关闭", skin.Chip))
             {
-                inspectorOpen = false;
+                InspectorOpen = false;
             }
 
             GUI.Label(new Rect(rect.x + 16f, rect.y + 42f, rect.width - 32f, 22f), "Tab 开关 · 只读快照", skin.Small);

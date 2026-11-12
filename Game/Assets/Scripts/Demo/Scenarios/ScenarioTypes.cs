@@ -80,25 +80,34 @@ namespace ElysFarm.Demo
     /// <summary>剧本里的一次玩家输入及其结果。演示层与领域跑共用这一份结构，剧本回放才能逐字对上。</summary>
     public sealed class ScenarioCommand
     {
+        /// <summary>在剧本里的序号，从 0 开始。</summary>
         public int Index { get; internal set; }
 
+        /// <summary>这条命令说给谁听。</summary>
         public string NpcId { get; internal set; }
 
+        /// <summary>玩家原话。</summary>
         public string Text { get; internal set; }
 
+        /// <summary>意图出口：农事指令 / 追问 / 闲聊。</summary>
         public IntentOutlet Outlet { get; internal set; }
 
+        /// <summary>农事指令是否被接单；追问与闲聊恒为 false。</summary>
         public bool Accepted { get; internal set; }
 
+        /// <summary>接单地块；未接单为 null。</summary>
         public string FieldId { get; internal set; }
 
+        /// <summary>播种品种；非播种为 null。</summary>
         public string SpeciesId { get; internal set; }
 
+        /// <summary>接单时登记的计划工步；未接单为空。</summary>
         public IReadOnlyList<WorkStep> PlannedSteps { get; internal set; } = Array.Empty<WorkStep>();
 
         /// <summary>这条命令的计划工步里真正执行过的，按执行顺序；维护工步不算。</summary>
         public IReadOnlyList<WorkStep> Performed { get; internal set; } = Array.Empty<WorkStep>();
 
+        /// <summary>NPC 的回应或拒绝台词。</summary>
         public string Reply { get; internal set; } = string.Empty;
 
         /// <summary>接单时流水已有的条数；演示层与领域跑都从这里开始数这条命令执行了哪些工步。</summary>
@@ -108,42 +117,59 @@ namespace ElysFarm.Demo
     /// <summary>剧本结束时某块地的可观察状态。生长进度是连续值，只报阶段，避免浮点误差进证据。</summary>
     public sealed class ScenarioField
     {
+        /// <summary>地块 id。</summary>
         public string Id { get; internal set; }
 
+        /// <summary>地块状态（空地 / 已播种 / 生长中 / 成熟 / 已收获）。</summary>
         public FieldState State { get; internal set; }
 
+        /// <summary>表现层的五个生长阶段之一。</summary>
         public CropStage Stage { get; internal set; }
 
+        /// <summary>地块上的品种；空地或已收获为空。</summary>
         public string CropId { get; internal set; } = string.Empty;
     }
 
     /// <summary>一条剧本跑完后的可观察结局；证据文件与测试都读它。</summary>
     public sealed class ScenarioFinal
     {
+        /// <summary>结束时的游戏日。</summary>
         public int Day { get; internal set; }
 
+        /// <summary>三块地的最终状态，按世界里的顺序。</summary>
         public IReadOnlyList<ScenarioField> Fields { get; internal set; } = Array.Empty<ScenarioField>();
 
+        /// <summary>种子库里剩余的萝卜种子。</summary>
         public int RadishSeeds { get; internal set; }
 
+        /// <summary>种子库里剩余的小麦种子。</summary>
         public int WheatSeeds { get; internal set; }
 
+        /// <summary>产出仓里的萝卜数量。</summary>
         public int RadishProduce { get; internal set; }
 
+        /// <summary>产出仓里的小麦数量。</summary>
         public int WheatProduce { get; internal set; }
 
+        /// <summary>累计入账的种子数。</summary>
         public int SeedsAdded { get; internal set; }
 
+        /// <summary>累计被播种消耗的种子数。</summary>
         public int SeedsRemoved { get; internal set; }
 
+        /// <summary>累计入库的产出数。</summary>
         public int ProduceAdded { get; internal set; }
 
+        /// <summary>三本账是否收支相抵。</summary>
         public bool LedgerVerified { get; internal set; }
 
+        /// <summary>不守恒时的可读原因；守恒为空。</summary>
         public string LedgerError { get; internal set; } = string.Empty;
 
+        /// <summary>所有命令里实际执行过的计划工步，按发生顺序。</summary>
         public IReadOnlyList<WorkStep> Performed { get; internal set; } = Array.Empty<WorkStep>();
 
+        /// <summary>结束时在休息的 NPC id。</summary>
         public IReadOnlyList<string> RestingNpcIds { get; internal set; } = Array.Empty<string>();
 
         /// <summary>还挂着的工单，格式 <c>npc:地块/工步</c>；没有为空。</summary>
@@ -184,14 +210,18 @@ namespace ElysFarm.Demo
     /// <summary>一条剧本的完整结果：谁说了什么、结局如何、以及可逐字比较的证据文本。</summary>
     public sealed class ScenarioReport
     {
+        /// <summary>剧本 id。</summary>
         public FixedScenario Scenario { get; internal set; }
 
+        /// <summary>剧本标题，供 HUD 与报告使用。</summary>
         public string Title { get; internal set; } = string.Empty;
 
         readonly List<ScenarioCommand> commands = new List<ScenarioCommand>();
 
+        /// <summary>按顺序记录的玩家输入。</summary>
         public IReadOnlyList<ScenarioCommand> Commands => commands;
 
+        /// <summary>剧本结束时的可观察结局。</summary>
         public ScenarioFinal Final { get; internal set; } = new ScenarioFinal();
 
         /// <summary>规范化证据文本：同样的剧本必须逐字相同，不带墙钟时间。</summary>
@@ -235,7 +265,7 @@ namespace ElysFarm.Demo
     {
         readonly StringBuilder builder = new StringBuilder();
 
-        public void Scenario(FixedScenario scenario, string title)
+        public void Header(FixedScenario scenario, string title)
         {
             Line("scenario", ScenarioCatalog.IdOf(scenario), title);
         }
@@ -260,7 +290,7 @@ namespace ElysFarm.Demo
                 command.Reply);
         }
 
-        public void Steps(int expected, IReadOnlyList<WorkStep> performed)
+        public void PlanSteps(int expected, IReadOnlyList<WorkStep> performed)
         {
             Line("steps", expected.ToString(), Steps(performed));
         }
