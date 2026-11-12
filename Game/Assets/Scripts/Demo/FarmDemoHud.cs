@@ -32,6 +32,9 @@ namespace ElysFarm.Demo
         const float BagGap = 6f;
         const float DrawerWidth = 420f;
 
+        /// <summary>对话框正文只留一行；本地追问的回答可能很长，超出就省略，不能硬切在边外。</summary>
+        const int ReplyLimit = 56;
+
         static readonly string[] Examples =
         {
             "去东边那块地除草",
@@ -48,7 +51,7 @@ namespace ElysFarm.Demo
         void Start()
         {
             demo = GetComponent<FarmDemoBootstrap>();
-            skin = new HudSkin();
+            // HudSkin 要读 GUI.skin，只能在 OnGUI 里构造；见 OnGUI 的懒初始化。
         }
 
         void OnDestroy()
@@ -413,7 +416,8 @@ namespace ElysFarm.Demo
                 return "……（正在理解你这句话）";
             }
 
-            return string.IsNullOrWhiteSpace(demo.LastReply) ? demo.LastMessage : demo.LastReply;
+            var line = string.IsNullOrWhiteSpace(demo.LastReply) ? demo.LastMessage : demo.LastReply;
+            return FarmDemoText.Shorten(line, ReplyLimit);
         }
 
         string DialogueHint()

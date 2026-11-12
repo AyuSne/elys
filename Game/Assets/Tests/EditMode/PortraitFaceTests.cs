@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using ElysFarm.Core;
 using ElysFarm.Demo;
 using NUnit.Framework;
@@ -50,6 +52,50 @@ namespace ElysFarm.Tests
                 FaceEmotion.Tired,
                 PortraitFace.Of(IntentOutlet.Chat, false, FaceCondition.Resting),
                 "休息时不管刚才是什么出口，脸上都是累");
+        }
+
+        [Test]
+        public void 出口与状态的全部组合都有明确的脸()
+        {
+            // 平常状态下三种出口各一张脸；等模型与休息是状态优先，盖过出口。
+            var idleFaces = new Dictionary<(IntentOutlet Outlet, bool Accepted), FaceEmotion>
+            {
+                { (IntentOutlet.FarmCommand, true), FaceEmotion.Smug },
+                { (IntentOutlet.FarmCommand, false), FaceEmotion.Impatient },
+                { (IntentOutlet.Query, true), FaceEmotion.Neutral },
+                { (IntentOutlet.Query, false), FaceEmotion.Neutral },
+                { (IntentOutlet.Chat, true), FaceEmotion.Smile },
+                { (IntentOutlet.Chat, false), FaceEmotion.Smile }
+            };
+
+            var reached = new HashSet<FaceEmotion>();
+            var combinations = 0;
+            foreach (IntentOutlet outlet in Enum.GetValues(typeof(IntentOutlet)))
+            {
+                foreach (var accepted in new[] { true, false })
+                {
+                    foreach (FaceCondition condition in Enum.GetValues(typeof(FaceCondition)))
+                    {
+                        combinations++;
+                        var expected = condition == FaceCondition.Resting
+                            ? FaceEmotion.Tired
+                            : condition == FaceCondition.Thinking
+                                ? FaceEmotion.Confused
+                                : idleFaces[(outlet, accepted)];
+                        Assert.AreEqual(
+                            expected,
+                            PortraitFace.Of(outlet, accepted, condition),
+                            $"{outlet} + accepted={accepted} + {condition} 的脸不对");
+                        reached.Add(expected);
+                    }
+                }
+            }
+
+            Assert.AreEqual(18, combinations, "出口 3 × 接单 2 × 状态 3 = 18 种组合");
+            Assert.AreEqual(
+                Enum.GetValues(typeof(FaceEmotion)).Length,
+                reached.Count,
+                "六档表情都要有组合能走到，不能有死档");
         }
 
         [Test]

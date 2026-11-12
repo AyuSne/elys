@@ -16,6 +16,7 @@ namespace ElysFarm.Demo
         Npc npc;
         SpriteRenderer body;
         SpriteRenderer shadow;
+        NpcEmote emote;
         bool art;
         Facing facing = Facing.Down;
         bool walking;
@@ -58,6 +59,7 @@ namespace ElysFarm.Demo
             }
 
             body = SpriteObject.Create("Body", transform, sprite, SortingOrder.At(0f, 5));
+            emote = NpcEmote.Create(transform);
         }
 
         void BuildBlocks(Color fallbackColor)
@@ -110,6 +112,18 @@ namespace ElysFarm.Demo
             }
 
             UpdateArt();
+        }
+
+        /// <summary>显示头顶表情；体块回退或素材缺失时静默跳过。</summary>
+        public void ShowEmote(EmoteEvent emoteEvent, float elapsed)
+        {
+            emote?.Show(emoteEvent, elapsed);
+        }
+
+        /// <summary>收起头顶表情。</summary>
+        public void HideEmote()
+        {
+            emote?.Hide();
         }
 
         /// <summary>用速度方向更新朝向；主分量决定四方向之一。</summary>

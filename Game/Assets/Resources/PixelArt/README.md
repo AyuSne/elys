@@ -12,6 +12,7 @@
 | `Tiles/spring_outdoors.png` | 春季室外瓦片（16×16/格）：草地与室内的装饰瓦片来源 |
 | `Tiles/hoeDirt.png` | 耕地土块（干/湿各四列；代码取干土第 3 列、湿土第 7 列，即 2/6） |
 | `LooseSprites/shadow.png` | 角色脚下的影子 |
+| `Emotes/emotes.png` | 头顶表情（16×16/格，4 帧 × 16 行；本演示取行号 3/4/6/10，0 起） |
 | `Buildings/farmhouse.png` | 农舍（118×150，取自 `houses.png` 的一级农舍） |
 | `Buildings/coop.png` | 鸡舍（96×128） |
 | `Buildings/well.png` | 水井（48×80） |

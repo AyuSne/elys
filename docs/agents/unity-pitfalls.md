@@ -74,6 +74,8 @@
 - **立在地面上的东西统一用底边中点**：地标与装饰的落点、排序基准都是占位底边的中点（`GroundSpot.AnchorOf/SortBaseOf`，`PixelArt.GroundPivot`）。换成中心会让「谁挡谁」和脚底位置一起偏；改占位尺寸或换图数量时只动 `FarmLayout.ShapeOf` 一处，测试按 `TileSizeOf`/`VariantCountOf` 走。
 - **素材开关下的两套语义**：地标（农舍、鸡舍、水井、产出仓）在素材缺失或关掉时退回**同尺寸体块**——房子、井、木桶的位置与体量还在，动线照样读得出来；装饰（树、树桩、草丛）整件跳过，因为它只压画面边缘、不参与玩法。别把地标也做成「跳过」，体块版本会丢掉整张农场。
 - **作物图集**：每个品种是一条 8 格横条；行号是 `rowInSpriteSheet / 2`，奇数行占右半边（列再 +8）。成熟格因品种不同：萝卜第 6 格、小麦第 5 格；最后一格常是空的（留茬再生用），别把 7 当成熟。
+- **表情图集**：`Emotes/emotes.png` 是 64×256，4 列是弹出动画的四帧、每行一种表情。行号按原作 emote id 除以 4：感叹号 4、恼火 3、睡觉 6、省略号 10；别按「从 0 数第几张脸」猜。16px 一格按 2× 放大到 32（`NpcEmote.Scale`），头顶气泡会占 2 世界单位——和 16×32 的角色一样高，这是规格要的显眼程度。
+- **头顶表情的可见性**：`NpcEmote.LateUpdate` 用 `Camera.main` 的正交半高 × aspect 算视野，纯函数 `OverheadEmotes.IsVisible` 判四边与相机背后。别用 `renderer.isVisible`（它要等一次渲染才更新），也别在 `Update` 里判（相机在 LateUpdate 才移动）。排序用 `SortingOrder.Emote = 30000`，表情不被树/房子挡住。
 - **Play 截图**：`capture game_view --source camera --overlay false` 不画 IMGUI，能单独看像素场景；`--source screen` 会叠上旧 HUD，旧 HUD 仍在时别拿它判断「场景没画出来」。
 - **`capture` 的取景比 Game 视图窄**：正交半高由 `Screen.height`（547）算，`capture` 却按 1280×720 出图 —— 720 高、48px/格时只看到约 20.3 格宽、11.4 格高，而 Game 视图有约 24.5 格宽。构图照 `farm2d_hud.png` 验收时按截图的 20 格宽摆东西：摆在 x=±11 之外的树只剩一条边。
 - **开局三个月阶段**：`FarmStartup.Seed` 用 `Field` 的公开工步与 `AdvanceDay` 往前推（不走时钟），所以开局仍是第 1 天；**播种照实数从 `Ledger` 扣种**，所以 `FarmDemoBootstrap.SetUpWorld` 必须先 `AddSeeds` 再 `Seed`，否则三块地是白种上的、种子库对不上。改肥力常量或生长公式后，`FarmStartupTests` 会先红。三块地因此都是「已经种上」的状态，示范播种要么先收一茬，要么用别的例句（现在的例句是「去东边那块地除草」）。
@@ -126,7 +128,11 @@
 - IMGUI 输入框与按钮走同一套提交路径；`UnityEngine.Input` 在本工程不可用（activeInputHandler=1），但 IMGUI 事件不受影响。
 - **动态字体的 `CalcSize` 比 `fontSize` 高**：18pt 标题约 29px、15pt 正文约 26px、12pt 备注约 22px。给标题留 30px，否则 `TextClipping.Clip` 会把字的顶部切掉（三人卡标题踩过）。
 - **`GUI.TextField` 会把光标色留在 `GUI.color` 里**。紧接着画的占位文字会被冲淡成接近背景色；画占位文字前显式 `GUI.color = Color.white`，画完再还原。
-- **UI 素材不受「素材开/关」影响**：头像与物品图标走 `PixelArt.LoadUiTexture` / `LoadUiSprite`（独立缓存），不经过 `UseArt` 判断；关掉素材只让农场退回体块，HUD 仍要有头像和图标。
+- **UI 素材不受「素材开/关」影响**：头像与物品图标走 `PixelArt.LoadUiTexture` / `LoadUiSprite`（独立缓存），不经过 `UseArt` 判断；关掉素材只让农场退回体块，HUD 仍要有头像和图标。头顶表情是农场反馈，走 `LoadSprite`，关掉素材就不画。
+- **`HudSkin` 只能在 `OnGUI` 里构造。** 它的 `Box` / `Label` / `Button` 要读 `GUI.skin`，在 `Start` 里 `new HudSkin()` 会抛 `ArgumentException: You can only call GUI functions from inside OnGUI`（#14 遗留，每次进 Play 都有；#15 改成 `OnGUI` 懒初始化，后来者别把构造搬回 `Start`）。
+- **对话框正文只留一行**：本地追问的回答能到 80+ 字，直接用 `GUI.Label` + `Clip` 会在右边硬切。走 `FarmDemoText.Shorten(..., ReplyLimit=56)` 加省略号；要显示全文就得重排对话框，别只把高度调大。
+- **2.5 秒的表情要截图就尽快**：`script eval` 提交指令 → 等模型 → 再 `capture` 往往已经超过 2.5 秒；用离线 `IntentRouter` 让 `ApplyIntent` 同步完成，或在同一帧里直接 `EmoteBoard.Post` 再立刻 `capture`。验证可见性用 `script eval` 读 `NpcEmote` 的 `SpriteRenderer.enabled`，比截图可靠。
+
 - `Game/Temp/` 会被 Unity 启动时清空；`script eval --file` 的临时文件要在 Editor 打开后重写。
 
 ## 评审与 Git

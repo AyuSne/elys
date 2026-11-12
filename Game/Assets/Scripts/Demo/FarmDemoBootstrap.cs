@@ -105,6 +105,7 @@ namespace ElysFarm.Demo
         DemoCamera cameraDirector;
         readonly List<CropFieldView> fieldViews = new List<CropFieldView>();
         readonly List<NpcView> npcViews = new List<NpcView>();
+        readonly EmoteBoard emotes = new EmoteBoard();
         float nextChatAt;
         int chatSlot;
 
@@ -119,6 +120,7 @@ namespace ElysFarm.Demo
             public WorkStep PendingStep;
             public Vector2 WalkTarget;
             public bool Walking;
+            public bool WasResting;
             public float NextActionAt;
             public string Intent = "在产出仓旁待命";
         }
@@ -141,11 +143,33 @@ namespace ElysFarm.Demo
             }
 
             TryNpcConversation();
+            UpdateOverheadEmotes(Time.time);
 
             foreach (var view in fieldViews)
             {
                 view.Refresh();
             }
+        }
+
+        /// <summary>把表情板里还在冒的表情同步到各 NPC 头顶；过期的收起。</summary>
+        void UpdateOverheadEmotes(float now)
+        {
+            foreach (var view in npcViews)
+            {
+                if (emotes.TryGet(view.Npc.Id, now, out var emote))
+                {
+                    view.Avatar.ShowEmote(emote.Event, emote.ElapsedAt(now));
+                }
+                else
+                {
+                    view.Avatar.HideEmote();
+                }
+            }
+        }
+
+        void PostEmote(string npcId, EmoteEvent emote)
+        {
+            emotes.Post(npcId, emote, Time.time);
         }
 
         /// <summary>某名 NPC 此刻的意图文案，供 HUD 与观察者对照它的行为。</summary>
@@ -311,6 +335,12 @@ namespace ElysFarm.Demo
             IsThinking = false;
             RecordSpeaker(target.Id, result.Outlet, result.Accepted);
             LastReply = result.Reply;
+
+            // 接单/被拒是两种头顶表情；追问与闲聊不冒，只在对话框里换脸。
+            if (result.Outlet == IntentOutlet.FarmCommand)
+            {
+                PostEmote(target.Id, result.Accepted ? EmoteEvent.Accepted : EmoteEvent.Rejected);
+            }
 
             if (result.Call.Outcome == ModelCallOutcome.Error && !string.IsNullOrWhiteSpace(result.Call.Detail))
             {
@@ -541,6 +571,14 @@ namespace ElysFarm.Demo
         {
             var npc = view.Npc;
 
+            // 体力见底、刚进入休息时冒一次「累」；休息中途与走回路上都不重复冒。
+            if (npc.IsResting && !view.WasResting)
+            {
+                PostEmote(npc.Id, EmoteEvent.Resting);
+            }
+
+            view.WasResting = npc.IsResting;
+
             // 休息在走到休息点之前就结束时，不继续傻走到目的地，直接回去找活。
             if (view.Walking && string.IsNullOrEmpty(view.PendingFieldId) && !npc.IsResting)
             {
@@ -651,6 +689,7 @@ namespace ElysFarm.Demo
                     continue;
                 }
 
+                PostEmote(speaker.Npc.Id, EmoteEvent.Retelling);
                 var line = retold.Line;
                 speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
                 listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";

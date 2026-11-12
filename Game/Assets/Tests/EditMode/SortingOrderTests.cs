@@ -19,6 +19,14 @@ namespace ElysFarm.Tests
 
             var largest = SortingOrder.At(-12f, 5);
             Assert.That(largest, Is.InRange(short.MinValue, short.MaxValue), "排序值必须落在 16 位范围内");
+            Assert.That(
+                SortingOrder.Emote,
+                Is.InRange(short.MinValue, short.MaxValue),
+                "头顶表情也在 16 位范围内");
+            Assert.Greater(
+                SortingOrder.Emote,
+                SortingOrder.At(FarmLayout.Walkable.yMin, 5),
+                "表情是反馈层，压在所有按 y 排序的东西之上");
         }
 
         /// <summary>#13：土路铺在草地上，耕地画在土路之上。</summary>

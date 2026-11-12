@@ -70,6 +70,19 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 表情取图按事件与帧切格_越界或关掉素材返回空()
+        {
+            Assert.IsNull(PixelArt.LoadEmote((EmoteEvent)99, 0), "未知事件不画");
+            Assert.IsNull(PixelArt.LoadEmote(EmoteEvent.Accepted, -1), "帧号不能为负");
+            Assert.IsNull(
+                PixelArt.LoadEmote(EmoteEvent.Accepted, OverheadEmotes.FrameCount),
+                "每种表情只有四帧");
+
+            PixelArt.UseArt = false;
+            Assert.IsNull(PixelArt.LoadEmote(EmoteEvent.Accepted, 0), "关掉素材后表情也跳过");
+        }
+
+        [Test]
         public void 角色图按四方向四帧切格()
         {
             Assert.AreEqual(new SpriteCell(0, 0, 16, 32), PixelArt.CharacterCell(Facing.Down, 0));

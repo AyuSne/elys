@@ -12,6 +12,12 @@ namespace ElysFarm.Demo
 
         public const int Soil = -9000;
 
+        /// <summary>
+        /// 头顶表情是反馈层：不用 y 排序，压在农场上所有东西之上，免得被树或房子挡住。
+        /// 仍要落在 SpriteRenderer 的 16 位有符号范围内。
+        /// </summary>
+        public const int Emote = 30000;
+
         public static int At(float worldY, int bias = 0)
         {
             // Renderer.sortingOrder 是 16 位有符号整数：基数必须小，否则会回绕到负数并被地面盖住。

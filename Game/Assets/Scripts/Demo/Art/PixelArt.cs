@@ -378,6 +378,15 @@ namespace ElysFarm.Demo
                 : LoadUiSprite(atlas, cell, Center);
         }
 
+        /// <summary>切出一张头顶表情；事件或帧号越界、素材关掉或缺失时返回 null。</summary>
+        public static Sprite LoadEmote(EmoteEvent emote, int frame)
+        {
+            var cell = OverheadEmotes.CellOf(emote, frame);
+            return cell.IsValid
+                ? LoadSprite(OverheadEmotes.AtlasPath, cell, GroundPivot)
+                : null;
+        }
+
         /// <summary>切一块 16×16 的室外瓦片；用于生成地面 Tilemap。</summary>
         public static Sprite LoadTile(int column, int row)
         {
