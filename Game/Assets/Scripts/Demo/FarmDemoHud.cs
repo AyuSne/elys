@@ -200,7 +200,7 @@ namespace ElysFarm.Demo
             GUILayout.Label($"{npc.Stamina:P0}", selected ? boldStyle : labelStyle, GUILayout.Width(38f));
             DrawBar(npc.Stamina, 64f, npc.IsResting ? RestColor : StaminaColor);
 
-            var state = SelectedIntent(npc);
+            var state = RowState(npc, selected);
             GUILayout.Label(state, smallStyle);
             GUILayout.EndHorizontal();
         }
@@ -209,9 +209,9 @@ namespace ElysFarm.Demo
         /// 左侧一行的状态文案。决策可视化打开时，选中行改用与面板相同的领域意图，
         /// 避免观察者在同一屏里看到两个不同的「当前意图」。
         /// </summary>
-        string SelectedIntent(Npc npc)
+        string RowState(Npc npc, bool selected)
         {
-            if (inspectorOpen && npc.Id == demo.SelectedNpc.Id)
+            if (inspectorOpen && selected)
             {
                 return FarmDemoText.Shorten(demo.World.IntentOf(npc.Id), 15);
             }

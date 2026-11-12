@@ -13,6 +13,9 @@ namespace ElysFarm.Core
         /// <summary>与产出仓的移交半径。</summary>
         public const float ProduceStoreRadius = 1.5f;
 
+        /// <summary>两次决定之间、还没拿定主意时的意图文案；演示行与决策可视化共用。</summary>
+        public const string ThinkingReason = "琢磨着干点啥…";
+
         readonly List<Field> fields = new List<Field>();
         readonly List<Npc> npcs = new List<Npc>();
         readonly List<WorkLogEntry> log = new List<WorkLogEntry>();
@@ -206,7 +209,7 @@ namespace ElysFarm.Core
 
             if (!npc.CanDecide)
             {
-                return "琢磨着干点啥…";
+                return ThinkingReason;
             }
 
             return "待命";

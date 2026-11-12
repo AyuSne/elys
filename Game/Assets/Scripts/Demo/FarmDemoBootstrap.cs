@@ -495,16 +495,16 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            if (!AutonomyEnabled)
+            if (!npc.CanDecide)
             {
-                view.Intent = "待命，等玩家开口";
+                view.Intent = FarmWorld.ThinkingReason;
+                view.NextActionAt = Time.time + 0.2f;
                 return;
             }
 
-            if (!npc.CanDecide)
+            if (!AutonomyEnabled)
             {
-                view.Intent = "琢磨着干点啥…";
-                view.NextActionAt = Time.time + 0.2f;
+                view.Intent = "待命，等玩家开口";
                 return;
             }
 
