@@ -1,8 +1,9 @@
 # PixelArt 素材
 
-这里的 PNG 来自《星露谷物语》原作图集，**只用于本仓库的私有演示**，不随演示包对外分发，
-也不适用 3D 旧素材（Quaternius）的 CC0 结论。3D 素材已从本分支的打包目录移出，
-来源与许可存档在仓库根的 `docs/licenses/quaternius.txt`。
+这里的 PNG 来自《星露谷物语》原作图集，**只用于本仓库的私有演示与评审**。
+演示包内嵌这些图，但不要公开分发；也不适用 3D 旧素材（Quaternius）的 CC0 结论。
+3D 素材已从 `Assets/Resources`（Unity 的打包目录）移出，来源与许可存档在仓库根的
+`docs/licenses/quaternius.txt`。
 
 来源：`StardewValley-Assets/星露谷物语素材.rar`（仓库外，`.gitignore` 忽略）。只提交用到的图：
 

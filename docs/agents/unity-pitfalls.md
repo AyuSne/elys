@@ -31,7 +31,7 @@
 - 测试程序集 `overrideReferences: true` 时，引用新 asmdef（例如 `ElysFarm.Model`）要显式加进 `references`；想在测试里直接用 Newtonsoft 还要加 `precompiledReferences`，否则编译不到。
 - 全套 170 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
 - #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。2D 的纯逻辑测试（`CameraRig`、`CropStages`、`PixelArt`、`FarmLayout`、`SortingOrder`、`FarmStartup`）同样只引这个程序集。
-- 2D 的素材测试不 `Resources.Load` 真实 PNG（贴图被移走就红）；切格与四方向都用纯函数断言，素材本身由 Play Mode 截图验收。3D 版本（`main` 合并前的历史）仍用 `Resources/Quaternius` 与 `ArtMaterialTests`，2D 分支已把这两样都移出。`AssetLayoutTests` 只断言 `Assets/Resources` 里没有 3D 模型/材质，是 #16 的打包护栏，不加载任何贴图。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
+- 2D 的素材测试不 `Resources.Load` 真实 PNG；切格与四方向都用纯函数断言，素材本身由 Play Mode 截图验收。3D 版本（`main` 合并前的历史）仍用 `Resources/Quaternius` 与 `ArtMaterialTests`，2D 分支已删除这组测试并移出 `Resources/Quaternius`。`AssetLayoutTests` 是 #16 的打包护栏：它只检查 `Assets/Resources` 的文件布局（没有 FBX/材质、PixelArt 目录仍在），不加载贴图；移动素材目录会让它红，这是有意为之。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
 
 ## 驱动 Editor 与验证演示
 

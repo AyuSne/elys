@@ -7,9 +7,9 @@
 
 这是 #16 收口后的 2D 像素版：正交相机、16px 瓦片农场、羊皮纸风格的四件常驻 HUD，
 决策可视化退到 `Tab` 召唤的右侧抽屉。`main` 合并前的历史保留 #9 的 3D 可交付版本；
-3D 旧素材已移出打包目录，见[素材与许可](#素材与许可)。
+3D 旧素材已从 `Assets/Resources`（Unity 的打包目录）移出，见[素材与许可](#素材与许可)。
 
-![2D 像素农场：三名 NPC 站在土路上，三块地分别处在萝卜幼苗、成熟小麦与成熟萝卜的阶段，左上三人卡、左下背包条与底部对话框同时可见](docs/images/farm2d-overview.png)
+![2D 像素农场：三名 NPC 站在土路上，三块地分别处在萝卜幼苗、成熟小麦与成熟萝卜的阶段，左上三人卡、左下三本账条与底部对话框同时可见](docs/images/farm2d-overview.png)
 
 换皮没有碰领域逻辑：三块地、三名 NPC、时钟、三本账、效用打分、记忆与对话全部沿用
 #3–#8 的实现，表现层只读 `FarmWorld` 的快照。作物按五个生长阶段换图，NPC 用四方向
@@ -120,7 +120,9 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 决策可视化五项（#6） | `DecisionInspectorTests.决策快照包含五项且状态条随工步更新` | 五项齐全；体力 / 心情 / 饥饿随工步与跨日变化 |
 | 否决原因真实（#6） | `DecisionInspectorTests.候选动作的否决原因直接来自动作校验` | 面板原因 = 执行拒绝台词（同一动作校验） |
 | 记忆检索（#6） | `DecisionInspectorTests.记忆最多三条且只属于该NPC` | 只取自己的三条，按权重降序 |
+| 记忆排序（#6） | `DecisionInspectorTests.记忆检索优先命中当前意图指向的地块`、`DecisionInspectorTests.同一件事新的记忆权重更高` | 相似度与时间衰减都参与排序 |
 | 只读快照（#6） | `DecisionInspectorTests.读取决策快照不改变任何游戏状态` | 读面板不改时钟、账本与 NPC 状态 |
+| 失败调用也有数据（#6） | `IntentRouterTests.模型失败与超时也记录模型名与耗时` | 超时 / 断网时仍展示模型名与等待上限 |
 | 记忆两段式（#7） | `MemoryTests.记忆先召回十条再按加权取前三条` | 先召回 10 条，再按 0.5×相似度 + 0.3×重要性 + 0.2×时间衰减取 3 条 |
 | 向量检索（#7） | `MemoryTests.有向量时用余弦相似度而不是关键词`、`IntentRouterTests.在线时用向量检索替换关键词检索` | 有向量时用余弦；向量失败或超时退回关键词 |
 | 跨日追问（#7） | `IntentRouterTests.跨日追问能对上玩家上次让我浇的地块` | 第 2 天追问仍能对上第 2 天的「西边（A1）」 |
@@ -128,24 +130,27 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 面板展示命中（#7） | `MemoryTests.决策面板显示最近一次追问命中的记忆` | 面板第 1 项 = 回答实际命中的记忆 |
 | 闲聊只写记忆（#8） | `ChatTests.陈述式闲聊里的农活字眼不改变地块时钟与背包` | 带农活字眼的陈述句仍是闲聊，不派单、不改三本账 |
 | 闲聊夹带请求（#8） | `ChatTests.闲聊里夹带的农事请求照样接单`、`ChatTests.闲聊里做不到的请求用话拒绝且不改状态` | 能做的走同一套校验，做不到的用校验理由拒绝 |
-| 分类边界（#8） | `ChatTests.问过去浇没浇水的问句是追问不是新指令`、`ChatTests.能帮我浇水吗这种请求照常接单` | 「了吗」是追问、客气的请求照接、称呼与说别人不混淆 |
+| 分类边界（#8） | `ChatTests.问过去浇没浇水的问句是追问不是新指令`、`ChatTests.能帮我浇水吗这种请求照常接单`、`ChatTests.句首叫名字不算陈述`、`ChatTests.说别人的活干完了不是在派活` | 「了吗」是追问、客气的请求照接、称呼与说别人不混淆 |
 | 模型误判兜底（#8） | `ChatTests.模型把纯闲聊误判成农活时不产生工单`、`ChatTests.模型把追问误判成农活时只回答不动手` | 出口以玩家原话为准，模型不能凭空派活 |
 | 注入防线（#8） | `ChatTests.注入提示词改不了人设与游戏状态`、`ChatTests.闲聊里点名白名单外的品种仍由本地规则拒绝` | 人设只读、状态不变；闲聊不是白名单后门 |
 | 转述（#8） | `SocialTests.一条传闻能从阿土传到阿禾再传到阿苗`、`SocialTests.玩家聊起的传闻会被听的人转述出去` | A→B→C；记忆写成「听某人说，……」且重要性递减 |
+| 转述只读（#8） | `SocialTests.转述只写记忆不改变地块时钟与背包`、`SocialTests.隔着老远的两名NPC说不上话` | 转述不改状态；距离与去重都有效 |
 | 五个生长阶段（#12） | `CropStageTests.*` | 空地无作物；进度按四分之一推进五阶段；五个阶段的图集格位两两不同 |
 | 双档机位（#12） | `CameraRigTests.*` | 俯视固定 3×；跟拍锁定 NPC 并切 4×；未知 id 不改档位；正交半高按屏幕高换算 |
 | 像素素材（#12） | `PixelArtTests.*` | 按名字取图与切格；缺素材或关素材返回 null；四方向与行走帧可断言 |
 | 头像与表情（#14/#15） | `PortraitFaceTests.*`、`OverheadEmotesTests.*` | 出口与状态映射到六档表情；四种事件各一行、2.5 秒后消失、出屏不画 |
 | 农场布局（#13） | `FarmLayoutTests.*`、`SortingOrderTests.*` | 三块地、三名 NPC、四座地标互不重叠且在可走范围内；排序按 y 且不回绕 |
 | 开局播种（#13） | `FarmStartupTests.*` | 开局三块地三种阶段；播种从种子库扣账；没水不长 |
-| 包内没有 3D 素材（#16） | `AssetLayoutTests.打包目录里不再有3D素材` | `Assets/Resources` 里没有 FBX/OBJ/材质；PixelArt 目录仍在 |
+| 打包目录里没有 3D 素材（#16） | `AssetLayoutTests.Resources里不再有3D素材` | `Assets/Resources` 里没有 FBX/材质；PixelArt 目录仍在 |
 | 密钥不泄露 | `SecretFileLocatorTests.*`、`DeepSeekProtocolTests.*` | 编辑器只读仓库根；播放器不隐式读密钥文件；请求体与降级符合协议 |
 
-领域测试只打 `FarmWorld` 与 `IModelClient` 两条缝，模型测试用假客户端，不联网、不花钱；
+领域测试只打 `FarmWorld` 与 `IModelClient` 两条主缝；`IntentRouter` 的三出口分流与
+`SecretFileLocator` 的密钥来源是两条既有的例外缝。模型测试用假客户端，不联网、不花钱；
 2D 的表现层测试打在纯逻辑接缝（`CropStages`、`CameraRig`、`PixelArt`、`PortraitFace`、
 `FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup`）上，不打开场景、不测渲染。
 包本身的装配由构建脚本固定（`FarmBuild` 只把 `FarmDemo.unity` 传给 `BuildPlayer`），
-运行证据由 `scripts/smoke-test-build.ps1` 与上面的截图给出，不写成 EditMode 用例。
+包内容的静态约束由 `AssetLayoutTests` 守住；运行证据由 `scripts/smoke-test-build.ps1`
+与上面的截图给出，不写成 EditMode 用例。
 
 ## 打 Windows 包
 
@@ -184,7 +189,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-test-build.p
 脚本会启动包、截一张窗口图到 `TestResults/smoke-window.png`、检查 `Player.log`
 里有没有 `[Elys]` 启动日志与异常，然后关掉进程。最近一次通过时的窗口截图：
 
-![Windows 包启动后的 2D 农场：顶部条、三人卡、背包条与对话框齐全，日志里没有异常](docs/images/windows-build.png)
+![Windows 包启动后的 2D 农场：顶部条、三人卡、三本账条与对话框齐全，日志里没有异常](docs/images/windows-build.png)
 
 ## 配置模型密钥
 
@@ -259,7 +264,8 @@ $env:ELYS_SECRETS_FILE = 'D:\keys\elys.json'
 
 - **顶部条**：第几天、当天进度与 `1x / 4x / 16x` 时间档位。
 - **左上三人卡**：阿禾 / 阿芽 / 阿土的头像、体力条、当前意图；点一行切换观察与指挥对象。
-- **左下背包条**：萝卜种子、小麦种子、萝卜、小麦的数量；「随身」只在有产出移交时显示。
+- **左下背包条**（三本账：种子库 / 产出仓 / 随身）：萝卜种子、小麦种子、萝卜、小麦的数量；
+  「随身」只在随身数量大于 0 时显示。
 - **底部对话框**：128 头像、名字、NPC 台词、例句、输入框与「下达」。回车发送。
   追问、闲聊以及 NPC 之间的转述都走这个框，头像会按出口与状态切表情。
 

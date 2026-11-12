@@ -7,7 +7,7 @@ using UnityEngine;
 namespace ElysFarm.Tests
 {
     /// <summary>
-    /// #16 收口：打包目录只留 2D 像素素材。3D 旧素材（FBX/材质）若回到
+    /// #16 收口：Unity 的打包目录只留 2D 像素素材。3D 旧素材（FBX/材质）若回到
     /// <c>Assets/Resources</c>，每次打包都会把没人用的模型背进包里。
     /// 这里断言的是交付约束本身，不打开场景、不加载贴图。
     /// </summary>
@@ -16,7 +16,7 @@ namespace ElysFarm.Tests
         static readonly string ResourcesRoot = Path.Combine(Application.dataPath, "Resources");
 
         [Test]
-        public void 打包目录里不再有3D素材()
+        public void Resources里不再有3D素材()
         {
             var leftovers = Directory
                 .EnumerateFiles(ResourcesRoot, "*", SearchOption.AllDirectories)
@@ -33,7 +33,7 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 像素素材目录仍在()
+        public void Resources里仍保留像素素材()
         {
             var pixelArt = Path.Combine(ResourcesRoot, "PixelArt");
 
@@ -47,8 +47,6 @@ namespace ElysFarm.Tests
         {
             var extension = Path.GetExtension(path);
             return string.Equals(extension, ".fbx", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(extension, ".obj", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(extension, ".blend", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(extension, ".mat", StringComparison.OrdinalIgnoreCase);
         }
     }

@@ -51,4 +51,5 @@ Quaternius 更新的素材改用 QAL v1.0，禁止单独再分发素材本身；
 https://www.patreon.com/quaternius 支持作者。
 
 注意：本文件只覆盖 3D 旧素材。2D 表现层用的《星露谷物语》原画**不是** CC0，
-只用于本仓库的私有演示，不随包分发；见 `Game/Assets/Resources/PixelArt/README.md`。
+只用于本仓库的私有演示与评审；演示包内嵌这些图，但不要公开分发。见
+`Game/Assets/Resources/PixelArt/README.md`。
