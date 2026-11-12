@@ -40,6 +40,7 @@ namespace ElysFarm.Tests
             var before = world.Inspect("ahe", call);
 
             Assert.AreEqual("ahe", before.NpcId);
+            Assert.AreEqual("阿禾", before.NpcName);
             Assert.IsNotNull(before.Memories, "第 1 项：检索命中的记忆");
             Assert.AreEqual(0, before.Memories.Count, "还没干过活，没有记忆");
             Assert.AreEqual("待命", before.Intent, "第 2 项：当前意图");
@@ -89,6 +90,18 @@ namespace ElysFarm.Tests
             var autonomousIntent = autonomous.Inspect("ahe").Intent;
             StringAssert.Contains(candidate.FieldId, autonomousIntent);
             StringAssert.Contains("播种", autonomousIntent);
+
+            var coolingDown = new FarmWorld(new FarmClock());
+            coolingDown.AddField("A1", new FarmPosition(0f, 2f));
+            coolingDown.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f), NpcPersona.Ahe);
+            coolingDown.AddSeeds(CropCatalog.RadishId, 5);
+            coolingDown.Tick(NpcPersona.Ahe.DecisionSeconds);
+            Assert.IsTrue(coolingDown.TryDecide("ahe", out var pending, out var decisionReason), decisionReason);
+            Assert.IsTrue(coolingDown.ExecuteStep("ahe", pending.FieldId, pending.Step).Executed);
+            StringAssert.Contains(
+                "琢磨",
+                coolingDown.Inspect("ahe").Intent,
+                "两次决定之间要说明还在琢磨，不能显示成待命");
         }
 
         [Test]
@@ -98,17 +111,10 @@ namespace ElysFarm.Tests
             var snapshot = world.Inspect("ahe");
 
             var rejected = snapshot.Candidates.First(c => !c.IsValid);
-            var npc = world.GetNpc("ahe");
-            var field = world.GetField(rejected.FieldId);
-
-            Assert.IsFalse(
-                ActionValidator.Validate(world, npc, field, rejected.Step, out var reason),
-                "被否决的候选不能再通过校验");
-            Assert.AreEqual(reason, rejected.RejectionReason, "快照里的否决原因必须就是动作校验的返回值");
 
             var attempt = world.ExecuteStep("ahe", rejected.FieldId, rejected.Step);
-            Assert.IsFalse(attempt.Executed);
-            Assert.AreEqual(reason, attempt.Reason, "NPC 的拒绝台词与面板原因共用同一句话");
+            Assert.IsFalse(attempt.Executed, "被否决的候选不能再执行");
+            Assert.AreEqual(attempt.Reason, rejected.RejectionReason, "快照里的否决原因必须就是动作校验的返回值");
         }
 
         [Test]

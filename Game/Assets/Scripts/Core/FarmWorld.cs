@@ -191,7 +191,7 @@ namespace ElysFarm.Core
                     ? string.Empty
                     : $"（{reason}）";
 
-                return $"工单：{order.FieldId} · {WorkStepLabel.Of(next)}（{order.CompletedCount}/{order.Steps.Count}）{waiting}";
+                return $"工单：{order.FieldId} · {WorkStepLabel.Of(next)}{waiting}";
             }
 
             if (npc.IsResting)
@@ -204,6 +204,11 @@ namespace ElysFarm.Core
                 return $"自主：{decision.FieldId} · {WorkStepLabel.Of(decision.Step)}";
             }
 
+            if (!npc.CanDecide)
+            {
+                return "琢磨着干点啥…";
+            }
+
             return "待命";
         }
 
@@ -213,11 +218,11 @@ namespace ElysFarm.Core
             return DecisionInspector.Inspect(this, GetNpc(npcId), lastCall);
         }
 
-        /// <summary>检索某名 NPC 的记忆；最多返回 count 条，按权重降序。</summary>
-        public IReadOnlyList<MemoryHit> RetrieveMemories(string npcId, string cue, int count = DecisionInspector.MemoryCount)
+        /// <summary>检索某名 NPC 的记忆；最多返回三条，按权重降序。</summary>
+        public IReadOnlyList<MemoryHit> RetrieveMemories(string npcId, string cue)
         {
-            GetNpc(npcId);
-            return memories.Retrieve(npcId, cue, Clock.Day, count);
+            _ = GetNpc(npcId);
+            return memories.Retrieve(npcId, cue, Clock.Day, DecisionInspector.MemoryCount);
         }
 
         /// <summary>
@@ -293,7 +298,7 @@ namespace ElysFarm.Core
             }
 
             var produced = 0;
-            string memoryText;
+            CropSpecies memorySpecies = null;
 
             switch (step)
             {
@@ -309,40 +314,47 @@ namespace ElysFarm.Core
                     }
 
                     field.Apply(step, species);
-                    memoryText = $"在 {field.Id} 播下了{species.DisplayName}";
+                    memorySpecies = species;
                     break;
 
                 case WorkStep.Harvest:
                     var speciesId = field.Crop?.Id ?? npc.PreferredSpeciesId;
-                    var cropName = field.Crop?.DisplayName ?? "作物";
+                    memorySpecies = field.Crop;
                     produced = field.Apply(step);
                     if (produced > 0)
                     {
                         Ledger.AddProduce(speciesId, produced);
                     }
 
-                    memoryText = produced > 0
-                        ? $"在 {field.Id} 收了 {produced} 个{cropName}"
-                        : $"在 {field.Id} 收了{cropName}";
                     break;
 
                 default:
                     field.Apply(step);
-                    memoryText = MemoryTextOf(field.Id, step);
                     break;
             }
 
             npc.ExertStep();
-            memories.Remember(npc.Id, memoryText, Clock.Day, MemoryImportanceOf(step));
+            memories.Remember(
+                npc.Id,
+                MemoryTextOf(field.Id, step, memorySpecies, produced),
+                Clock.Day,
+                MemoryImportanceOf(step));
             log.Add(new WorkLogEntry(Clock.Day, npc.Id, field.Id, step, produced));
             return StepResult.Success(npcId, fieldId, step, produced);
         }
 
         /// <summary>工步记成记忆时的自然语句；决策可视化直接展示它。</summary>
-        static string MemoryTextOf(string fieldId, WorkStep step)
+        static string MemoryTextOf(string fieldId, WorkStep step, CropSpecies species, int produced)
         {
             switch (step)
             {
+                case WorkStep.Sow:
+                    return $"在 {fieldId} 播下了{species.DisplayName}";
+                case WorkStep.Harvest:
+                    var cropName = species?.DisplayName ?? "作物";
+                    return produced > 0
+                        ? $"在 {fieldId} 收了 {produced} 个{cropName}"
+                        : $"在 {fieldId} 收了{cropName}";
                 case WorkStep.Water:
                     return $"给 {fieldId} 浇了水";
                 case WorkStep.Fertilize:
@@ -354,22 +366,28 @@ namespace ElysFarm.Core
             }
         }
 
+        const int HarvestMemoryImportance = 8;
+        const int SowMemoryImportance = 6;
+        const int WeedMemoryImportance = 5;
+        const int UpkeepMemoryImportance = 4;
+        const int RoutineMemoryImportance = 3;
+
         /// <summary>工步的记忆重要性：收获最值得记住，日常维护最轻。</summary>
         static int MemoryImportanceOf(WorkStep step)
         {
             switch (step)
             {
                 case WorkStep.Harvest:
-                    return 8;
+                    return HarvestMemoryImportance;
                 case WorkStep.Sow:
-                    return 6;
+                    return SowMemoryImportance;
                 case WorkStep.Weed:
-                    return 5;
+                    return WeedMemoryImportance;
                 case WorkStep.Water:
                 case WorkStep.Fertilize:
-                    return 4;
+                    return UpkeepMemoryImportance;
                 default:
-                    return 3;
+                    return RoutineMemoryImportance;
             }
         }
 

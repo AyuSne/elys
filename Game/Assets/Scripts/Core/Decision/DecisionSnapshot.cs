@@ -50,6 +50,7 @@ namespace ElysFarm.Core
     {
         internal DecisionSnapshot(
             string npcId,
+            string npcName,
             IReadOnlyList<MemoryHit> memories,
             string intent,
             IReadOnlyList<StepCandidate> candidates,
@@ -57,6 +58,7 @@ namespace ElysFarm.Core
             NpcStatus status)
         {
             NpcId = npcId;
+            NpcName = npcName;
             Memories = memories;
             Intent = intent;
             Candidates = candidates;
@@ -64,8 +66,11 @@ namespace ElysFarm.Core
             Status = status;
         }
 
-        /// <summary>快照对应的 NPC。</summary>
+        /// <summary>快照对应的 NPC id。</summary>
         public string NpcId { get; }
+
+        /// <summary>快照对应的 NPC 展示名；面板只读快照即可，不必再碰领域对象。</summary>
+        public string NpcName { get; }
 
         /// <summary>第 1 项：检索命中的记忆，最多三条，按权重降序。</summary>
         public IReadOnlyList<MemoryHit> Memories { get; }

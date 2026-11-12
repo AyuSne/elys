@@ -5,8 +5,8 @@ using ElysFarm.Core;
 namespace ElysFarm.Demo
 {
     /// <summary>
-    /// 演示层的中文文案。领域层不关心展示用词，把它们集中放在这里，
-    /// 也保证 HUD 与流水用的是同一套工步名。
+    /// 演示层的中文文案。领域层的意图与记忆也需要工步中文名，因此词表在 Core 的
+    /// <see cref="WorkStepLabel"/>；这里转发，保证 HUD 与流水用的是同一套工步名。
     /// </summary>
     public static class FarmDemoText
     {
@@ -94,24 +94,33 @@ namespace ElysFarm.Demo
             return builder.ToString();
         }
 
-        /// <summary>最近一次模型调用的摘要，供临时 HUD 展示（决策可视化层另有其五项）。</summary>
+        /// <summary>
+        /// 最近一次模型调用的摘要。失败的调用也保留能拿到的耗时与 token；
+        /// 超时 / 断网时模型名缺失，用结果词代替。
+        /// </summary>
         public static string Call(ModelCallInfo call)
         {
+            var tokens = $"{call.PromptTokens}+{call.CompletionTokens} tok";
             switch (call.Outcome)
             {
                 case ModelCallOutcome.Ok:
-                    return $"{call.Model} · {call.LatencySeconds:0.00}s · {call.PromptTokens}+{call.CompletionTokens} tok";
+                    return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens}";
                 case ModelCallOutcome.Timeout:
-                    return "超时，已回退本地模板";
+                    return $"超时 {call.LatencySeconds:0.0}s · {tokens} · 回退模板";
                 case ModelCallOutcome.Error:
-                    return "调用失败，已回退本地模板";
+                    return $"失败 {call.LatencySeconds:0.00}s · {tokens} · 回退模板";
                 case ModelCallOutcome.Unusable:
-                    return "返回不可用，已回退本地模板";
+                    return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens} · 回退模板";
                 case ModelCallOutcome.Guard:
                     return "本地白名单校验（未调用模型）";
                 default:
                     return "未调用（本地模式）";
             }
+        }
+
+        static string ModelName(ModelCallInfo call)
+        {
+            return string.IsNullOrWhiteSpace(call.Model) ? "未知模型" : call.Model;
         }
     }
 }

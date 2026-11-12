@@ -115,31 +115,31 @@ namespace ElysFarm.Core
     /// </summary>
     internal static class MemorySimilarity
     {
-        /// <summary>两段文本的相似度，0..1。</summary>
-        public static float Between(string left, string right)
+        /// <summary>当前情境（cue）与一条记忆的相似度，0..1。</summary>
+        public static float Between(string cue, string memory)
         {
-            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            if (string.IsNullOrWhiteSpace(cue) || string.IsNullOrWhiteSpace(memory))
             {
                 return 0f;
             }
 
-            var self = Bigrams(left);
-            var other = Bigrams(right);
-            if (self.Count == 0 || other.Count == 0)
+            var cueGrams = Bigrams(cue);
+            var memoryGrams = Bigrams(memory);
+            if (cueGrams.Count == 0 || memoryGrams.Count == 0)
             {
                 return 0f;
             }
 
             var shared = 0;
-            foreach (var gram in self)
+            foreach (var gram in cueGrams)
             {
-                if (other.Contains(gram))
+                if (memoryGrams.Contains(gram))
                 {
                     shared++;
                 }
             }
 
-            var union = self.Count + other.Count - shared;
+            var union = cueGrams.Count + memoryGrams.Count - shared;
             return union <= 0 ? 0f : shared / (float)union;
         }
 

@@ -12,7 +12,7 @@
 可复核的 EditMode 回归报告、可直接双击运行的 Windows 包，以及这份 README 都保留着。
 追问与社交仍是后续加分项，见 [GitHub Issues](https://github.com/AyuSne/elys/issues)。
 
-![决策可视化层：阿禾的当前意图是等 A3 成熟，两条浇水的有效候选与一条播种的否决原因同时可见；记忆带权重条，模型调用带模型名、耗时与 token](docs/images/decision-inspector.png)
+![决策可视化层：阿禾的当前意图是等 A3 成熟，两条有效候选与一条播种的否决原因同时可见；记忆带权重条，模型调用带模型名、耗时与 token](docs/images/decision-inspector.png)
 
 ## 目录
 
@@ -83,7 +83,7 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 
 `TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。
 
-题目要求与 #5 验收的对应关系：
+题目要求与 #4–#6 验收的对应关系：
 
 | 题目要求 | 验收用例（报告里可直接搜） | 断言的是 |
 |---|---|---|

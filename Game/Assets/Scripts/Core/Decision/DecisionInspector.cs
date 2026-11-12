@@ -15,10 +15,11 @@ namespace ElysFarm.Core
         {
             var candidates = world.RankCandidates(npc.Id);
             var intent = world.IntentOf(npc.Id);
-            var memories = world.RetrieveMemories(npc.Id, intent, MemoryCount);
+            var memories = world.RetrieveMemories(npc.Id, intent);
 
             return new DecisionSnapshot(
                 npc.Id,
+                npc.DisplayName,
                 memories,
                 intent,
                 candidates,

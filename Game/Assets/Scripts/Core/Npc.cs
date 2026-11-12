@@ -30,12 +30,6 @@ namespace ElysFarm.Core
         /// <summary>一次休息结束恢复的心情。</summary>
         public const float MoodRecoveryPerRest = 0.05f;
 
-        /// <summary>饥饿到该值后，每干一个工步额外掉心情。</summary>
-        public const float HungerMoodThreshold = 0.70f;
-
-        /// <summary>太饿时每个工步额外掉的心情。</summary>
-        public const float HungerMoodPenalty = 0.02f;
-
         /// <summary>休息中尝试干活时的统一理由。</summary>
         public const string RestingReason = "正在休息，得缓一缓";
 
@@ -127,9 +121,7 @@ namespace ElysFarm.Core
         {
             Stamina = FarmMath.Clamp01(Stamina - Persona.ExertionPerStep);
             Hunger = FarmMath.Clamp01(Hunger + HungerPerStep);
-
-            var hungerPenalty = Hunger >= HungerMoodThreshold ? HungerMoodPenalty : 0f;
-            Mood = FarmMath.Clamp01(Mood - MoodPerStep - hungerPenalty);
+            Mood = FarmMath.Clamp01(Mood - MoodPerStep);
 
             if (Stamina <= Persona.RestThreshold)
             {

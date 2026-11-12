@@ -200,11 +200,25 @@ namespace ElysFarm.Demo
             GUILayout.Label($"{npc.Stamina:P0}", selected ? boldStyle : labelStyle, GUILayout.Width(38f));
             DrawBar(npc.Stamina, 64f, npc.IsResting ? RestColor : StaminaColor);
 
-            var state = npc.IsResting
-                ? $"休息 {npc.RestSecondsRemaining:0}s"
-                : FarmDemoText.Shorten(demo.IntentOf(npc.Id), 15);
+            var state = SelectedIntent(npc);
             GUILayout.Label(state, smallStyle);
             GUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// 左侧一行的状态文案。决策可视化打开时，选中行改用与面板相同的领域意图，
+        /// 避免观察者在同一屏里看到两个不同的「当前意图」。
+        /// </summary>
+        string SelectedIntent(Npc npc)
+        {
+            if (inspectorOpen && npc.Id == demo.SelectedNpc.Id)
+            {
+                return FarmDemoText.Shorten(demo.World.IntentOf(npc.Id), 15);
+            }
+
+            return npc.IsResting
+                ? $"休息 {npc.RestSecondsRemaining:0}s"
+                : FarmDemoText.Shorten(demo.IntentOf(npc.Id), 15);
         }
 
         void DrawDecisionPanel()
@@ -299,11 +313,10 @@ namespace ElysFarm.Demo
             // 547 高度下五项刚好放满；再高会压到下方的输入面板。
             GUILayout.BeginArea(new Rect(Screen.width - panelWidth - 12f, 8f, panelWidth, 406f), GUI.skin.box);
 
-            var npc = demo.SelectedNpc;
-            var snapshot = demo.World.Inspect(npc.Id, demo.LastCall);
+            var snapshot = demo.World.Inspect(demo.SelectedNpc.Id, demo.LastCall);
 
             DrawMemories(snapshot.Memories);
-            DrawIntent(npc.DisplayName, snapshot.Intent);
+            DrawIntent(snapshot.NpcName, snapshot.Intent);
             DrawCandidates(snapshot.Candidates);
             DrawModelCall(snapshot.ModelCall);
             DrawStatus(snapshot.Status);
@@ -341,10 +354,13 @@ namespace ElysFarm.Demo
         void DrawCandidates(IReadOnlyList<StepCandidate> candidates)
         {
             GUILayout.Space(2f);
-            GUILayout.Label("③ 候选动作与否决原因", boldStyle);
+            GUILayout.Label($"③ 候选动作与否决原因（共 {candidates.Count} 条，最多展示 3 条）", boldStyle);
 
             var validShown = 0;
             var rejectedShown = 0;
+
+            // 临时面板按排名展示前四名（含分项）；这里只挑少量有效与否决候选做对照，
+            // 两处的展示目的不同，不共用这段筛选。
             foreach (var candidate in candidates)
             {
                 if (validShown + rejectedShown >= 3)

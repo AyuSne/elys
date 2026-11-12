@@ -22,7 +22,7 @@ namespace ElysFarm.Core
                 case WorkStep.Harvest:
                     return "收获";
                 default:
-                    return step.ToString();
+                    return "未知工步";
             }
         }
     }
