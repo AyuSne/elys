@@ -734,5 +734,36 @@ namespace ElysFarm.Tests
             Assert.AreEqual(CropCatalog.RadishId, result.SpeciesId);
             Assert.AreEqual(5, result.PlannedSteps.Count);
         }
+
+        [Test]
+        public async Task 英文输入只回固定话术且不调用模型()
+        {
+            var world = NewWorld();
+            var client = new ScriptedModelClient("{\"outlet\":\"chat\"}");
+            var router = new IntentRouter(client);
+
+            var result = await router.RouteAsync("please water the field", world, world.GetNpc("ahe"));
+
+            Assert.AreEqual("我只听得懂中文。", result.Reply, "英文输入回固定话术，不是模型编的回答");
+            Assert.IsTrue(result.LanguageNotUnderstood, "这是语言边界，不是农事拒单");
+            Assert.IsFalse(result.Accepted);
+            Assert.IsNull(result.AssignedWorkOrder);
+            Assert.AreEqual(0, client.Calls, "固定话术由本地规则给，不需要问模型");
+            Assert.AreEqual(0, client.EmbedCalls, "也不该为一句听不懂的话去取向量");
+            Assert.AreEqual(0, world.Log.Count, "英文输入不能改变农场");
+            Assert.AreEqual(0, world.Inspect("ahe").Memories.Count, "英文输入不写记忆");
+        }
+
+        [Test]
+        public async Task 中英混写仍按中文农活解析()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+
+            var result = await new IntentRouter().RouteAsync("把 A1 浇水", world, world.GetNpc("ahe"));
+
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A1", result.FieldId, "中文里夹 A1 不是英文输入");
+        }
     }
 }

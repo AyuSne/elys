@@ -22,6 +22,17 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
+        /// 对话框里的三个例句。HUD 画 chips 与空输入提示都读这一份，
+        /// 避免「去东边那块地除草」在两处各写一遍；例句里的动词照 `ActionWords` 写。
+        /// </summary>
+        public static readonly string[] Examples =
+        {
+            "去东边那块地除草",
+            "听说阿芽偷懒了",
+            "去种月亮"
+        };
+
+        /// <summary>
         /// 种子库补货的流水行：同一天的补货合成一行，最多显示最近 maxDays 天，按天数从早到晚。
         /// 数字直接来自领域留下的 <see cref="SeedRestock"/>，HUD 不另算一遍。
         /// </summary>
@@ -163,8 +174,64 @@ namespace ElysFarm.Demo
             return "…";
         }
 
+        /// <summary>对话框正文上限 160 字（#25）；超过才截，160 字以内不截断。</summary>
+        public const int ReplyLimit = 160;
+
+        /// <summary>547 高的矮窗口只放得下两行，退回旧上限并留省略号，不做无声硬切。</summary>
+        public const int ShortReplyLimit = 110;
+
+        /// <summary>
+        /// 超过这个字数的玩家原话算「长句」（#25）。长句只排到一个工步时，
+        /// 「理解成」一行要说明实际锁定的工步，免得玩家以为后半句也被执行了。
+        /// 只排一个工步的短句不加注脚——那时地块与工步本身已经说清楚了。
+        /// </summary>
+        const int LongSentenceLength = 20;
+
+        /// <summary>这句话是不是需要提示「我按 X 理解」的长句。</summary>
+        public static bool IsLongSentence(string playerText)
+        {
+            return playerText != null && playerText.Trim().Length >= LongSentenceLength;
+        }
+
+        /// <summary>对话框正文：按上限收尾；空台词返回空串，不显示 "null"。</summary>
+        public static string DialogueReply(string reply, int limit = ReplyLimit)
+        {
+            return Shorten(reply ?? string.Empty, limit);
+        }
+
+        /// <summary>空输入回车时的一行轻提示（#25）：告诉玩家按键没坏，只是还没说话。</summary>
+        public static readonly string EmptyInputHint = $"先说点什么吧，比如「{Examples[0]}」。";
+
+        /// <summary>输入为空（含只有空格）时给出轻提示；有话要说时返回 null，不顶掉正常提示。</summary>
+        public static string EmptyInputHintFor(string text)
+        {
+            return string.IsNullOrWhiteSpace(text) ? EmptyInputHint : null;
+        }
+
+        /// <summary>
+        /// 对话框里「你：… · 理解成…」那一行：把玩家原话按剩余宽度截短，
+        /// 保证后半句「理解成」始终完整——它是核对解析的唯一一行（#17 / #25）。
+        /// </summary>
+        public static string HintLine(
+            string playerText,
+            string understood,
+            float maxWidth,
+            Func<string, float> measure)
+        {
+            var suffix = string.IsNullOrWhiteSpace(understood) ? string.Empty : " · " + understood;
+            var reserved = measure != null ? measure("你：" + suffix) : 0f;
+            var quote = maxWidth - reserved > 0f
+                ? Fit(playerText ?? string.Empty, maxWidth - reserved, measure)
+                : string.Empty;
+            return "你：" + quote + suffix;
+        }
+
         /// <summary>把路由器接单的结果摊成一行「理解成」，让玩家确认没听错。</summary>
-        public static string Plan(string fieldId, string speciesId, IReadOnlyList<WorkStep> steps)
+        public static string Plan(
+            string fieldId,
+            string speciesId,
+            IReadOnlyList<WorkStep> steps,
+            bool explainSingleStep = false)
         {
             var builder = new StringBuilder("理解成：");
             builder.Append(fieldId);
@@ -186,6 +253,12 @@ namespace ElysFarm.Demo
 
                     builder.Append(StepName(steps[i]));
                 }
+            }
+
+            // 长句只执行一个工步时，把工步名再说一遍：这是「我按 X 理解」的唯一来源。
+            if (explainSingleStep && steps != null && steps.Count == 1)
+            {
+                builder.Append(" · 我按").Append(StepName(steps[0])).Append("理解");
             }
 
             return builder.ToString();

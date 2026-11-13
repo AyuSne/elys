@@ -112,6 +112,49 @@ namespace ElysFarm.Core
             return IntentDraft.Command(goal.Value, DetectField(normalized, world), speciesToken, null);
         }
 
+        /// <summary>
+        /// 纯英文（可以带数字与标点）的输入只回这一句固定话术（#25）。它由本地规则直接判定：
+        /// 不经过模型、不写记忆、不碰农场，也不会被模型编成一句闲聊。
+        /// </summary>
+        public const string ChineseOnlyReply = "我只听得懂中文。";
+
+        /// <summary>抽屉第 4 项展示的调用摘要：这不是白名单校验，只是语言边界。</summary>
+        public const string ChineseOnlyCallDetail = "非中文输入（未调用模型）";
+
+        /// <summary>
+        /// 这句话是不是「一个汉字都没有、但至少有一个字母」的非中文输入。
+        /// 拉丁字母、假名、谚文等都算；中英混写（「把 A1 浇水」）仍按中文解析：
+        /// 只要出现汉字就走中文规则，不能因为夹着地块 id 就被拦成听不懂。
+        /// </summary>
+        public static bool LooksNonChinese(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            var hasLetter = false;
+            foreach (var c in text)
+            {
+                if (IsChinese(c))
+                {
+                    return false;
+                }
+
+                if (char.IsLetter(c))
+                {
+                    hasLetter = true;
+                }
+            }
+
+            return hasLetter;
+        }
+
+        static bool IsChinese(char c)
+        {
+            return (c >= '\u4e00' && c <= '\u9fff') || (c >= '\u3400' && c <= '\u4dbf');
+        }
+
         internal static bool TryFindUnknownCrop(
             string text,
             FarmWorld world,

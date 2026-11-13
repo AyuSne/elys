@@ -144,5 +144,83 @@ namespace ElysFarm.Tests
             Assert.AreEqual("等 A1 · 除…", FarmDemoText.Fit("等 A1 · 除草（没什么草可除）", 12f * 9f, Measure), "截短要留省略号");
             Assert.AreEqual(string.Empty, FarmDemoText.Fit(string.Empty, 100f, Measure));
         }
+
+        [Test]
+        public void 对话框回复最多一百六十字_一百六十字内不截断()
+        {
+            var exact = new string('字', 160);
+
+            Assert.AreEqual(exact, FarmDemoText.DialogueReply(exact), "160 字要原样显示");
+            Assert.AreEqual(string.Empty, FarmDemoText.DialogueReply(null));
+
+            var over = FarmDemoText.DialogueReply(new string('字', 161));
+            Assert.AreEqual(160, over.Length, "超过 160 字才截，截完仍不超过 160");
+            StringAssert.EndsWith("…", over, "截短要留省略号");
+        }
+
+        [Test]
+        public void 长句只执行一个工步时说明按哪个工步理解()
+        {
+            const string longSentence = "麻烦你把中间那块地里的萝卜都收了吧谢谢你";
+            const string shortSentence = "把中间那块地收了";
+            var singleStep = new[] { WorkStep.Harvest };
+            var fiveSteps = new[]
+            {
+                WorkStep.Sow, WorkStep.Water, WorkStep.Fertilize, WorkStep.Weed, WorkStep.Harvest
+            };
+
+            Assert.IsTrue(FarmDemoText.IsLongSentence(longSentence), "20 字以上算长句");
+            Assert.IsFalse(FarmDemoText.IsLongSentence(shortSentence));
+            Assert.AreEqual(
+                "理解成：A2 · 收获 · 我按收获理解",
+                FarmDemoText.Plan("A2", null, singleStep, FarmDemoText.IsLongSentence(longSentence)),
+                "长句只排一个工步时，要说明实际理解成哪个工步");
+            Assert.AreEqual(
+                "理解成：A2 · 收获",
+                FarmDemoText.Plan("A2", null, singleStep, FarmDemoText.IsLongSentence(shortSentence)),
+                "短句不加大白话注脚");
+            Assert.AreEqual(
+                "理解成：A2 · 萝卜 · 播种→浇水→施肥→除草→收获",
+                FarmDemoText.Plan(
+                    "A2",
+                    CropCatalog.RadishId,
+                    fiveSteps,
+                    FarmDemoText.IsLongSentence(longSentence)),
+                "整块地的多步计划不是「只执行一个工步」，不加注脚");
+        }
+
+        [Test]
+        public void 理解成一行先缩短玩家原话_不截掉理解成()
+        {
+            float Measure(string text)
+            {
+                return text.Length * 12f;
+            }
+
+            const string understood = "理解成：A2 · 萝卜 · 播种→浇水→施肥→除草→收获";
+            var line = FarmDemoText.HintLine(
+                "麻烦你把中间那块地里的萝卜都收了再给东边那块地浇水谢谢你",
+                understood,
+                600f,
+                Measure);
+
+            Assert.LessOrEqual(Measure(line), 600f, "整行要放得下");
+            StringAssert.StartsWith("你：", line);
+            StringAssert.Contains(understood, line, "「理解成」部分不能被截掉");
+            Assert.LessOrEqual(line.Length, 50, "被截短的是玩家原话，不是理解成");
+        }
+
+        [Test]
+        public void 空输入回车给一行轻提示()
+        {
+            Assert.AreEqual(
+                "先说点什么吧，比如「去东边那块地除草」。",
+                FarmDemoText.EmptyInputHintFor(string.Empty));
+            Assert.AreEqual(
+                "先说点什么吧，比如「去东边那块地除草」。",
+                FarmDemoText.EmptyInputHintFor("   "),
+                "只有空格也算空输入");
+            Assert.IsNull(FarmDemoText.EmptyInputHintFor("去东边那块地除草"), "有话要说时不该顶掉正常提示");
+        }
     }
 }

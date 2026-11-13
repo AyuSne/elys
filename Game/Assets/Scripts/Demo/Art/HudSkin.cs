@@ -103,7 +103,7 @@ namespace ElysFarm.Demo
 
         public GUIStyle BodyBold { get; }
 
-        /// <summary>对话框正文：允许换行，最多由调用方留两行的高度。</summary>
+        /// <summary>对话框正文：允许换行，高度由调用方按四行或两行的布局留（#25）。</summary>
         public GUIStyle BodyWrap { get; }
 
         public GUIStyle Small { get; }

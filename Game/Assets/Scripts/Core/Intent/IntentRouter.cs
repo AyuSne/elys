@@ -80,6 +80,15 @@ namespace ElysFarm.Core
                 return Finish(IntentResult.Refuse("你想让我做什么？", false, ModelCallInfo.None));
             }
 
+            // 非中文输入先于模型与记忆检索生效：只回一句固定话术（#25），
+            // 不浪费一次模型调用，也不把听不懂的外文写进记忆。
+            if (LocalIntentParser.LooksNonChinese(text))
+            {
+                return Finish(IntentResult.NotUnderstood(
+                    LocalIntentParser.ChineseOnlyReply,
+                    ModelCallInfo.Guarded(LocalIntentParser.ChineseOnlyCallDetail)));
+            }
+
             // 品种白名单先于模型生效：模型可能把「种月亮」改写成一句合法农活，
             // 但白名单外的品种必须由本地规则明确拒绝，不能绕过。
             if (LocalIntentParser.TryFindUnknownCrop(text, world, npc, out var unknownCrop))

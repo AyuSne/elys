@@ -27,7 +27,38 @@ namespace ElysFarm.Demo
         const float HeaderHeight = 36f;
         const float RowHeight = 46f;
         const float DialogueX = 24f;
-        const float DialogueHeight = 168f;
+
+        /// <summary>矮窗口（Editor 的 547 高 Game 视图）仍用原来的两行对话框，避免盖住三人卡。</summary>
+        const float ShortDialogueHeight = 168f;
+
+        /// <summary>交付窗口 720p 用四行对话框：正文、提示、chips 与输入框都装得下。</summary>
+        const float TallDialogueHeight = 232f;
+
+        /// <summary>低于这个高度按矮窗口排；只在编辑器小视图里会遇到。</summary>
+        const int TallDialogueMinScreenHeight = 640;
+
+        /// <summary>正文行高：15pt 中文在 1280 宽对话框里一行约 27px。</summary>
+        const float ReplyLineHeight = 27f;
+
+        /// <summary>正文最多四行（#25）；160 字在 1280 宽下是 3 行，留一行余量。</summary>
+        const float ReplyMaxHeight = ReplyLineHeight * 4f;
+
+        /// <summary>输入框高度；矮窗口与高窗口共用。</summary>
+        const float InputHeight = 46f;
+
+        /// <summary>高窗口里输入框离对话框底边的距离。</summary>
+        const float InputBottomMargin = 12f;
+
+        const float ChipHeight = 20f;
+
+        /// <summary>chips 与输入框之间的空隙。</summary>
+        const float ChipInputGap = 6f;
+
+        const float HintHeight = 22f;
+
+        /// <summary>「你：… · 理解成…」与 chips 之间的空隙。</summary>
+        const float HintChipGap = 2f;
+
         const float DialogueGap = 16f;
         const float BagSlot = 52f;
         const float BagGap = 6f;
@@ -42,26 +73,29 @@ namespace ElysFarm.Demo
         /// <summary>三人卡那一行意图文字的可用宽度：行宽减去头像与名字那一列。</summary>
         const float IntentWidth = CardWidth - 16f - RowTextOffset;
 
-        /// <summary>对话框正文最多两行；本地追问的回答可能到 80+ 字，超出就省略，不能硬切在边外。</summary>
-        const int ReplyLimit = 110;
-
         /// <summary>抽屉流水里最多回看几个游戏日的种子库补货；更早的只靠累计行对账。</summary>
         const int RestockDaysShown = 2;
 
-        static readonly string[] Examples =
-        {
-            "去东边那块地除草",
-            "听说阿芽偷懒了",
-            "去种月亮"
-        };
+        /// <summary>空输入回车后的轻提示停留时间（#25）；不挡输入，下一句照常提交。</summary>
+        const float EmptyInputHintSeconds = 3f;
 
         FarmDemoBootstrap demo;
         HudSkin skin;
         string commandInput = string.Empty;
+        string emptyInputHint = string.Empty;
+        float emptyInputHintUntil;
+        bool commandInputWasFocused;
+        int lastTabFrame = -1;
         Vector2 drawerScroll;
 
         /// <summary>决策抽屉是否打开；Tab、关闭按钮、剧本回放与压测共用这一个开关。</summary>
         public bool InspectorOpen { get; set; }
+
+        /// <summary>交付窗口够高时用四行对话框；矮窗口退回两行，见 <see cref="DialogueHeight"/>。</summary>
+        bool IsTallDialogue => Screen.height >= TallDialogueMinScreenHeight;
+
+        bool IsEmptyHintActive =>
+            !string.IsNullOrEmpty(emptyInputHint) && Time.unscaledTime < emptyInputHintUntil;
 
         void Start()
         {
@@ -108,19 +142,45 @@ namespace ElysFarm.Demo
         /// <summary>
         /// 键盘兜底：Tab 开关抽屉，Esc 关抽屉；输入框有焦点时回车发送，
         /// 镜头快捷键只在没有控件抢键盘时生效。
+        /// Tab 要读 <see cref="Event.rawType"/>：输入框有焦点时 IMGUI 会先把 Tab 吃掉做焦点切换，
+        /// 等 OnGUI 跑到这里 <see cref="Event.type"/> 已经是 Used；只看 type 会漏掉这一下。
+        /// 处理完再把焦点还给输入框，玩家可以接着打字。
         /// </summary>
         void HandleKeys()
         {
             var current = Event.current;
-            if (current.type != EventType.KeyDown)
+            var keyDown = current.type == EventType.KeyDown
+                || (current.type == EventType.Used && current.rawType == EventType.KeyDown);
+            if (!keyDown)
             {
                 return;
             }
 
-            if (current.keyCode == KeyCode.Tab)
+            // 输入框吃掉 Tab 时，keyCode 可能已经变成 None，只剩字符 '\t'；两种都认。
+            var isTab = current.keyCode == KeyCode.Tab || current.character == '\t';
+            if (isTab)
             {
+                // 同一次按键可能在 KeyDown 与 Used 两趟里各来一次；一帧只翻一次。
+                if (lastTabFrame == Time.frameCount)
+                {
+                    return;
+                }
+
+                lastTabFrame = Time.frameCount;
+                var inputHadFocus = commandInputWasFocused
+                    || GUI.GetNameOfFocusedControl() == CommandControl;
                 InspectorOpen = !InspectorOpen;
+                if (inputHadFocus)
+                {
+                    GUI.FocusControl(CommandControl);
+                }
+
                 current.Use();
+                return;
+            }
+
+            if (current.type != EventType.KeyDown)
+            {
                 return;
             }
 
@@ -179,13 +239,23 @@ namespace ElysFarm.Demo
 
         bool Submit()
         {
-            if (demo.IsThinking || string.IsNullOrWhiteSpace(commandInput))
+            if (demo.IsThinking)
             {
                 return false;
             }
 
+            var hint = FarmDemoText.EmptyInputHintFor(commandInput);
+            if (hint != null)
+            {
+                emptyInputHint = hint;
+                emptyInputHintUntil = Time.unscaledTime + EmptyInputHintSeconds;
+                return true;
+            }
+
             demo.SubmitPlayerText(commandInput);
             commandInput = string.Empty;
+            emptyInputHint = string.Empty;
+            emptyInputHintUntil = 0f;
             return true;
         }
 
@@ -410,13 +480,20 @@ namespace ElysFarm.Demo
 
         void DrawDialogue()
         {
-            var box = new Rect(DialogueX, DialogueTop(), Screen.width - DialogueX * 2f, DialogueHeight);
+            var box = new Rect(DialogueX, DialogueTop(), Screen.width - DialogueX * 2f, DialogueHeight());
             skin.DrawPanel(box, skin.Panel);
 
             var tag = new Rect(box.x + 160f, box.y - 30f, 76f, 32f);
             skin.DrawPanel(tag, skin.Panel);
             GUI.Label(tag, SpeakerName(), skin.TagText);
             DrawLocalTemplateBadge(tag);
+
+            // 空输入提示画在名字右边，不占「你：… · 理解成…」那一行：
+            // 后者始终显示实际锁定的地块与工步（#17），不能被一句轻提示顶掉。
+            if (IsEmptyHintActive)
+            {
+                GUI.Label(new Rect(tag.xMax + 96f, tag.y + 2f, 430f, 28f), emptyInputHint, skin.Small);
+            }
 
             var frame = new Rect(box.x + 4f, box.y + 4f, 136f, 136f);
             GUI.Box(frame, GUIContent.none, skin.PortraitFrame);
@@ -425,24 +502,40 @@ namespace ElysFarm.Demo
             var textX = box.x + 160f;
             var textWidth = box.width - 160f - 140f;
             var reply = DialogueLine();
-            var replyHeight = Mathf.Clamp(
-                skin.BodyWrap.CalcHeight(new GUIContent(reply), textWidth),
-                27f,
-                52f);
-            GUI.Label(new Rect(textX, box.y + 12f, textWidth, replyHeight), reply, skin.BodyWrap);
+            var measured = skin.BodyWrap.CalcHeight(new GUIContent(reply), textWidth);
 
-            // 一行回答时保持锚点布局；两行时把「你：…」与 chips / 输入框往下让，
-            // 同时收紧两处行距，保证 168 高的对话框仍装得下发送按钮。
-            var extra = replyHeight - 27f;
-            var hintY = box.y + 42f + extra;
-            GUI.Label(new Rect(textX, hintY, textWidth, 22f), DialogueHint(), skin.Small);
+            // 720p 的对话框按四行正文留位置：正文在上，提示、chips 与输入框贴着底边，
+            // 于是 1 行回答不会把输入框吊在半空，4 行也不会压到发送按钮。
+            // 547 高的 Game 视图仍按原来的两行布局，避免高对话框盖住三人卡。
+            float replyHeight;
+            float hintY;
+            float chipY;
+            float inputY;
+            if (IsTallDialogue)
+            {
+                inputY = box.yMax - InputBottomMargin - InputHeight;
+                chipY = inputY - ChipInputGap - ChipHeight;
+                hintY = chipY - HintChipGap - HintHeight;
+                replyHeight = Mathf.Clamp(measured, ReplyLineHeight, ReplyMaxHeight);
+            }
+            else
+            {
+                replyHeight = Mathf.Clamp(measured, ReplyLineHeight, ReplyLineHeight * 2f - 2f);
+                var extra = replyHeight - ReplyLineHeight;
+                var slide = Mathf.Clamp01(extra / 25f);
+                hintY = box.y + 42f + extra;
+                chipY = hintY + HintHeight + Mathf.Lerp(16f, 2f, slide);
+                inputY = chipY + ChipHeight + Mathf.Lerp(6f, 4f, slide);
+            }
+
+            GUI.Label(new Rect(textX, box.y + 12f, textWidth, replyHeight), reply, skin.BodyWrap);
+            GUI.Label(new Rect(textX, hintY, textWidth, HintHeight), DialogueHint(textWidth), skin.Small);
 
             var chipX = textX;
-            var chipY = hintY + 22f + Mathf.Lerp(16f, 2f, extra / 25f);
-            foreach (var example in Examples)
+            foreach (var example in FarmDemoText.Examples)
             {
                 var chipWidth = skin.Chip.CalcSize(new GUIContent(example)).x + 22f;
-                if (GUI.Button(new Rect(chipX, chipY, chipWidth, 20f), example, skin.Chip))
+                if (GUI.Button(new Rect(chipX, chipY, chipWidth, ChipHeight), example, skin.Chip))
                 {
                     commandInput = example;
                     Submit();
@@ -451,15 +544,15 @@ namespace ElysFarm.Demo
                 chipX += chipWidth + 8f;
             }
 
-            var inputY = chipY + 20f + Mathf.Lerp(6f, 4f, extra / 25f);
             var inputRect = new Rect(
                 box.x + 164f,
                 inputY,
                 box.width - 164f - 128f - 14f,
-                46f);
+                InputHeight);
             GUI.SetNextControlName(CommandControl);
             commandInput = GUI.TextField(inputRect, commandInput ?? string.Empty, 120, skin.Input);
-            if (string.IsNullOrEmpty(commandInput) && GUI.GetNameOfFocusedControl() != CommandControl)
+            commandInputWasFocused = GUI.GetNameOfFocusedControl() == CommandControl;
+            if (string.IsNullOrEmpty(commandInput) && !commandInputWasFocused)
             {
                 // TextField 会把光标色留在 GUI.color 里；占位文字显式用不透明颜色画，免得被冲淡。
                 var previousColor = GUI.color;
@@ -515,6 +608,8 @@ namespace ElysFarm.Demo
 
         string DialogueLine()
         {
+            var limit = IsTallDialogue ? FarmDemoText.ReplyLimit : FarmDemoText.ShortReplyLimit;
+
             if (demo.IsThinkingAboutSelected)
             {
                 return "……（正在理解你这句话）";
@@ -522,7 +617,7 @@ namespace ElysFarm.Demo
 
             if (demo.IsRetellingSelected)
             {
-                return FarmDemoText.Shorten(demo.RetoldLine, ReplyLimit);
+                return FarmDemoText.DialogueReply(demo.RetoldLine, limit);
             }
 
             var round = demo.CurrentRound;
@@ -531,11 +626,11 @@ namespace ElysFarm.Demo
                 return $"还没和{SpeakerName()}聊过。";
             }
 
-            var reply = FarmDemoText.Shorten(round.Value.Reply, ReplyLimit);
+            var reply = FarmDemoText.DialogueReply(round.Value.Reply, limit);
             return string.IsNullOrWhiteSpace(reply) ? "……" : reply;
         }
 
-        string DialogueHint()
+        string DialogueHint(float textWidth)
         {
             if (demo.IsThinkingAboutSelected)
             {
@@ -555,7 +650,11 @@ namespace ElysFarm.Demo
                     : "先说句话（本地模板）；卡片右上角可以切换她们自己找活。";
             }
 
-            return $"你：{FarmDemoText.Shorten(round.Value.PlayerText, 32)} · {round.Value.Understood}";
+            return FarmDemoText.HintLine(
+                round.Value.PlayerText,
+                round.Value.Understood,
+                textWidth,
+                text => skin.Small.CalcSize(new GUIContent(text)).x);
         }
 
         Npc Speaker()
@@ -615,6 +714,12 @@ namespace ElysFarm.Demo
             if (npcId != demo.SpeakerId)
             {
                 return condition == FaceCondition.Resting ? FaceEmotion.Tired : FaceEmotion.Neutral;
+            }
+
+            // 听不懂中文是「没听清」，不是拒单；别用不耐烦的脸。
+            if (demo.LastResult != null && demo.LastResult.LanguageNotUnderstood)
+            {
+                return FaceEmotion.Confused;
             }
 
             return PortraitFace.Of(demo.LastOutlet, demo.LastAccepted, condition);
@@ -795,9 +900,14 @@ namespace ElysFarm.Demo
             }
         }
 
+        float DialogueHeight()
+        {
+            return IsTallDialogue ? TallDialogueHeight : ShortDialogueHeight;
+        }
+
         float DialogueTop()
         {
-            return Screen.height - DialogueHeight;
+            return Screen.height - DialogueHeight();
         }
 
         void DrawBar(Rect rect, float value, Color color)

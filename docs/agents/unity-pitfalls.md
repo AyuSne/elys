@@ -131,7 +131,9 @@
 - **`GUI.TextField` 会把光标色留在 `GUI.color` 里**。紧接着画的占位文字会被冲淡成接近背景色；画占位文字前显式 `GUI.color = Color.white`，画完再还原。
 - **UI 素材不受「素材开/关」影响**：头像与物品图标走 `PixelArt.LoadUiTexture` / `LoadUiSprite`（独立缓存），不经过 `UseArt` 判断；关掉素材只让农场退回体块，HUD 仍要有头像和图标。头顶表情是农场反馈，走 `LoadSprite`，关掉素材就不画。
 - **`HudSkin` 只能在 `OnGUI` 里构造。** 它的 `Box` / `Label` / `Button` 要读 `GUI.skin`，在 `Start` 里 `new HudSkin()` 会抛 `ArgumentException: You can only call GUI functions from inside OnGUI`（#14 遗留，每次进 Play 都有；#15 改成 `OnGUI` 懒初始化，后来者别把构造搬回 `Start`）。
-- **对话框正文最多两行**：本地追问的回答能到 80+ 字，直接用 `GUI.Label` + `Clip` 会在右边硬切。用 `skin.BodyWrap` + `CalcHeight` 在 27–52px 之间取高：一行时保持锚点布局，两行时把「你：…」、chips 与输入框下移并收紧行距（`Mathf.Lerp`），168 高的框仍装得下发送按钮；`Shorten(..., ReplyLimit=110)` 只兜底极端长句，别把正文截到一句。
+- **对话框正文四行**：720p 的对话框高 232，正文上限 160 字（`FarmDemoText.DialogueReply`），用 `skin.BodyWrap` + `CalcHeight` 在 27–108px（四行）之间取高；正文在上，提示、chips 与输入框贴底，1 行回答不会把输入框吊在半空。**547 高的 Game 视图退回 168 高、两行的旧布局**（`DialogueHeight()`），正文上限同时退回 110 字并留省略号，否则高对话框会盖住三人卡。长句只排一个工步时，「理解成」追加「我按 X 理解」（`FarmDemoText.IsLongSentence`，阈值 20 字）。空输入提示画在名字右边，不占「你：… · 理解成…」那一行；那一行用 `FarmDemoText.HintLine` 先缩玩家原话，保证「理解成」不被截掉。
+- **输入框有焦点时 Tab 会被 IMGUI 先吃掉**：Tab 用来切换控件焦点，等 `OnGUI` 跑到 `HandleKeys` 时 `Event.type` 已经变成 `Used`，`keyCode` 也可能变成 `None`，只剩 `character == '\t'`。要同时读 `Event.rawType` 与字符，并在处理完 `GUI.FocusControl` 把焦点还给输入框；C / 1 / 2 / 3 仍只在没有控件抢键盘时生效。编辑器会先把 Tab 用于 Editor 自己的焦点导航，Game 视图里按 Tab 到不了 `OnGUI`，这条只能在播放器里复验。
+- **英文输入不经过模型**：`LocalIntentParser.LooksNonChinese` 在模型与记忆检索之前拦下「一个汉字都没有、但至少有一个字母」的句子，统一回「我只听得懂中文。」；中英混写（「把 A1 浇水」）仍按中文解析。结果标 `IntentResult.LanguageNotUnderstood`，HUD 不说「拒绝了这单活」、也不冒被拒表情，只换一张「没听懂」的脸。
 - **验证头顶表情的可见性**：用 `script eval` 读 `NpcEmote` 的 `SpriteRenderer.enabled` 比截图可靠（截不到“没画”）。跟拍一名 NPC、把另外两人挪到 (100,100)，应看到被跟拍者 `enabled=True`、屏外两人 `enabled=False sprite=True`；纯函数 `OverheadEmotes.IsVisible` 只判四边与相机前后，别拿 `renderer.isVisible` 代替。
 - **2.5 秒的表情要截图就尽快**：`script eval` 提交指令 → 等模型 → 再 `capture` 往往已经超过 2.5 秒；用离线 `IntentRouter` 让 `ApplyIntent` 同步完成，或在同一帧里直接 `EmoteBoard.Post` 再立刻 `capture`。
 

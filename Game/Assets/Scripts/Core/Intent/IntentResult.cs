@@ -17,7 +17,8 @@ namespace ElysFarm.Core
             bool usedFallback,
             ModelCallInfo call,
             bool cancelRequested = false,
-            WorkOrder cancelledWorkOrder = null)
+            WorkOrder cancelledWorkOrder = null,
+            bool languageNotUnderstood = false)
         {
             Outlet = outlet;
             Accepted = accepted;
@@ -27,6 +28,7 @@ namespace ElysFarm.Core
             Call = call;
             CancelRequested = cancelRequested;
             CancelledWorkOrder = cancelledWorkOrder;
+            LanguageNotUnderstood = languageNotUnderstood;
         }
 
         /// <summary>三个出口之一。</summary>
@@ -65,6 +67,12 @@ namespace ElysFarm.Core
         /// <summary>取消成功：确实撤掉了一张工单。</summary>
         public bool Cancelled => CancelledWorkOrder != null;
 
+        /// <summary>
+        /// 这句话不是中文，NPC 只回了一句固定话术（#25）。它不是农事指令的拒绝：
+        /// HUD 据此不把它说成「拒绝了这单活」，也不冒被拒的表情。
+        /// </summary>
+        public bool LanguageNotUnderstood { get; }
+
         /// <summary>最近一次模型调用的摘要。</summary>
         public ModelCallInfo Call { get; }
 
@@ -89,6 +97,22 @@ namespace ElysFarm.Core
         internal static IntentResult Refuse(string reply, bool usedFallback, ModelCallInfo call)
         {
             return new IntentResult(IntentOutlet.FarmCommand, false, reply, null, usedFallback, call);
+        }
+
+        /// <summary>
+        /// 非中文输入的固定回话（#25）。出口仍是农事指令，但语言拒绝不算「拒单」：
+        /// 调用方看 <see cref="LanguageNotUnderstood"/>，不要冒被拒表情或写「拒绝了这单活」。
+        /// </summary>
+        internal static IntentResult NotUnderstood(string reply, ModelCallInfo call)
+        {
+            return new IntentResult(
+                IntentOutlet.FarmCommand,
+                false,
+                reply,
+                null,
+                false,
+                call,
+                languageNotUnderstood: true);
         }
 
         /// <summary>

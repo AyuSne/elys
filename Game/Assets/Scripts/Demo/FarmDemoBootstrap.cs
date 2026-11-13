@@ -575,8 +575,10 @@ namespace ElysFarm.Demo
             ClearRetelling();
             LastResult = result;
 
-            // 接单/被拒是两种头顶表情；追问、闲聊与取消不冒，只在对话框里换脸。
-            if (!result.CancelRequested && result.Outlet == IntentOutlet.FarmCommand)
+            // 接单/被拒是两种头顶表情；追问、闲聊、取消与「听不懂中文」不冒，只在对话框里换脸。
+            if (!result.CancelRequested
+                && !result.LanguageNotUnderstood
+                && result.Outlet == IntentOutlet.FarmCommand)
             {
                 PostEmote(target.Id, result.Accepted ? EmoteEvent.Accepted : EmoteEvent.Rejected);
             }
@@ -627,6 +629,13 @@ namespace ElysFarm.Demo
                     other.NextActionAt = 0f;
                 }
             }
+            else if (result.LanguageNotUnderstood)
+            {
+                if (view != null)
+                {
+                    view.Intent = "没听懂（只听得懂中文）";
+                }
+            }
             else if (view != null)
             {
                 view.Intent = result.Outlet == IntentOutlet.FarmCommand ? "拒绝了这单活" : "陪着说了两句";
@@ -636,7 +645,7 @@ namespace ElysFarm.Demo
                 target.Id,
                 new DialogueRound(
                     new DialogueTurn(playerText, result.Reply),
-                    UnderstoodOf(result),
+                    UnderstoodOf(result, playerText),
                     result.Outlet,
                     result.Accepted,
                     result.UsedFallback));
@@ -654,8 +663,13 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>「理解成」一行：接单时给出地块与工步，其余出口说明这句话只留下什么。</summary>
-        static string UnderstoodOf(IntentResult result)
+        static string UnderstoodOf(IntentResult result, string playerText)
         {
+            if (result.LanguageNotUnderstood)
+            {
+                return "没听懂：只支持中文输入";
+            }
+
             if (result.Cancelled)
             {
                 return $"取消：{result.CancelledWorkOrder.FieldId} 的工单作废（做过的工步不回滚）";
@@ -668,7 +682,11 @@ namespace ElysFarm.Demo
 
             if (result.Accepted)
             {
-                return FarmDemoText.Plan(result.FieldId, result.SpeciesId, result.PlannedSteps);
+                return FarmDemoText.Plan(
+                    result.FieldId,
+                    result.SpeciesId,
+                    result.PlannedSteps,
+                    FarmDemoText.IsLongSentence(playerText));
             }
 
             switch (result.Outlet)
