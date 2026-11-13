@@ -11,7 +11,7 @@
 |---|---|---|
 | 全量 EditMode | `scripts/run-tests.ps1` | 259/259 通过、0 失败；三项题目验收（五个工步完整 / 时间推进 / 背包守恒）全通过 |
 | 三条剧本 ×3 | `scripts/run-scenarios.ps1 -Runs 3 -RegenerateReference` | 参考从本轮代码重新生成；full-flow / refusal / memory 各 3/3 次逐字一致，且与参考逐字一致（总耗时 275.6 / 135.7 / 160.6 秒） |
-| 重打包 | `scripts/build-windows.ps1 -RequireClean` | 从收口提交构建，`Elys.provenance.json` 的 `source.dirty=false`；包 185 个文件、102.5 MB |
+| 重打包 | `scripts/package-windows.ps1 -RequireClean` | 从收口提交构建，`Elys.provenance.json` 的 `source.dirty=false`；包 184 个文件、102.3 MB |
 | 冒烟 | `scripts/smoke-test-build.ps1` | 窗口 1304×784，截图 145 KB 非空；`Player.log` 有 1 条 `[Elys]` 启动日志、0 条异常 |
 | 录屏 | `scripts/record-demo.ps1` | 已重录：166.4 秒 / 4.3 MB / 3327 帧 / 1280×720 / 20fps；章节 00:00 / 01:22 / 02:00；三段 trace 都与参考一致 |
 
