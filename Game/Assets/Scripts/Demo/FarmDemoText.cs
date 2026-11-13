@@ -118,19 +118,25 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
+        /// 三人卡与抽屉共用的「待命」词根（#30）：两处文案都从这里拼出来，
+        /// 「同词根」由代码保证，而不是各写一份字面量。
+        /// </summary>
+        public const string StandbyWord = "待命";
+
+        /// <summary>
         /// 自主关着时三人卡的意图行（#30）：与决策抽屉第 ② 项的「待命」同词根，
         /// 两处不会一边说「没活干」一边说「待命」。
         /// </summary>
-        public const string WaitingIntent = "待命，等玩家开口";
+        public const string WaitingIntent = StandbyWord + "，等玩家开口";
 
         /// <summary>
         /// 自主开着、这一刻确实没活时三人卡的意图行（#30）。理由由领域给出
-        /// （<see cref="FarmWorld.TryDecide"/> 的「现在没有该干的活」），卡片只在前面冠上「待命」，
-        /// 与抽屉的「待命」同词根，不另编一句「没活干」。
+        /// （<see cref="FarmWorld.TryDecide"/> 的「现在没有该干的活」），卡片只在前面冠上
+        /// <see cref="StandbyWord"/>，与抽屉的「待命」同词根，不另编一句「没活干」。
         /// </summary>
         public static string NoWorkIntent(string reason)
         {
-            return string.IsNullOrWhiteSpace(reason) ? "待命" : $"待命（{reason}）";
+            return $"{StandbyWord}（{reason}）";
         }
 
         /// <summary>
@@ -230,7 +236,7 @@ namespace ElysFarm.Demo
         /// <see cref="FarmDemoBootstrap.CancelPhrase"/> 这句取消语句（本地规则识别、不调模型），
         /// 记录用的却是这一句痕迹。
         /// </summary>
-        public const string CancelTrace = "（点了取消）";
+        public const string CancelMark = "（点了取消）";
 
         /// <summary>
         /// 对话框里「你：… · 理解成…」那一行：把玩家原话按剩余宽度截短，

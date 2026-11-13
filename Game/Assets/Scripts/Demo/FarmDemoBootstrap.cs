@@ -52,7 +52,7 @@ namespace ElysFarm.Demo
         /// <summary>
         /// 三人卡的「取消」按钮走路由时用的取消语句（本地规则识别、不调模型）。
         /// 按钮本身不是玩家打的字，所以对话簿与提示行记的是
-        /// <see cref="FarmDemoText.CancelTrace"/>，而不是这句替玩家说的话（#30）。
+        /// <see cref="FarmDemoText.CancelMark"/>，而不是这句替玩家说的话（#30）。
         /// </summary>
         public const string CancelPhrase = "别干了";
 
@@ -495,16 +495,16 @@ namespace ElysFarm.Demo
         /// </summary>
         public bool SubmitPlayerText(string text)
         {
-            return SubmitPlayerText(text, text);
+            return SubmitText(text, text);
         }
 
         /// <summary>
         /// 提交一句话，把「路由用的台词」与「记录用的台词」分开（#30）：三人卡的「取消」按钮
         /// 用取消语句走路由（本地规则识别、不调模型），记进对话簿与提示行的却是
-        /// <see cref="FarmDemoText.CancelTrace"/> 那句痕迹——按钮不能伪造玩家没打过的字。
-        /// 打字取消两条台词相同，行为与文案完全不变。
+        /// <see cref="FarmDemoText.CancelMark"/> 那句痕迹——按钮不能伪造玩家没打过的字。
+        /// 打字时两条台词相同，行为与文案完全不变。
         /// </summary>
-        bool SubmitPlayerText(string text, string recordedText)
+        bool SubmitText(string text, string recordedText)
         {
             LastResult = null;
             if (IsThinking || Router == null || string.IsNullOrWhiteSpace(text) || SelectedNpc == null)
@@ -514,7 +514,7 @@ namespace ElysFarm.Demo
 
             var target = SelectedNpc;
             var spoken = text.Trim();
-            var recorded = string.IsNullOrWhiteSpace(recordedText) ? spoken : recordedText.Trim();
+            var recorded = recordedText.Trim();
             ClearRetelling();
             IsThinking = true;
             ThinkingNpcId = target.Id;
@@ -532,7 +532,7 @@ namespace ElysFarm.Demo
         /// 撤掉某名 NPC 当前的工单；三人卡那一行的「取消」按钮走这里。
         /// 路由仍用取消语句 <see cref="CancelPhrase"/>，领域侧照旧走
         /// <see cref="FarmWorld.TryCancelWorkOrder"/>；但对话簿与提示行记的是
-        /// <see cref="FarmDemoText.CancelTrace"/>（「（点了取消）」），不再伪造「你：别干了」。
+        /// <see cref="FarmDemoText.CancelMark"/>（「（点了取消）」），不再伪造「你：别干了」。
         /// 没有工单或正在等上一句时不动任何状态（也不改指挥对象：这句话没送出去）。
         /// </summary>
         public bool CancelWorkOrder(string npcId)
@@ -543,7 +543,7 @@ namespace ElysFarm.Demo
             }
 
             SelectNpc(npcId);
-            return SubmitPlayerText(CancelPhrase, FarmDemoText.CancelTrace);
+            return SubmitText(CancelPhrase, FarmDemoText.CancelMark);
         }
 
         async void SubmitAsync(string text, string recordedText, Npc target)
@@ -589,7 +589,7 @@ namespace ElysFarm.Demo
 
         /// <summary>
         /// 把一次路由结果落到界面与对话簿上。<paramref name="recordedText"/> 是记进对话簿的
-        /// 玩家台词（打字时就是原话，点「取消」时是 <see cref="FarmDemoText.CancelTrace"/>）。
+        /// 玩家台词（打字时就是原话，点「取消」时是 <see cref="FarmDemoText.CancelMark"/>）。
         /// </summary>
         void ApplyIntent(IntentResult result, Npc target, string recordedText)
         {
@@ -620,7 +620,7 @@ namespace ElysFarm.Demo
                     // 自主开着时她不是「等玩家开口」，只是刚被叫停；两句话都得看得见「待命」。
                     view.Intent = !result.Cancelled
                         ? "手上没活可取消"
-                        : AutonomyEnabled ? "刚被叫停，待命" : FarmDemoText.WaitingIntent;
+                        : AutonomyEnabled ? "刚被叫停，" + FarmDemoText.StandbyWord : FarmDemoText.WaitingIntent;
                     if (result.Cancelled)
                     {
                         // 取消要立刻停手：不能再走到地里，把旧工单的下一步当成一次自主行为做成。

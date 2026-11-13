@@ -324,11 +324,10 @@ namespace ElysFarm.Demo
 
             // 「Tab 决策可视化 · 流水」浮在农场上：先给一块羊皮纸底，再压字（#30）。
             // 不加底衬时 12pt 墨色字直接落在草叶、农舍屋顶与体块上，几乎读不出来。
-            // 底衬按文案量出来的宽度铺，位置与文案与原来一致。
+            // 底衬按文案量出来的宽度铺、左右各留 8px，文字起点与文案与原来一致；高度与偏移也走 8px 网格。
             var hint = "Tab 决策可视化 · 流水";
             var hintWidth = skin.SmallInk.CalcSize(new GUIContent(hint)).x;
-            skin.DrawPanel(new Rect(x - 10f, y + 35f, hintWidth + 20f, 28f), skin.Panel);
-            GUI.Label(new Rect(x, y + 38f, total, 22f), hint, skin.SmallInk);
+            DrawPlate(new Rect(x, y + 32f, hintWidth, 32f), hint, skin.SmallInk, 8f);
         }
 
         static Rect PillRect(float x, float y, float width, float gap, ref int index)
@@ -490,8 +489,7 @@ namespace ElysFarm.Demo
             skin.DrawPanel(box, skin.Panel);
 
             var tag = new Rect(box.x + 160f, box.y - 30f, 76f, 32f);
-            skin.DrawPanel(tag, skin.Panel);
-            GUI.Label(tag, SpeakerName(), skin.TagText);
+            DrawPlate(tag, SpeakerName(), skin.TagText);
             DrawLocalTemplateBadge(tag);
 
             // 空输入提示画在名字右边，不占「你：… · 理解成…」那一行：
@@ -499,9 +497,7 @@ namespace ElysFarm.Demo
             // 提示浮在农场上，给一块羊皮纸底，别让 12pt 墨色字直接压在草上。
             if (IsEmptyHintActive)
             {
-                var toast = new Rect(tag.xMax + 96f, tag.y + 2f, 360f, 28f);
-                skin.DrawPanel(toast, skin.Panel);
-                GUI.Label(toast, emptyInputHint, skin.SmallInk);
+                DrawPlate(new Rect(tag.xMax + 96f, tag.y + 2f, 360f, 28f), emptyInputHint, skin.SmallInk);
             }
 
             var frame = new Rect(box.x + 4f, box.y + 4f, 136f, 136f);
@@ -597,9 +593,7 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            var badge = new Rect(tag.xMax + 6f, tag.y + 2f, 82f, 28f);
-            skin.DrawPanel(badge, skin.Panel);
-            GUI.Label(badge, "本地模板", skin.SmallInk);
+            DrawPlate(new Rect(tag.xMax + 6f, tag.y + 2f, 82f, 28f), "本地模板", skin.SmallInk);
         }
 
         bool ShowsLocalTemplate()
@@ -917,6 +911,22 @@ namespace ElysFarm.Demo
         float DialogueTop()
         {
             return Screen.height - DialogueHeight();
+        }
+
+        /// <summary>
+        /// 一块「羊皮纸底 + 一行字」的小牌：名字标签、「本地模板」小标、空输入提示与
+        /// 「Tab 决策可视化 · 流水」提示共用这一个形状（#30），底衬只在这里铺一次。
+        /// 传了 <paramref name="padX"/> 时底衬在文字左右各多留这么宽，文字起点不动。
+        /// </summary>
+        void DrawPlate(Rect textRect, string text, GUIStyle style, float padX = 0f)
+        {
+            var plate = new Rect(
+                textRect.x - padX,
+                textRect.y,
+                textRect.width + padX * 2f,
+                textRect.height);
+            skin.DrawPanel(plate, skin.Panel);
+            GUI.Label(textRect, text, style);
         }
 
         void DrawBar(Rect rect, float value, Color color)

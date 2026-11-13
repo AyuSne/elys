@@ -83,33 +83,44 @@ namespace ElysFarm.Tests
                 "没有工单时卡片仍是演示层自己的说法");
         }
 
+        /// <summary>假字体：每个字符 12 像素宽。按宽度断言文案的用例都用这一份。</summary>
+        static float Measure(string text)
+        {
+            return text.Length * 12f;
+        }
+
         [Test]
-        public void 自主开着又没活时卡片与抽屉都从待命说起()
+        public void 自主开着又没活时卡片与抽屉都说待命()
         {
             // 空农场：一块地也没有，阿禾拿主意时确实没活干（默认人设决定间隔为 0）。
             var world = new FarmWorld(new FarmClock());
             world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f));
             Assert.IsFalse(world.TryDecide("ahe", out _, out var reason), "没有地块，确实没活干");
 
-            var card = FarmDemoText.NoWorkIntent(reason);
+            var card = FarmDemoText.CardIntent(
+                world,
+                world.GetNpc("ahe"),
+                FarmDemoText.NoWorkIntent(reason));
 
             Assert.AreEqual("待命（现在没有该干的活）", card, "卡片先说「待命」，再接领域给的理由");
             Assert.AreEqual("待命", world.IntentOf("ahe"), "抽屉第 ② 项说的仍是领域的「待命」");
             StringAssert.DoesNotContain("没活干", card, "不再一边说「没活干」一边说「待命」");
-            Assert.AreEqual("待命", FarmDemoText.NoWorkIntent(null), "拿不到理由时只说「待命」，不画一对空括号");
         }
 
         [Test]
-        public void 自主关着时卡片与抽屉也同词根()
+        public void 自主关着时卡片与抽屉都说待命()
         {
             var world = new FarmWorld(new FarmClock());
             world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f));
 
-            Assert.AreEqual(
-                "待命",
-                world.IntentOf("ahe", includeAutonomousIntent: false),
-                "暂停时抽屉只给「待命」");
-            StringAssert.StartsWith("待命", FarmDemoText.WaitingIntent, "卡片也从「待命」说起");
+            var card = FarmDemoText.CardIntent(
+                world,
+                world.GetNpc("ahe"),
+                FarmDemoText.WaitingIntent);
+
+            Assert.AreEqual("待命", world.IntentOf("ahe", includeAutonomousIntent: false), "暂停时抽屉只给「待命」");
+            StringAssert.StartsWith(FarmDemoText.StandbyWord, card, "卡片也从同一个词根说起");
+            StringAssert.StartsWith(FarmDemoText.StandbyWord, FarmDemoText.WaitingIntent);
         }
 
         [Test]
@@ -117,13 +128,8 @@ namespace ElysFarm.Tests
         {
             // #30：三人卡的「取消」按钮不是玩家说的那句话。提示行记的是痕迹「（点了取消）」，
             // 所以对话里不会再冒出一句玩家没打过的「别干了」；路由仍用取消语句（见 FarmDemoBootstrap）。
-            float Measure(string text)
-            {
-                return text.Length * 12f;
-            }
-
             const string understood = "取消：A1 的工单作废（做过的工步不回滚）";
-            var line = FarmDemoText.HintLine(FarmDemoText.CancelTrace, understood, 2000f, Measure);
+            var line = FarmDemoText.HintLine(FarmDemoText.CancelMark, understood, 2000f, Measure);
 
             // 「你：… · 理解成…」的分隔符沿用 #25 的格式（两侧各一个空格），这里换的是前半句。
             Assert.AreEqual("你：（点了取消） · 取消：A1 的工单作废（做过的工步不回滚）", line);
@@ -134,16 +140,11 @@ namespace ElysFarm.Tests
         public void 打字取消记的还是玩家原话()
         {
             // 同一行在打字取消时完全不变：记的就是玩家自己打的那句话（#30 的回归护栏）。
-            float Measure(string text)
-            {
-                return text.Length * 12f;
-            }
-
             const string understood = "取消：A1 的工单作废（做过的工步不回滚）";
             var line = FarmDemoText.HintLine("别干了", understood, 2000f, Measure);
 
             Assert.AreEqual("你：别干了 · 取消：A1 的工单作废（做过的工步不回滚）", line);
-            StringAssert.DoesNotContain("（点了取消）", line);
+            StringAssert.DoesNotContain(FarmDemoText.CancelMark, line);
         }
 
         [Test]
@@ -198,11 +199,6 @@ namespace ElysFarm.Tests
         public void 三人卡文案按可用宽度截短而不是按字数()
         {
             // 假字体：每个字符 12 像素宽。宽度够就原样显示，不够就截到放得下的地方再加省略号。
-            float Measure(string text)
-            {
-                return text.Length * 12f;
-            }
-
             Assert.AreEqual("等 A1 · 除草（没什么草可除）", FarmDemoText.Fit("等 A1 · 除草（没什么草可除）", 12f * 17f, Measure), "放得下就原样显示");
             Assert.AreEqual("等 A1 · 除…", FarmDemoText.Fit("等 A1 · 除草（没什么草可除）", 12f * 9f, Measure), "截短要留省略号");
             Assert.AreEqual(string.Empty, FarmDemoText.Fit(string.Empty, 100f, Measure));
@@ -255,11 +251,6 @@ namespace ElysFarm.Tests
         [Test]
         public void 理解成一行先缩短玩家原话_不截掉理解成()
         {
-            float Measure(string text)
-            {
-                return text.Length * 12f;
-            }
-
             const string understood = "理解成：A2 · 萝卜 · 播种→浇水→施肥→除草→收获";
             var line = FarmDemoText.HintLine(
                 "麻烦你把中间那块地里的萝卜都收了再给东边那块地浇水谢谢你",
