@@ -38,7 +38,7 @@
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-tests.ps1
    ```
 
-   全量 232 个 EditMode 用例，报告在 `TestResults/editmode.xml`；`ScenarioTests.*` 是 #10 新增的四条。
+   全量 238 个 EditMode 用例，报告在 `TestResults/editmode.xml`；`ScenarioTests.*` 是 #10 新增的四条。
 5. **复现三次一致**：
 
    ```powershell
@@ -91,7 +91,7 @@
 4. 领域侧另有 `ScenarioTests.三条剧本连续跑三次_证据逐字一致` 兜底，不依赖构建。
 
 本次交付包的结果：full-flow 3/3、refusal 3/3、memory 3/3，三条都与领域参考逐字一致
-（耗时分别为 272.4 / 133.7 / 158.9 秒）；`TestResults/scenarios/summary.md` 是脚本生成的汇总。
+（耗时分别为 267.6 / 133.9 / 158.9 秒）；`TestResults/scenarios/summary.md` 是脚本生成的汇总。
 
 证据文本只记可观察结局：游戏日、地块状态与阶段、三本账、每日补货累计（`restocks=`）、
 按顺序执行过的计划工步、是否在休息、还挂着的工单。不记墙钟时间、帧率、浮点生长值，
@@ -100,7 +100,7 @@
 ## 录屏
 
 - 文件：[video/elys-demo.mp4](video/elys-demo.mp4)，1280×720，20fps，H.264（yuv420p），无音轨；
-  166.6 秒（2:47），5.0 MB。
+  166.5 秒（2:46），4.4 MB。
 - 章节（同目录 `elys-demo.chapters.txt`）：`00:00` 剧本一全流程 · `01:22` 剧本二拒绝与抱怨 · `02:00` 剧本三记忆体现。
 - 采集方式：游戏内 `ScreenCapture.CaptureScreenshotAsTexture()` 逐帧抓后缓冲，再由 ffmpeg 编码。
   不是抓桌面窗口，所以不受窗口位置、125% DPI 缩放、标题栏或遮挡影响；画面里也没有鼠标指针。
