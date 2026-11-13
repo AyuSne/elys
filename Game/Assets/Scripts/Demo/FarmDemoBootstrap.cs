@@ -43,6 +43,18 @@ namespace ElysFarm.Demo
         /// <summary>搭话时两人停下手里的事，让观察者看清这句转述。</summary>
         const float ChatHold = 1.2f;
 
+        /// <summary>
+        /// 取消工单后让这名 NPC 停一停：玩家才看得见「回待命」，
+        /// 而不是下一帧又被自主打分派回同一块地。
+        /// </summary>
+        const float CancelPause = 2f;
+
+        /// <summary>
+        /// 三人卡的「取消」按钮替玩家说的那句话。按钮与打字走同一条路（<see cref="SubmitPlayerText"/>），
+        /// 因此两者在对话簿、意图行与领域上留下的痕迹完全一样。
+        /// </summary>
+        public const string CancelPhrase = "别干了";
+
         static readonly Color AheColor = new Color(0.25f, 0.55f, 0.72f);
         static readonly Color AyaColor = new Color(0.88f, 0.55f, 0.25f);
         static readonly Color AtuColor = new Color(0.52f, 0.42f, 0.72f);
@@ -473,13 +485,14 @@ namespace ElysFarm.Demo
         /// <summary>
         /// 玩家提交一句话。真正的解析在 <see cref="IntentRouter"/> 里异步进行；
         /// 等待期间游戏循环不暂停，其余 NPC 继续自主干活。
+        /// 返回是否真的收下了这句话（正在等上一句、没有指挥对象或空输入时不收）。
         /// </summary>
-        public void SubmitPlayerText(string text)
+        public bool SubmitPlayerText(string text)
         {
             LastResult = null;
             if (IsThinking || Router == null || string.IsNullOrWhiteSpace(text) || SelectedNpc == null)
             {
-                return;
+                return false;
             }
 
             var target = SelectedNpc;
@@ -494,6 +507,24 @@ namespace ElysFarm.Demo
             }
 
             SubmitAsync(spoken, target);
+            return true;
+        }
+
+        /// <summary>
+        /// 撤掉某名 NPC 当前的工单；三人卡那一行的「取消」按钮走这里。
+        /// 它替玩家说一句 <see cref="CancelPhrase"/>，所以按钮与打字的痕迹完全一样：
+        /// 同一段对话簿、同一行意图、同一个 <see cref="FarmWorld.TryCancelWorkOrder"/>。
+        /// 没有工单或正在等上一句时不动任何状态。
+        /// </summary>
+        public bool CancelWorkOrder(string npcId)
+        {
+            if (World == null || World.WorkOrderOf(npcId) == null)
+            {
+                return false;
+            }
+
+            SelectNpc(npcId);
+            return SubmitPlayerText(CancelPhrase);
         }
 
         async void SubmitAsync(string text, Npc target)
@@ -544,8 +575,8 @@ namespace ElysFarm.Demo
             ClearRetelling();
             LastResult = result;
 
-            // 接单/被拒是两种头顶表情；追问与闲聊不冒，只在对话框里换脸。
-            if (result.Outlet == IntentOutlet.FarmCommand)
+            // 接单/被拒是两种头顶表情；追问、闲聊与取消不冒，只在对话框里换脸。
+            if (!result.CancelRequested && result.Outlet == IntentOutlet.FarmCommand)
             {
                 PostEmote(target.Id, result.Accepted ? EmoteEvent.Accepted : EmoteEvent.Rejected);
             }
@@ -557,7 +588,22 @@ namespace ElysFarm.Demo
 
             var view = ViewOf(target.Id);
 
-            if (result.Accepted)
+            if (result.CancelRequested)
+            {
+                if (view != null)
+                {
+                    view.Intent = result.Cancelled ? "待命，等玩家开口" : "手上没活可取消";
+                    if (result.Cancelled)
+                    {
+                        // 取消要立刻停手：不能再走到地里，把旧工单的下一步当成一次自主行为做成。
+                        view.Walking = false;
+                        view.PendingFieldId = null;
+                        view.PendingStep = default;
+                        view.NextActionAt = Now + CancelPause;
+                    }
+                }
+            }
+            else if (result.Accepted)
             {
                 if (view != null)
                 {
@@ -607,6 +653,16 @@ namespace ElysFarm.Demo
         /// <summary>「理解成」一行：接单时给出地块与工步，其余出口说明这句话只留下什么。</summary>
         static string UnderstoodOf(IntentResult result)
         {
+            if (result.Cancelled)
+            {
+                return $"取消：{result.CancelledWorkOrder.FieldId} 的工单作废（做过的工步不回滚）";
+            }
+
+            if (result.CancelRequested)
+            {
+                return "取消：手上没有工单";
+            }
+
             if (result.Accepted)
             {
                 return FarmDemoText.Plan(result.FieldId, result.SpeciesId, result.PlannedSteps);

@@ -27,6 +27,9 @@ namespace ElysFarm.Core
         /// <summary>闲聊的表达层给不出可用台词时只说这一句故障台词，不生成假回答。</summary>
         public const string ChatFailureLine = "我这会儿没听清，你再说一遍？";
 
+        /// <summary>取消由本地规则裁决、不经过模型时，HUD 用这句话说明这一句没问过模型。</summary>
+        public const string CancelCallDetail = "本地规则取消（未调用模型）";
+
         /// <summary>表达层最多尝试的调用次数：空响应重试一次。</summary>
         const int ExpressionAttempts = 2;
 
@@ -85,6 +88,13 @@ namespace ElysFarm.Core
                     ActionValidator.UnknownSpeciesReason(unknownCrop),
                     false,
                     new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Guard)));
+            }
+
+            // 取消工单也先于模型生效：它没有细节要模型补，而模型可能把「别干了」改写成一条农活。
+            // 取消只释放自己名下的工单与占位，已经做过的工步不回滚（见 GLOSSARY「取消」）。
+            if (LocalIntentParser.IsCancelRequest(text, world, npc))
+            {
+                return Finish(CancelWorkOrder(world, npc));
             }
 
             var deadline = deadlineSeconds
@@ -535,6 +545,22 @@ namespace ElysFarm.Core
         ModelCallInfo FailedCall(double latencySeconds, ModelCallOutcome outcome, string detail)
         {
             return new ModelCallInfo(client?.ModelName, latencySeconds, 0, 0, outcome, detail);
+        }
+
+        /// <summary>
+        /// 取消工单：释放占位、已经做过的工步不回滚，NPC 回待命。
+        /// 由本地规则直接裁决，不调用模型（记 <see cref="ModelCallOutcome.Guard"/>）。
+        /// </summary>
+        static IntentResult CancelWorkOrder(FarmWorld world, Npc npc)
+        {
+            var call = new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Guard, CancelCallDetail);
+
+            if (!world.TryCancelWorkOrder(npc.Id, out var cancelled, out _))
+            {
+                return IntentResult.Cancel("我手上没有活，不用取消。", null, call);
+            }
+
+            return IntentResult.Cancel($"好，{cancelled.FieldId} 的活我不干了。", cancelled, call);
         }
 
         /// <summary>模型给了内容但这一层用不了（空内容、非法 JSON、JSON 冒充台词）。</summary>

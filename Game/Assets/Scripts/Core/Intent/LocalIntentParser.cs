@@ -148,6 +148,79 @@ namespace ElysFarm.Core
             return !aboutSomeoneElse && IsFarmRequestNormalized(Normalize(spoken));
         }
 
+        /// <summary>
+        /// 取消工单的固定说法（#22）。它由本地规则直接判定、先于模型生效：
+        /// 取消没有细节要模型补，而模型可能把「别干了」改写成一条合法农活。
+        /// </summary>
+        static readonly string[] CancelMarkers = { "别干", "取消", "停下" };
+
+        /// <summary>
+        /// 这句话是不是要取消他们自己的工单。问句与回忆句（「为什么取消了」「上次你让我别干了」）
+        /// 不是取消；句首叫的是别的 NPC 时（「阿土别干了」）也不是。
+        /// </summary>
+        internal static bool IsCancelRequest(string text, FarmWorld world, Npc addressed)
+        {
+            var spoken = SpokenText(text, world, addressed, out var aboutSomeoneElse);
+            return !aboutSomeoneElse && IsCancelRequestNormalized(Normalize(spoken));
+        }
+
+        static bool IsCancelRequestNormalized(string text)
+        {
+            if (text.Length == 0)
+            {
+                return false;
+            }
+
+            if (IsQuery(text) || IsPastQuestion(text))
+            {
+                return false;
+            }
+
+            foreach (var marker in CancelMarkers)
+            {
+                var from = 0;
+                while (from <= text.Length - marker.Length)
+                {
+                    var index = text.IndexOf(marker, from, StringComparison.Ordinal);
+                    if (index < 0)
+                    {
+                        break;
+                    }
+
+                    if (!IsNegatedAt(text, index))
+                    {
+                        return true;
+                    }
+
+                    from = index + 1;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>标记前面紧挨着否定词时，这句话是「别取消 / 不要停下」，不是取消。</summary>
+        static bool IsNegatedAt(string text, int index)
+        {
+            if (index <= 0)
+            {
+                return false;
+            }
+
+            if (IsNegator(text[index - 1]))
+            {
+                return true;
+            }
+
+            if (index < 2)
+            {
+                return false;
+            }
+
+            var pair = text.Substring(index - 2, 2);
+            return pair == "不要" || pair == "不用" || pair == "不必" || pair == "不许" || pair == "不能";
+        }
+
         /// <summary>句首称呼处理后的原话；aboutSomeoneElse 表示这句话在说另一名 NPC 的事。</summary>
         static string SpokenText(string text, FarmWorld world, Npc addressed, out bool aboutSomeoneElse)
         {

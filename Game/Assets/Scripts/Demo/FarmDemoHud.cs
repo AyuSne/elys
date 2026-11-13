@@ -33,6 +33,9 @@ namespace ElysFarm.Demo
         const float BagGap = 6f;
         const float DrawerWidth = 420f;
 
+        /// <summary>三人卡行内「取消」按钮的宽度；行里留出这么宽才不压到意图文字。</summary>
+        const float CancelWidth = 52f;
+
         /// <summary>对话框正文最多两行；本地追问的回答可能到 80+ 字，超出就省略，不能硬切在边外。</summary>
         const int ReplyLimit = 110;
 
@@ -308,6 +311,18 @@ namespace ElysFarm.Demo
                 GUI.color = previous;
             }
 
+            // 「取消」先于整行按钮声明：IMGUI 按声明顺序命中，先声明的控件先拿到鼠标，
+            // 否则整行那个透明按钮会吞掉这一下。有工单的那一行才画。
+            var hasOrder = demo.World.WorkOrderOf(npc.Id) != null;
+            if (hasOrder
+                && GUI.Button(
+                    new Rect(row.xMax - CancelWidth, row.y + 40f, CancelWidth, 20f),
+                    "取消",
+                    skin.Chip))
+            {
+                demo.CancelWorkOrder(npc.Id);
+            }
+
             if (GUI.Button(row, GUIContent.none, GUIStyle.none))
             {
                 demo.SelectNpc(npc.Id);
@@ -323,8 +338,10 @@ namespace ElysFarm.Demo
                 new Rect(row.x + 48f, row.y + 34f, 146f, 8f),
                 npc.Stamina,
                 npc.IsResting ? HudSkin.GreenActive : HudSkin.Green);
+
+            var intentWidth = row.width - 48f - (hasOrder ? CancelWidth + 6f : 0f);
             GUI.Label(
-                new Rect(row.x + 48f, row.y + 42f, row.width - 48f, 22f),
+                new Rect(row.x + 48f, row.y + 42f, intentWidth, 22f),
                 IntentLine(npc),
                 skin.Small);
         }

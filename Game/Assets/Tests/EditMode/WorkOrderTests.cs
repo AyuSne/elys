@@ -127,6 +127,59 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 取消工单保留已经浇过的水与施过的肥()
+        {
+            var world = TwoNpcWorld();
+            var field = world.GetField("A1");
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
+                reason);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第一步播种");
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第二步浇水");
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第三步施肥");
+            Assert.AreEqual(1f, field.Water, 0.0001f);
+            Assert.AreEqual(1f, field.Fertility, 0.0001f);
+
+            Assert.IsTrue(world.TryCancelWorkOrder("ahe", out _, out var cancelReason), cancelReason);
+
+            Assert.AreEqual(1f, field.Water, 0.0001f, "浇过的水不回滚");
+            Assert.AreEqual(1f, field.Fertility, 0.0001f, "施过的肥不回滚");
+            Assert.AreEqual(FieldState.Sown, field.State, "地块停在做完的那一步上，不退回空地");
+            Assert.AreEqual(CropCatalog.RadishId, field.Crop?.Id, "种下去的作物还在");
+            Assert.IsFalse(field.Can(WorkStep.Water, out var waterReason), "刚浇过，再浇水仍被拒绝");
+            Assert.AreEqual(Field.WateredReason, waterReason);
+            Assert.IsFalse(field.Can(WorkStep.Fertilize, out var fertileReason), "肥力还够，再施肥仍被拒绝");
+            Assert.AreEqual(Field.FertileReason, fertileReason);
+        }
+
+        [Test]
+        public void 取消后回待命_不再执行原来的工步()
+        {
+            var world = TwoNpcWorld();
+            var field = world.GetField("A1");
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
+                reason);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "先播下种");
+            var logCount = world.Log.Count;
+
+            Assert.IsTrue(world.TryCancelWorkOrder("ahe", out var cancelled, out var cancelReason), cancelReason);
+
+            StringAssert.DoesNotContain("工单", world.IntentOf("ahe"), "取消后意图里不该还挂着旧工单");
+            Assert.AreEqual("A1", cancelled.FieldId);
+
+            // 决定间隔走完再看意图：撤单不会给 NPC 留一条旧工步。
+            world.Tick(NpcPersona.Ahe.DecisionSeconds);
+            Assert.AreEqual("待命", world.IntentOf("ahe"), "取消后回待命");
+
+            var stale = world.AdvanceWorkOrder("ahe");
+            Assert.IsFalse(stale.Executed, "旧工单已经撤掉，不该再执行");
+            Assert.AreEqual("没有接单", stale.Reason);
+            Assert.AreEqual(logCount, world.Log.Count, "不再产生新的工步流水");
+            Assert.AreEqual(FieldState.Sown, field.State, "旧工单的下一步没有被做成自主行为");
+        }
+
+        [Test]
         public void 去休息不释放占位_回来还能接着干()
         {
             // 干两步就累垮、一觉睡过两个游戏日的人设：用来验证休息不算「没进展」。

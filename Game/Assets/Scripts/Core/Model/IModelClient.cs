@@ -126,7 +126,7 @@ namespace ElysFarm.Core
         /// <summary>模型返回了不可用的内容。</summary>
         Unusable,
 
-        /// <summary>本地白名单直接拒绝，未调用模型。</summary>
+        /// <summary>本地规则直接裁决（白名单拒绝、取消工单），未调用模型。</summary>
         Guard,
 
         /// <summary>本地出口判定纠正了模型的分类（请求走校验、非请求不造活），动作校验照旧。</summary>
@@ -171,7 +171,7 @@ namespace ElysFarm.Core
         /// <summary>调用结果类别。</summary>
         public ModelCallOutcome Outcome { get; }
 
-        /// <summary>失败时的诊断信息；成功或离线时为 null。</summary>
+        /// <summary>补充说明：失败时的诊断信息，或本地规则裁决（白名单、取消）时的说法。</summary>
         public string Detail { get; }
 
         /// <summary>结果是否来自一次成功的模型调用（本地出口纠正分类时调用本身仍然成功）。</summary>

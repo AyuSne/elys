@@ -77,7 +77,9 @@ namespace ElysFarm.Demo
                 case ModelCallOutcome.Unusable:
                     return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens} · 回退模板";
                 case ModelCallOutcome.Guard:
-                    return "本地白名单校验（未调用模型）";
+                    return string.IsNullOrWhiteSpace(call.Detail)
+                        ? "本地白名单校验（未调用模型）"
+                        : call.Detail;
                 case ModelCallOutcome.Correction:
                     return $"{ModelName(call)} {call.LatencySeconds:0.00}s · {tokens} · 本地出口纠正";
                 default:
