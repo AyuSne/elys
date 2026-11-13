@@ -514,11 +514,11 @@ namespace ElysFarm.Demo
         /// 撤掉某名 NPC 当前的工单；三人卡那一行的「取消」按钮走这里。
         /// 它替玩家说一句 <see cref="CancelPhrase"/>，所以按钮与打字的痕迹完全一样：
         /// 同一段对话簿、同一行意图、同一个 <see cref="FarmWorld.TryCancelWorkOrder"/>。
-        /// 没有工单或正在等上一句时不动任何状态。
+        /// 没有工单或正在等上一句时不动任何状态（也不改指挥对象：这句话没送出去）。
         /// </summary>
         public bool CancelWorkOrder(string npcId)
         {
-            if (World == null || World.WorkOrderOf(npcId) == null)
+            if (World == null || IsThinking || World.WorkOrderOf(npcId) == null)
             {
                 return false;
             }
@@ -592,7 +592,10 @@ namespace ElysFarm.Demo
             {
                 if (view != null)
                 {
-                    view.Intent = result.Cancelled ? "待命，等玩家开口" : "手上没活可取消";
+                    // 自主开着时她不是「等玩家开口」，只是刚被叫停；两句话都得看得见「待命」。
+                    view.Intent = !result.Cancelled
+                        ? "手上没活可取消"
+                        : AutonomyEnabled ? "刚被叫停，待命" : "待命，等玩家开口";
                     if (result.Cancelled)
                     {
                         // 取消要立刻停手：不能再走到地里，把旧工单的下一步当成一次自主行为做成。

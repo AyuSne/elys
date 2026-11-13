@@ -68,8 +68,8 @@ namespace ElysFarm.Core
         /// <summary>最近一次模型调用的摘要。</summary>
         public ModelCallInfo Call { get; }
 
-        /// <summary>农事指令被拒绝。</summary>
-        public bool Refused => Outlet == IntentOutlet.FarmCommand && !Accepted;
+        /// <summary>农事指令被拒绝。取消不算拒绝：它是另一条本地规则裁决出来的结果。</summary>
+        public bool Refused => Outlet == IntentOutlet.FarmCommand && !Accepted && !CancelRequested;
 
         internal static IntentResult AcceptedCommand(
             string reply,

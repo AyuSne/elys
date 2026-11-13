@@ -5,9 +5,9 @@ using NUnit.Framework;
 namespace ElysFarm.Tests
 {
     /// <summary>
-    /// #22 撤单的接缝测试：只打 <see cref="IntentRouter"/> 与假 <see cref="IModelClient"/>。
-    /// 断言规格里的几条边界——「别干了 / 取消 / 停下」都能撤单、撤单由本地规则判定而不等模型、
-    /// 没有工单时只回一句话、问句与否定说法不被误判成撤单。
+    /// #22 取消工单的接缝测试：只打 <see cref="IntentRouter"/> 这一条缝（离线路由与假
+    /// <see cref="IModelClient"/> 两种配置都用）。断言规格里的几条边界——「别干了 / 取消 / 停下」
+    /// 都能取消、取消由本地规则判定而不等模型、没有工单时只回一句话、问句与否定说法不被误判成取消。
     /// 三人卡的「取消」按钮是演示层，按仓库惯例用 Play Mode 截图验收，不另开场景级接缝。
     /// </summary>
     public class CancelTests
@@ -52,6 +52,7 @@ namespace ElysFarm.Tests
             Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "取消立刻释放占位");
             Assert.IsFalse(string.IsNullOrWhiteSpace(result.Reply), "取消也要回一句可读的话");
             Assert.IsFalse(result.Accepted, "取消不是接单");
+            Assert.IsFalse(result.Refused, "取消不是拒单");
         }
 
         [Test]
@@ -87,6 +88,20 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public async Task 句首叫的是别的NPC时不算取消()
+        {
+            foreach (var phrase in new[] { "阿芽别干了", "阿芽停下" })
+            {
+                var world = WorldWithOrder(out _);
+
+                var result = await new IntentRouter().RouteAsync(phrase, world, world.GetNpc("ahe"));
+
+                Assert.IsNotNull(world.WorkOrderOf("ahe"), $"「{phrase}」是在说别人，阿禾的工单要留着");
+                Assert.IsFalse(result.CancelRequested, $"「{phrase}」不该标成取消请求");
+            }
+        }
+
+        [Test]
         public async Task 没有工单时说别干了只回一句话_不造工单也不改地块()
         {
             var world = NewWorld();
@@ -114,7 +129,7 @@ namespace ElysFarm.Tests
 
             Assert.AreEqual(0, client.Calls, "取消没有细节要模型补，不该为它发请求");
             Assert.AreEqual(ModelCallOutcome.Guard, result.Call.Outcome, "HUD 据此说明这句是本地规则裁决的");
-            Assert.AreEqual(IntentRouter.CancelCallDetail, result.Call.Detail, "抽屉里要说明这一句没问过模型");
+            StringAssert.Contains("未调用模型", result.Call.Detail, "抽屉里要说明这一句没问过模型");
             Assert.IsTrue(result.Cancelled);
             Assert.IsNull(world.WorkOrderOf("ahe"), "模型哪怕会把它改写成农活，也轮不到它说话");
         }

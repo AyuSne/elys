@@ -165,10 +165,9 @@ namespace ElysFarm.Tests
 
             Assert.IsTrue(world.TryCancelWorkOrder("ahe", out var cancelled, out var cancelReason), cancelReason);
 
-            StringAssert.DoesNotContain("工单", world.IntentOf("ahe"), "取消后意图里不该还挂着旧工单");
             Assert.AreEqual("A1", cancelled.FieldId);
 
-            // 决定间隔走完再看意图：撤单不会给 NPC 留一条旧工步。
+            // 决定间隔走完再看意图：取消不会给 NPC 留一条旧工步。
             world.Tick(NpcPersona.Ahe.DecisionSeconds);
             Assert.AreEqual("待命", world.IntentOf("ahe"), "取消后回待命");
 

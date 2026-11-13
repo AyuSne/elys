@@ -311,14 +311,21 @@ namespace ElysFarm.Demo
                 GUI.color = previous;
             }
 
-            // 「取消」先于整行按钮声明：IMGUI 按声明顺序命中，先声明的控件先拿到鼠标，
-            // 否则整行那个透明按钮会吞掉这一下。有工单的那一行才画。
+            // 「取消」占行内右上角（不越出 RowHeight，免得它吃掉下一行的点击），并先于整行按钮声明：
+            // IMGUI 按声明顺序命中，先声明的控件先拿到鼠标，否则整行那个透明按钮会吞掉这一下。
+            // 正在等上一句时按钮置灰：那一下不会被收下，也就不该看起来可点。
             var hasOrder = demo.World.WorkOrderOf(npc.Id) != null;
-            if (hasOrder
+            var canCancel = hasOrder && !demo.IsThinking;
+            var previousEnabled = GUI.enabled;
+            GUI.enabled = canCancel;
+            var cancelClicked = canCancel
                 && GUI.Button(
-                    new Rect(row.xMax - CancelWidth, row.y + 40f, CancelWidth, 20f),
+                    new Rect(row.xMax - CancelWidth, row.y + 10f, CancelWidth, 22f),
                     "取消",
-                    skin.Chip))
+                    skin.Chip);
+            GUI.enabled = previousEnabled;
+
+            if (cancelClicked)
             {
                 demo.CancelWorkOrder(npc.Id);
             }
@@ -332,16 +339,17 @@ namespace ElysFarm.Demo
             GUI.Box(frame, GUIContent.none, skin.Slot);
             DrawFace(new Rect(frame.x + 2f, frame.y + 2f, 32f, 32f), npc);
 
-            GUI.Label(new Rect(row.x + 48f, row.y + 12f, 150f, 26f), npc.DisplayName, skin.BodyBold);
-            GUI.Label(new Rect(row.xMax - 56f, row.y + 14f, 56f, 22f), $"{npc.Stamina:P0}", skin.SmallRight);
+            GUI.Label(new Rect(row.x + 48f, row.y + 12f, 110f, 26f), npc.DisplayName, skin.BodyBold);
+            GUI.Label(
+                new Rect(row.xMax - CancelWidth - 50f, row.y + 14f, 44f, 22f),
+                $"{npc.Stamina:P0}",
+                skin.SmallRight);
             DrawBar(
                 new Rect(row.x + 48f, row.y + 34f, 146f, 8f),
                 npc.Stamina,
                 npc.IsResting ? HudSkin.GreenActive : HudSkin.Green);
-
-            var intentWidth = row.width - 48f - (hasOrder ? CancelWidth + 6f : 0f);
             GUI.Label(
-                new Rect(row.x + 48f, row.y + 42f, intentWidth, 22f),
+                new Rect(row.x + 48f, row.y + 42f, row.width - 48f, 22f),
                 IntentLine(npc),
                 skin.Small);
         }

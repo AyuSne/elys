@@ -87,7 +87,7 @@ namespace ElysFarm.Core
                 return Finish(IntentResult.Refuse(
                     ActionValidator.UnknownSpeciesReason(unknownCrop),
                     false,
-                    new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Guard)));
+                    ModelCallInfo.Guarded()));
             }
 
             // 取消工单也先于模型生效：它没有细节要模型补，而模型可能把「别干了」改写成一条农活。
@@ -553,7 +553,7 @@ namespace ElysFarm.Core
         /// </summary>
         static IntentResult CancelWorkOrder(FarmWorld world, Npc npc)
         {
-            var call = new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Guard, CancelCallDetail);
+            var call = ModelCallInfo.Guarded(CancelCallDetail);
 
             if (!world.TryCancelWorkOrder(npc.Id, out var cancelled, out _))
             {

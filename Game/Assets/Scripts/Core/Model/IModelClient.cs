@@ -140,6 +140,12 @@ namespace ElysFarm.Core
     {
         public static readonly ModelCallInfo None = new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Offline);
 
+        /// <summary>本地规则裁决、没有调用模型的一次摘要（白名单拒绝、取消工单）。</summary>
+        public static ModelCallInfo Guarded(string detail = null)
+        {
+            return new ModelCallInfo(null, 0d, 0, 0, ModelCallOutcome.Guard, detail);
+        }
+
         public ModelCallInfo(
             string model,
             double latencySeconds,
