@@ -22,11 +22,11 @@ namespace ElysFarm.Core
             bool includeAutonomousIntent = true)
         {
             var candidates = world.RankCandidates(npc.Id);
-            var intent = world.IntentOf(npc.Id);
-            var shownIntent = includeAutonomousIntent ? intent : world.IntentOf(npc.Id, false);
+            var cueIntent = world.IntentOf(npc.Id);
+            var shownIntent = includeAutonomousIntent ? cueIntent : world.IntentOf(npc.Id, false);
 
             // 玩家追问后展示回答实际依据的那三条；没有追问过才按当前意图检索。
-            var memories = world.LastRecallOf(npc.Id) ?? world.RetrieveMemories(npc.Id, intent);
+            var memories = world.LastRecallOf(npc.Id) ?? world.RetrieveMemories(npc.Id, cueIntent);
 
             return new DecisionSnapshot(
                 npc.Id,

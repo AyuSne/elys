@@ -324,10 +324,10 @@ namespace ElysFarm.Demo
 
             // 「Tab 决策可视化 · 流水」浮在农场上：先给一块羊皮纸底，再压字（#30）。
             // 不加底衬时 12pt 墨色字直接落在草叶、农舍屋顶与体块上，几乎读不出来。
-            // 底衬按文案量出来的宽度铺、左右各留 8px，文字起点与文案与原来一致；高度与偏移也走 8px 网格。
+            // 底衬按文案量出来的宽度铺、左右各留 8px；文字仍画在原来的 y 位置，只给上下各加 6px 底衬。
             var hint = "Tab 决策可视化 · 流水";
             var hintWidth = skin.SmallInk.CalcSize(new GUIContent(hint)).x;
-            DrawPlate(new Rect(x, y + 32f, hintWidth, 32f), hint, skin.SmallInk, 8f);
+            DrawPlate(new Rect(x, y + 38f, hintWidth, 22f), hint, skin.SmallInk, 8f, 6f);
         }
 
         static Rect PillRect(float x, float y, float width, float gap, ref int index)
@@ -916,15 +916,16 @@ namespace ElysFarm.Demo
         /// <summary>
         /// 一块「羊皮纸底 + 一行字」的小牌：名字标签、「本地模板」小标、空输入提示与
         /// 「Tab 决策可视化 · 流水」提示共用这一个形状（#30），底衬只在这里铺一次。
-        /// 传了 <paramref name="padX"/> 时底衬在文字左右各多留这么宽，文字起点不动。
+        /// 传了 <paramref name="padX"/> / <paramref name="padY"/> 时底衬在文字左右 / 上下
+        /// 各多留这么宽，文字起点不动。
         /// </summary>
-        void DrawPlate(Rect textRect, string text, GUIStyle style, float padX = 0f)
+        void DrawPlate(Rect textRect, string text, GUIStyle style, float padX = 0f, float padY = 0f)
         {
             var plate = new Rect(
                 textRect.x - padX,
-                textRect.y,
+                textRect.y - padY,
                 textRect.width + padX * 2f,
-                textRect.height);
+                textRect.height + padY * 2f);
             skin.DrawPanel(plate, skin.Panel);
             GUI.Label(textRect, text, style);
         }

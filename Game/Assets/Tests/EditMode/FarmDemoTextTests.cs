@@ -78,8 +78,8 @@ namespace ElysFarm.Tests
             var world = NewWorld();
 
             Assert.AreEqual(
-                FarmDemoText.WaitingIntent,
-                FarmDemoText.CardIntent(world, world.GetNpc("ahe"), FarmDemoText.WaitingIntent),
+                FarmDemoText.StandbyIntent,
+                FarmDemoText.CardIntent(world, world.GetNpc("ahe"), FarmDemoText.StandbyIntent),
                 "没有工单时卡片仍是演示层自己的说法");
         }
 
@@ -116,11 +116,12 @@ namespace ElysFarm.Tests
             var card = FarmDemoText.CardIntent(
                 world,
                 world.GetNpc("ahe"),
-                FarmDemoText.WaitingIntent);
+                FarmDemoText.StandbyIntent);
 
+            Assert.AreEqual("待命，等玩家开口", FarmDemoText.StandbyIntent, "暂停时卡片这句是玩家看得见的文案");
             Assert.AreEqual("待命", world.IntentOf("ahe", includeAutonomousIntent: false), "暂停时抽屉只给「待命」");
-            StringAssert.StartsWith(FarmDemoText.StandbyWord, card, "卡片也从同一个词根说起");
-            StringAssert.StartsWith(FarmDemoText.StandbyWord, FarmDemoText.WaitingIntent);
+            Assert.AreEqual(FarmDemoText.StandbyIntent, card, "没有工单时卡片原样显示待命句，不会另说一句");
+            StringAssert.DoesNotContain("没活干", card, "暂停时不说「没活干」");
         }
 
         [Test]

@@ -183,7 +183,10 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 出口纠正（#20） | `QueryTests.模型把追问误判成闲聊时仍按追问回答且不写记忆`、`QueryTests.模型把追问误判成农活时仍走表达层且保留纠正标记`、`QueryTests.被本地纠正成追问且表达层失败时仍标纠正` | 模型判成闲聊 / 农活都由本地纠正成追问；`Correction` 与分类调用的 token 不被表达层成功或失败覆盖 |
 | 追问降级（#20） | `QueryTests.表达层空响应时回退事实串_回答仍带地块工步体力`、`QueryTests.表达层返回JSON时重试而不是把JSON当回答`、`QueryTests.分类调用不可用时追问仍试一次表达层`、`IntentRouterTests.离线追问回答当前状态与记忆依据` | 空响应与 JSON 重试一次；仍失败回退事实串，回答照样带地块、工步、体力 |
 | 种子每日补货（#24） | `FarmWorldTests.跨日后种子库按固定数量补货`、`FarmWorldTests.补货写进种子库流水`、`FarmWorldTests.补货仍不够时照旧说种子库里没有种子`、`FarmWorldTests.种子不够时工单失败释放_补货后能重新接单` | 跨日萝卜 +2、小麦 +1 入账并留下流水；补货后仍不够时照旧回「种子库里没有…种子了」；失败的工单补货后能重新接单 |
-| 取消痕迹与待命措辞（#30） | `FarmDemoTextTests.点取消的提示行记点了取消_不伪造玩家台词`、`FarmDemoTextTests.打字取消记的还是玩家原话`、`FarmDemoTextTests.自主开着又没活时卡片与抽屉都从待命说起`、`FarmDemoTextTests.自主关着时卡片与抽屉也同词根` | 点「取消」的提示行是「你：（点了取消） · 取消：…」且不含「别干了」；打字取消仍记原话；卡片与抽屉对「没活」都从「待命」说起 |
+| 自主目标占位（#27） | `NpcDecisionTests.同一刻决定的三名NPC各自挑一块不同的地`、`NpcDecisionTests.自主目标在执行一步后释放_别人随后能挑到`、`NpcDecisionTests.自主目标不挡玩家点名的指令`、`DecisionInspectorTests.别人正要去的地块在候选里给出同一句否决理由` | 一块地同一刻只归一名 NPC 的自主目标；执行、改主意、休息与跨日都会释放；自主目标不进动作校验，玩家点名的指令照样接单；候选否决理由与工单占位同句 |
+| 失败理由（#28） | `WorkOrderTests.地被抢种时意图行说那块地还种着东西_并立刻释放占位` | 地被抢种时理由是「那块地还种着东西」，不是「还没空出来」；失败立刻释放占位 |
+| 自主开关（#29） | `AutonomySwitchTests.开局待命_第一条被接受的农事指令自动恢复自主`、`AutonomySwitchTests.手动暂停之后接单不再自动打开_再点开关才恢复`、`AutonomySwitchTests.开局先按过开关_第一次接单也不再自动恢复`、`AutonomySwitchTests.剧本回放永不打开自主` | 自主只在开局第一次接单时自动恢复一次；玩家按过开关后只认开关；剧本回放永不打开 |
+| 取消痕迹与待命措辞（#30） | `FarmDemoTextTests.点取消的提示行记点了取消_不伪造玩家台词`、`FarmDemoTextTests.打字取消记的还是玩家原话`、`FarmDemoTextTests.自主开着又没活时卡片与抽屉都说待命`、`FarmDemoTextTests.自主关着时卡片与抽屉都说待命` | 点「取消」的提示行是「你：（点了取消） · 取消：…」且不含「别干了」；打字取消仍记原话；卡片与抽屉对「没活」都从「待命」说起 |
 | 密钥不泄露 | `SecretFileLocatorTests.*`、`DeepSeekProtocolTests.*` | 编辑器只读仓库根；播放器不隐式读密钥文件；请求体与降级符合协议 |
 
 领域测试只打 `FarmWorld` 与 `IModelClient` 两条主缝；`IntentRouter`（三出口分流与闲聊 / 追问的

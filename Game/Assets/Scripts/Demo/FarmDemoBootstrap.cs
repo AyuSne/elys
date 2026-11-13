@@ -444,7 +444,7 @@ namespace ElysFarm.Demo
             foreach (var view in npcViews)
             {
                 view.NextActionAt = 0f;
-                view.Intent = AutonomyEnabled ? "自己找活干" : FarmDemoText.WaitingIntent;
+                view.Intent = AutonomyEnabled ? "自己找活干" : FarmDemoText.StandbyIntent;
             }
         }
 
@@ -620,7 +620,7 @@ namespace ElysFarm.Demo
                     // 自主开着时她不是「等玩家开口」，只是刚被叫停；两句话都得看得见「待命」。
                     view.Intent = !result.Cancelled
                         ? "手上没活可取消"
-                        : AutonomyEnabled ? "刚被叫停，" + FarmDemoText.StandbyWord : FarmDemoText.WaitingIntent;
+                        : AutonomyEnabled ? "刚被叫停，" + FarmDemoText.StandbyWord : FarmDemoText.StandbyIntent;
                     if (result.Cancelled)
                     {
                         // 取消要立刻停手：不能再走到地里，把旧工单的下一步当成一次自主行为做成。
@@ -941,7 +941,7 @@ namespace ElysFarm.Demo
 
             if (!AutonomyEnabled)
             {
-                view.Intent = FarmDemoText.WaitingIntent;
+                view.Intent = FarmDemoText.StandbyIntent;
                 return;
             }
 

@@ -125,9 +125,10 @@ namespace ElysFarm.Demo
 
         /// <summary>
         /// 自主关着时三人卡的意图行（#30）：与决策抽屉第 ② 项的「待命」同词根，
-        /// 两处不会一边说「没活干」一边说「待命」。
+        /// 两处不会一边说「没活干」一边说「待命」。这是「待命」，不是工单三态里的
+        /// 「等条件」（<see cref="StepOutcome.Waiting"/>），所以不叫 WaitingIntent。
         /// </summary>
-        public const string WaitingIntent = StandbyWord + "，等玩家开口";
+        public const string StandbyIntent = StandbyWord + "，等玩家开口";
 
         /// <summary>
         /// 自主开着、这一刻确实没活时三人卡的意图行（#30）。理由由领域给出
