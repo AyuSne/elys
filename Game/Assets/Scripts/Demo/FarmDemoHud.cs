@@ -322,7 +322,13 @@ namespace ElysFarm.Demo
                 demo.ToggleArt();
             }
 
-            GUI.Label(new Rect(x, y + 38f, total, 22f), "Tab 决策可视化 · 流水", skin.SmallInk);
+            // 「Tab 决策可视化 · 流水」浮在农场上：先给一块羊皮纸底，再压字（#30）。
+            // 不加底衬时 12pt 墨色字直接落在草叶、农舍屋顶与体块上，几乎读不出来。
+            // 底衬按文案量出来的宽度铺，位置与文案与原来一致。
+            var hint = "Tab 决策可视化 · 流水";
+            var hintWidth = skin.SmallInk.CalcSize(new GUIContent(hint)).x;
+            skin.DrawPanel(new Rect(x - 10f, y + 35f, hintWidth + 20f, 28f), skin.Panel);
+            GUI.Label(new Rect(x, y + 38f, total, 22f), hint, skin.SmallInk);
         }
 
         static Rect PillRect(float x, float y, float width, float gap, ref int index)

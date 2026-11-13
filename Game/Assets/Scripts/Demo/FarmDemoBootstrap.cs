@@ -50,8 +50,9 @@ namespace ElysFarm.Demo
         const float CancelPause = 2f;
 
         /// <summary>
-        /// 三人卡的「取消」按钮替玩家说的那句话。按钮与打字走同一条路（<see cref="SubmitPlayerText"/>），
-        /// 因此两者在对话簿、意图行与领域上留下的痕迹完全一样。
+        /// 三人卡的「取消」按钮走路由时用的取消语句（本地规则识别、不调模型）。
+        /// 按钮本身不是玩家打的字，所以对话簿与提示行记的是
+        /// <see cref="FarmDemoText.CancelTrace"/>，而不是这句替玩家说的话（#30）。
         /// </summary>
         public const string CancelPhrase = "别干了";
 
@@ -443,7 +444,7 @@ namespace ElysFarm.Demo
             foreach (var view in npcViews)
             {
                 view.NextActionAt = 0f;
-                view.Intent = AutonomyEnabled ? "自己找活干" : "待命，等玩家开口";
+                view.Intent = AutonomyEnabled ? "自己找活干" : FarmDemoText.WaitingIntent;
             }
         }
 
@@ -488,11 +489,22 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
-        /// 玩家提交一句话。真正的解析在 <see cref="IntentRouter"/> 里异步进行；
+        /// 玩家打的一句话。真正的解析在 <see cref="IntentRouter"/> 里异步进行；
         /// 等待期间游戏循环不暂停，其余 NPC 继续自主干活。
         /// 返回是否真的收下了这句话（正在等上一句、没有指挥对象或空输入时不收）。
         /// </summary>
         public bool SubmitPlayerText(string text)
+        {
+            return SubmitPlayerText(text, text);
+        }
+
+        /// <summary>
+        /// 提交一句话，把「路由用的台词」与「记录用的台词」分开（#30）：三人卡的「取消」按钮
+        /// 用取消语句走路由（本地规则识别、不调模型），记进对话簿与提示行的却是
+        /// <see cref="FarmDemoText.CancelTrace"/> 那句痕迹——按钮不能伪造玩家没打过的字。
+        /// 打字取消两条台词相同，行为与文案完全不变。
+        /// </summary>
+        bool SubmitPlayerText(string text, string recordedText)
         {
             LastResult = null;
             if (IsThinking || Router == null || string.IsNullOrWhiteSpace(text) || SelectedNpc == null)
@@ -502,6 +514,7 @@ namespace ElysFarm.Demo
 
             var target = SelectedNpc;
             var spoken = text.Trim();
+            var recorded = string.IsNullOrWhiteSpace(recordedText) ? spoken : recordedText.Trim();
             ClearRetelling();
             IsThinking = true;
             ThinkingNpcId = target.Id;
@@ -511,14 +524,15 @@ namespace ElysFarm.Demo
                 view.Intent = "正在听玩家说话";
             }
 
-            SubmitAsync(spoken, target);
+            SubmitAsync(spoken, recorded, target);
             return true;
         }
 
         /// <summary>
         /// 撤掉某名 NPC 当前的工单；三人卡那一行的「取消」按钮走这里。
-        /// 它替玩家说一句 <see cref="CancelPhrase"/>，所以按钮与打字的痕迹完全一样：
-        /// 同一段对话簿、同一行意图、同一个 <see cref="FarmWorld.TryCancelWorkOrder"/>。
+        /// 路由仍用取消语句 <see cref="CancelPhrase"/>，领域侧照旧走
+        /// <see cref="FarmWorld.TryCancelWorkOrder"/>；但对话簿与提示行记的是
+        /// <see cref="FarmDemoText.CancelTrace"/>（「（点了取消）」），不再伪造「你：别干了」。
         /// 没有工单或正在等上一句时不动任何状态（也不改指挥对象：这句话没送出去）。
         /// </summary>
         public bool CancelWorkOrder(string npcId)
@@ -529,10 +543,10 @@ namespace ElysFarm.Demo
             }
 
             SelectNpc(npcId);
-            return SubmitPlayerText(CancelPhrase);
+            return SubmitPlayerText(CancelPhrase, FarmDemoText.CancelTrace);
         }
 
-        async void SubmitAsync(string text, Npc target)
+        async void SubmitAsync(string text, string recordedText, Npc target)
         {
             try
             {
@@ -542,7 +556,7 @@ namespace ElysFarm.Demo
                     return;
                 }
 
-                ApplyIntent(result, target, text);
+                ApplyIntent(result, target, recordedText);
             }
             catch (Exception ex)
             {
@@ -558,7 +572,7 @@ namespace ElysFarm.Demo
                 Dialogue.Record(
                     target.Id,
                     new DialogueRound(
-                        new DialogueTurn(text, reply),
+                        new DialogueTurn(recordedText, reply),
                         "没听清",
                         IntentOutlet.Query,
                         accepted: false,
@@ -573,7 +587,11 @@ namespace ElysFarm.Demo
             }
         }
 
-        void ApplyIntent(IntentResult result, Npc target, string playerText)
+        /// <summary>
+        /// 把一次路由结果落到界面与对话簿上。<paramref name="recordedText"/> 是记进对话簿的
+        /// 玩家台词（打字时就是原话，点「取消」时是 <see cref="FarmDemoText.CancelTrace"/>）。
+        /// </summary>
+        void ApplyIntent(IntentResult result, Npc target, string recordedText)
         {
             IsThinking = false;
             ThinkingNpcId = string.Empty;
@@ -602,7 +620,7 @@ namespace ElysFarm.Demo
                     // 自主开着时她不是「等玩家开口」，只是刚被叫停；两句话都得看得见「待命」。
                     view.Intent = !result.Cancelled
                         ? "手上没活可取消"
-                        : AutonomyEnabled ? "刚被叫停，待命" : "待命，等玩家开口";
+                        : AutonomyEnabled ? "刚被叫停，待命" : FarmDemoText.WaitingIntent;
                     if (result.Cancelled)
                     {
                         // 取消要立刻停手：不能再走到地里，把旧工单的下一步当成一次自主行为做成。
@@ -647,8 +665,8 @@ namespace ElysFarm.Demo
             Dialogue.Record(
                 target.Id,
                 new DialogueRound(
-                    new DialogueTurn(playerText, result.Reply),
-                    UnderstoodOf(result, playerText),
+                    new DialogueTurn(recordedText, result.Reply),
+                    UnderstoodOf(result, recordedText),
                     result.Outlet,
                     result.Accepted,
                     result.UsedFallback));
@@ -923,13 +941,14 @@ namespace ElysFarm.Demo
 
             if (!AutonomyEnabled)
             {
-                view.Intent = "待命，等玩家开口";
+                view.Intent = FarmDemoText.WaitingIntent;
                 return;
             }
 
             if (!World.TryDecide(npc.Id, out var candidate, out var reason))
             {
-                view.Intent = $"没活干（{reason}）";
+                // 没活时先说「待命」再接领域给的理由：与抽屉第 ② 项的「待命」同词根（#30）。
+                view.Intent = FarmDemoText.NoWorkIntent(reason);
                 view.NextActionAt = Now + IdlePause;
                 return;
             }
