@@ -17,26 +17,28 @@ namespace ElysFarm.Demo
         readonly Dictionary<string, List<DialogueRound>> books =
             new Dictionary<string, List<DialogueRound>>(StringComparer.Ordinal);
 
-        /// <summary>对话框此刻翻到谁的对话；空表示还没选过人。</summary>
-        public string CurrentNpcId { get; private set; }
+        string currentNpcId;
 
         /// <summary>当前这个人最近的一轮；没聊过时为 null，对话框据此显示中性提示。</summary>
         public DialogueRound? CurrentRound
         {
             get
             {
-                var rounds = RoundsOrNull(CurrentNpcId);
+                var rounds = RoundsOrNull(currentNpcId);
                 return rounds != null && rounds.Count > 0 ? rounds[rounds.Count - 1] : (DialogueRound?)null;
             }
         }
 
-        /// <summary>翻到某名 NPC 的对话；不改变任何一轮的内容。</summary>
+        /// <summary>翻到某名 NPC 的对话；传 null 表示还没翻到任何人。不改变任何一轮的内容。</summary>
         public void SwitchTo(string npcId)
         {
-            CurrentNpcId = npcId;
+            currentNpcId = npcId;
         }
 
-        /// <summary>记下一轮；调用方负责传这一轮实际是说给谁的（异步回话可能晚于切换）。</summary>
+        /// <summary>
+        /// 记下一轮；必须传这一轮实际是说给谁的——异步回话可能晚于切换，
+        /// 不能记到当时翻到的那个人名下。无名可记时抛异常。
+        /// </summary>
         public void Record(string npcId, DialogueRound round)
         {
             if (string.IsNullOrEmpty(npcId))

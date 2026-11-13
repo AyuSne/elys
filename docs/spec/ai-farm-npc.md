@@ -92,6 +92,8 @@
 
 **范围注记（#11–#16 2D 表现层，当前）**。#12 起表现层整层换成 2D 像素瓦片：地面与土路是运行时 Tilemap，建筑、树、作物与 NPC 用 `SpriteRenderer`，相机是正交 3× 俯视 / 4× 跟拍，HUD 换成羊皮纸风格的四件常驻加 `Tab` 抽屉。域层不改；#9 的 `QuaterniusArt`、`UrpMaterialConverter`、`ModelPlacement` 与 `QuaterniusArtTests` / `UrpMaterialTests` / `ArtMaterialTests` 已删除，`CameraRigTests` / `CropStageTests` 按新契约重写，新增 `PixelArt`、`PortraitFace`、`FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup` 六条纯逻辑接缝。像素素材（原作游戏图集）只提交演示子集到 `Assets/Resources/PixelArt`，仓库保持私有、只作演示；3D 旧素材（Quaternius，CC0）已从 `Assets/Resources` 移出，只留在 `main` 合并前的历史里，许可原文存档在 `docs/licenses/quaternius.txt`。完整决策见 `docs/spec/2d-presentation.md` 与 ADR-0005。
 
+**范围注记（#18 每 NPC 一份对话）**。演示层新增纯逻辑 `DialogueBook`（第 9 条表现层接缝）：每名 NPC 记最近 6 轮「玩家一句话 + NPC 回话」，切换指挥对象时恢复对应那一份；它不引用 `FarmWorld`，只供对话框与后续表达层提示词使用，对话本身不改变领域状态。对话框的头像、名字、例句与「对 XX 说…」跟随 `SelectedNpc`，没聊过显示中性提示；NPC 之间的转述只有在转述者正是指挥对象时才临时占用对话框 1.2 秒，别人之间的转述只更新三人卡的意图行，完整的「转述者头像 + 听 X 说」留给 #23。这个全局状态槽取代了原来只在下一次对话前可见的 `LastMessage` 兜底文案；工步结果本来就在三人卡的当前意图里，跨日与素材切换改由顶部条与按钮自述。
+
 ## Testing Decisions
 
 **好测试的标准**：只断言外部可观察行为，不断言内部实现。例如断言「不浇水的地块在十个游戏日后仍未成熟」，而不是断言某个私有字段的数值；断言「三本账满足入账减出账等于持有」，而不是断言某个字典的内容。
@@ -103,7 +105,7 @@
 
 不为 `MemoryStore`、`UtilityScorer`、`ActionValidator` 单开接缝：它们是 `FarmWorld` 内部模块，通过 `FarmWorld` 的行为暴露出来。`SecretFileLocator` 是 #4 的唯一例外（见「范围注记（#4）」）：它只做密钥来源决策，不碰领域状态。
 
-`CropStages`、`CameraRig`、`PixelArt`、`PortraitFace`、`FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup` 是 #12–#15 的表现层例外（见「范围注记（#11–#16）」）：它们只把领域快照翻译成图集格位、机位、布局或表情，不持有领域状态，也不依赖场景；场景渲染、Tilemap 拼接、HUD 布局与动画播放仍以 Play Mode 截图为准。`AssetLayoutTests` 是 #16 的交付护栏，只检查打包目录里没有 3D 模型/材质，不加载贴图。
+`CropStages`、`CameraRig`、`PixelArt`、`PortraitFace`、`FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup`、`DialogueBook` 是 #12–#18 的表现层例外（见「范围注记（#11–#16）」与「范围注记（#18）」）：它们只把领域快照翻译成图集格位、机位、布局、表情或每名 NPC 的对话状态，不持有领域状态，也不依赖场景；场景渲染、Tilemap 拼接、HUD 布局与动画播放仍以 Play Mode 截图为准。`AssetLayoutTests` 是 #16 的交付护栏，只检查打包目录里没有 3D 模型/材质，不加载贴图。
 
 **测试的模块**：`FarmWorld`（含其内部的时钟、账本、打分、校验、记忆），以及 `IntentRouter` 的三出口分流。
 

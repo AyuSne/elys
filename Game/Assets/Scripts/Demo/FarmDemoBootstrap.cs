@@ -67,31 +67,38 @@ namespace ElysFarm.Demo
         /// <summary>正在等谁的回复；对话框只在指挥对象就是她时显示「正在理解」。</summary>
         public string ThinkingNpcId { get; private set; } = string.Empty;
 
-        /// <summary>NPC 之间转述的说话人与台词；对话框临时借用，玩家一开口或换人就让位。</summary>
-        public string ChatterSpeakerId { get; private set; } = string.Empty;
+        /// <summary>NPC 之间转述的说话人与台词；只有转述者正是指挥对象时才借用对话框。</summary>
+        public string RetoldSpeakerId { get; private set; } = string.Empty;
 
-        /// <summary>NPC 之间转述的那句话；空表示此刻没有转述。</summary>
-        public string ChatterLine { get; private set; } = string.Empty;
+        /// <summary>NPC 之间转述的那句话；空表示还没有转述过。</summary>
+        public string RetoldLine { get; private set; } = string.Empty;
 
-        /// <summary>最近一次对话是不是 NPC 之间自己聊的；对话框据此换提示。</summary>
-        public bool LastFromNpcChat => !string.IsNullOrEmpty(ChatterLine);
+        /// <summary>转述只在说话那一下占用对话框；到点就让回指挥对象自己的对话。</summary>
+        public bool IsRetelling => !string.IsNullOrEmpty(RetoldLine) && Now < retoldUntil;
 
         /// <summary>
-        /// 对话框此刻的说话人：正在等她的回话时优先，其次是 NPC 转述，否则是指挥对象。
+        /// 转述者正是指挥对象；只有这时才把转述放进底部对话框。
+        /// 别人之间的转述只更新三人卡的意图行，免得头像、名字与输入框指向三个人。
+        /// </summary>
+        public bool IsRetellingSelected => IsRetelling && RetoldSpeakerId == SelectedNpc?.Id;
+
+        /// <summary>正在等的那句话是不是发给当前指挥对象的。</summary>
+        public bool IsThinkingAboutSelected => IsThinking && ThinkingNpcId == SelectedNpc?.Id;
+
+        /// <summary>当前翻到的这一轮对话；没聊过时为 null，对话框据此显示中性提示。</summary>
+        public DialogueRound? CurrentRound => Dialogue.CurrentRound;
+
+        /// <summary>
+        /// 对话框此刻的说话人：正在等她的回话时优先，其次是本人的转述，否则是指挥对象。
         /// 切换指挥对象后头像、名字与表情立刻跟着换，不必先发一句话。
         /// </summary>
         public string SpeakerId
         {
             get
             {
-                if (IsThinking && ThinkingNpcId == SelectedNpc?.Id)
+                if (IsThinkingAboutSelected)
                 {
                     return ThinkingNpcId;
-                }
-
-                if (LastFromNpcChat)
-                {
-                    return ChatterSpeakerId;
                 }
 
                 return SelectedNpc != null ? SelectedNpc.Id : DefaultNpcId;
@@ -99,12 +106,12 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>最近一次对话的出口；没有历史时按追问处理，头像显示平常脸。</summary>
-        public IntentOutlet LastOutlet => LastFromNpcChat
+        public IntentOutlet LastOutlet => IsRetellingSelected
             ? IntentOutlet.Chat
-            : Dialogue.CurrentRound?.Outlet ?? IntentOutlet.Query;
+            : CurrentRound?.Outlet ?? IntentOutlet.Query;
 
         /// <summary>最近一次农事指令是否接单；只影响表现层，不改变领域状态。</summary>
-        public bool LastAccepted => !LastFromNpcChat && (Dialogue.CurrentRound?.Accepted ?? false);
+        public bool LastAccepted => !IsRetellingSelected && (CurrentRound?.Accepted ?? false);
 
         /// <summary>正在等模型回话；此时游戏循环照常推进。</summary>
         public bool IsThinking { get; private set; }
@@ -150,6 +157,7 @@ namespace ElysFarm.Demo
         readonly List<NpcView> npcViews = new List<NpcView>();
         readonly EmoteBoard emotes = new EmoteBoard();
         float nextChatAt;
+        float retoldUntil;
         int chatSlot;
         float simulationNow;
         float stepAccumulator;
@@ -252,7 +260,7 @@ namespace ElysFarm.Demo
             LastResult = null;
             IsThinking = false;
             ThinkingNpcId = string.Empty;
-            ClearChatter();
+            ClearRetelling();
 
             foreach (var view in npcViews)
             {
@@ -396,10 +404,11 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>玩家开口或换人时，收掉 NPC 之间那句转述，让对话框回到指挥对象。</summary>
-        void ClearChatter()
+        void ClearRetelling()
         {
-            ChatterSpeakerId = string.Empty;
-            ChatterLine = string.Empty;
+            RetoldSpeakerId = string.Empty;
+            RetoldLine = string.Empty;
+            retoldUntil = 0f;
         }
 
         /// <summary>切换 HUD 的观察与指挥对象；同时翻到这个人自己的对话。</summary>
@@ -407,7 +416,7 @@ namespace ElysFarm.Demo
         {
             SelectedNpc = World.GetNpc(npcId);
             Dialogue.SwitchTo(SelectedNpc?.Id);
-            ClearChatter();
+            ClearRetelling();
         }
 
         /// <summary>切换自主干活。关掉只影响之后的选择，正在走的路或工单会先干完。</summary>
@@ -475,7 +484,7 @@ namespace ElysFarm.Demo
 
             var target = SelectedNpc;
             var spoken = text.Trim();
-            ClearChatter();
+            ClearRetelling();
             IsThinking = true;
             ThinkingNpcId = target.Id;
             var view = ViewOf(target.Id);
@@ -508,7 +517,7 @@ namespace ElysFarm.Demo
 
                 IsThinking = false;
                 ThinkingNpcId = string.Empty;
-                ClearChatter();
+                ClearRetelling();
                 var reply = "我脑子卡了一下，先按本地规矩干活。";
                 Dialogue.Record(target.Id, new DialogueRound(text, reply, "没听清", IntentOutlet.Query, false));
                 var view = ViewOf(target.Id);
@@ -525,7 +534,7 @@ namespace ElysFarm.Demo
         {
             IsThinking = false;
             ThinkingNpcId = string.Empty;
-            ClearChatter();
+            ClearRetelling();
             LastResult = result;
 
             // 接单/被拒是两种头顶表情；追问与闲聊不冒，只在对话框里换脸。
@@ -866,8 +875,9 @@ namespace ElysFarm.Demo
                 var line = retold.Line;
                 speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
                 listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
-                ChatterSpeakerId = speaker.Npc.Id;
-                ChatterLine = line;
+                RetoldSpeakerId = speaker.Npc.Id;
+                RetoldLine = line;
+                retoldUntil = Now + ChatHold;
                 speaker.NextActionAt = Now + ChatHold;
                 listener.NextActionAt = Now + ChatHold;
                 return;

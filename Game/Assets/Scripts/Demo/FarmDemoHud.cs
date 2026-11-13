@@ -450,32 +450,39 @@ namespace ElysFarm.Demo
 
         string DialogueLine()
         {
-            if (demo.IsThinking && demo.ThinkingNpcId == demo.SelectedNpc?.Id)
+            if (demo.IsThinkingAboutSelected)
             {
                 return "……（正在理解你这句话）";
             }
 
-            var line = demo.LastFromNpcChat
-                ? demo.ChatterLine
-                : demo.Dialogue.CurrentRound?.Reply;
-            return string.IsNullOrWhiteSpace(line)
-                ? $"还没和{SpeakerName()}聊过。"
-                : FarmDemoText.Shorten(line, ReplyLimit);
+            if (demo.IsRetellingSelected)
+            {
+                return FarmDemoText.Shorten(demo.RetoldLine, ReplyLimit);
+            }
+
+            var round = demo.CurrentRound;
+            if (!round.HasValue)
+            {
+                return $"还没和{SpeakerName()}聊过。";
+            }
+
+            var reply = FarmDemoText.Shorten(round.Value.Reply, ReplyLimit);
+            return string.IsNullOrWhiteSpace(reply) ? "……" : reply;
         }
 
         string DialogueHint()
         {
-            if (demo.IsThinking && demo.ThinkingNpcId == demo.SelectedNpc?.Id)
+            if (demo.IsThinkingAboutSelected)
             {
                 return "等模型回话…（游戏没有暂停）";
             }
 
-            if (demo.LastFromNpcChat)
+            if (demo.IsRetellingSelected)
             {
                 return "她们自己聊的；说句话就能把话头接回来。";
             }
 
-            var round = demo.Dialogue.CurrentRound;
+            var round = demo.CurrentRound;
             if (!round.HasValue)
             {
                 return demo.UsingModel
@@ -501,14 +508,18 @@ namespace ElysFarm.Demo
 
         string SpeakerName()
         {
-            var speaker = Speaker();
-            return speaker != null ? speaker.DisplayName : "NPC";
+            return DisplayNameOf(Speaker());
         }
 
         /// <summary>下一句话发给谁；NPC 之间转述占用对话框时，输入框仍指向指挥对象。</summary>
         string TargetName()
         {
-            return demo.SelectedNpc != null ? demo.SelectedNpc.DisplayName : "NPC";
+            return DisplayNameOf(demo.SelectedNpc);
+        }
+
+        static string DisplayNameOf(Npc npc)
+        {
+            return npc != null ? npc.DisplayName : "NPC";
         }
 
         void DrawFace(Rect rect, Npc npc)

@@ -53,7 +53,6 @@ namespace ElysFarm.Tests
             }
 
             var rounds = book.RoundsOf(FarmDemoBootstrap.AheId);
-            Assert.AreEqual(DialogueBook.MaxRounds, rounds.Count, "每名 NPC 只保留 6 轮");
             Assert.AreEqual(6, rounds.Count, "规格写死的是 6 轮");
             Assert.AreEqual("第 2 句", rounds[0].PlayerText, "第 7 轮挤掉最旧的第 1 轮");
             Assert.AreEqual("第 7 句", rounds[rounds.Count - 1].PlayerText, "最新一轮还在末尾");

@@ -171,12 +171,13 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 农场布局（#13） | `FarmLayoutTests.*`、`SortingOrderTests.*` | 三块地、三名 NPC、四座地标互不重叠且在可走范围内；排序按 y 且不回绕 |
 | 开局播种（#13） | `FarmStartupTests.*` | 开局三块地三种阶段；播种从种子库扣账；没水不长 |
 | 打包目录里没有 3D 素材（#16） | `AssetLayoutTests.Resources里不再有3D素材` | `Assets/Resources` 里没有 FBX/材质；PixelArt 目录仍在 |
+| 每 NPC 一份对话（#18） | `DialogueBookTests.*` | 切换后取回各自那一轮；没聊过为空；每人最多 6 轮，第 7 轮挤掉最旧 |
 | 密钥不泄露 | `SecretFileLocatorTests.*`、`DeepSeekProtocolTests.*` | 编辑器只读仓库根；播放器不隐式读密钥文件；请求体与降级符合协议 |
 
 领域测试只打 `FarmWorld` 与 `IModelClient` 两条主缝；`IntentRouter` 的三出口分流与
 `SecretFileLocator` 的密钥来源是两条既有的例外缝。模型测试用假客户端，不联网、不花钱；
 2D 的表现层测试打在纯逻辑接缝（`CropStages`、`CameraRig`、`PixelArt`、`PortraitFace`、
-`FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup`）上，不打开场景、不测渲染。
+`FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup`、`DialogueBook`）上，不打开场景、不测渲染。
 包本身的装配由构建脚本固定（`FarmBuild` 只把 `FarmDemo.unity` 传给 `BuildPlayer`），
 包内容的静态约束由 `AssetLayoutTests` 守住；运行证据由 `scripts/smoke-test-build.ps1`
 与上面的截图给出，不写成 EditMode 用例。
