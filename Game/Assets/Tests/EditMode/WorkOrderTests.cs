@@ -360,6 +360,29 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 地被抢种时意图行说那块地还种着东西_并立刻释放占位()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, new[] { WorkStep.Sow }, out _, out var reason),
+                reason);
+
+            // 接单之后地被别处种上了：不经过这张工单，所以占位还在阿禾手里。
+            world.GetField("A1").Apply(WorkStep.Sow, CropCatalog.Radish);
+
+            var line = world.IntentOf("ahe");
+            Assert.AreEqual("没做成：那块地还种着东西（A1 · 播种）", line, "地被抢种是失败，理由要说实话");
+            StringAssert.DoesNotContain("等", line, "「等」只留给等条件");
+
+            var failed = world.AdvanceWorkOrder("ahe");
+            Assert.AreEqual(StepOutcome.Failed, failed.Outcome);
+            Assert.IsFalse(failed.Executed);
+            Assert.AreEqual("那块地还种着东西", failed.Reason, "判定与文案读同一句理由");
+            Assert.IsNull(world.WorkOrderOf("ahe"), "做不下去的工单不再挂着");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "地被抢走后立刻释放占位，不挂一个游戏日等它变空");
+        }
+
+        [Test]
         public void 作物熟了以后没意义的工步记为跳过_工单继续到收获()
         {
             var world = TwoNpcWorld();

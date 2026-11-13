@@ -57,6 +57,13 @@ namespace ElysFarm.Core
 
         const string NotPlantedReason = "地里什么都没种";
 
+        /// <summary>
+        /// 地里还种着东西（已播种 / 生长中 / 成熟），此刻不能再播种。这是失败而不是等条件：
+        /// 地块不会自己空出来，工单只能释放占位、让玩家换一块地，所以它不在
+        /// <see cref="ActionValidator.IsWaiting"/> 的清单里。判定与文案都读这一个常量。
+        /// </summary>
+        public const string SownReason = "那块地还种着东西";
+
         /// <summary>作物已经熟了，浇水、施肥、除草都没有意义——工单跳过这些工步（见 ADR-0006）。</summary>
         public const string MatureReason = "已经熟了，先收了吧";
 
@@ -119,7 +126,7 @@ namespace ElysFarm.Core
                 case WorkStep.Sow:
                     if (!IsFree)
                     {
-                        reason = "还没空出来";
+                        reason = SownReason;
                         return false;
                     }
 

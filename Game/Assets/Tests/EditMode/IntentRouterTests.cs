@@ -278,7 +278,7 @@ namespace ElysFarm.Tests
             var second = await router.RouteAsync("再种一遍萝卜", world, world.GetNpc("ahe"));
 
             Assert.IsFalse(second.Accepted);
-            Assert.AreEqual("A1 还没空出来", second.Reply, "拒绝台词应来自 ActionValidator 的真实返回值");
+            Assert.AreEqual("A1 那块地还种着东西", second.Reply, "拒绝台词应来自 ActionValidator 的真实返回值");
             Assert.AreEqual(seedsAfterSow, world.Ledger.SeedsOf(CropCatalog.RadishId), "被拒绝的指令不能扣种子");
             Assert.AreEqual(1, world.Log.Count, "被拒绝的指令不能执行工步");
         }
