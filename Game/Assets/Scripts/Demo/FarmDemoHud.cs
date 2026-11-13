@@ -607,7 +607,7 @@ namespace ElysFarm.Demo
             var snapshot = demo.World.Inspect(demo.SelectedNpc.Id, demo.LastCall);
             DrawMemories(snapshot.Memories);
             DrawIntent(snapshot.NpcName, snapshot.Intent);
-            DrawCandidates(snapshot.Candidates);
+            DrawCandidates(snapshot.Candidates, snapshot.FieldClaims);
             DrawModelCall(snapshot.ModelCall);
             DrawStatus(snapshot.Status);
             DrawLog();
@@ -646,11 +646,11 @@ namespace ElysFarm.Demo
             GUILayout.EndHorizontal();
         }
 
-        void DrawCandidates(IReadOnlyList<StepCandidate> candidates)
+        void DrawCandidates(IReadOnlyList<StepCandidate> candidates, IReadOnlyList<FieldClaim> claims)
         {
             GUILayout.Space(4f);
             GUILayout.Label($"③ 候选动作与否决原因（共 {candidates.Count} 条）", skin.BodyBold);
-            GUILayout.Label(FieldClaimsLine(), skin.SmallWrap);
+            GUILayout.Label(FieldClaimsLine(claims), skin.SmallWrap);
 
             var validShown = 0;
             var rejectedShown = 0;
@@ -679,14 +679,14 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
-        /// ③ 的一行注脚：每块地归谁。占位就是候选被否决的原因之一，所以它读同一份
-        /// <see cref="FarmWorld.FieldClaims"/>，不另存一份归属，也不算第 6 项。
+        /// ③ 的一行注脚：每块地归谁。占位就是候选被否决的原因之一，所以它跟着快照里的
+        /// 候选一起下发（<see cref="DecisionSnapshot.FieldClaims"/>），HUD 不另读领域状态，也不算第 6 项。
         /// </summary>
-        string FieldClaimsLine()
+        static string FieldClaimsLine(IReadOnlyList<FieldClaim> claims)
         {
             const string Prefix = "地块归属：";
             var line = new StringBuilder(Prefix);
-            foreach (var claim in demo.World.FieldClaims)
+            foreach (var claim in claims)
             {
                 if (line.Length > Prefix.Length)
                 {

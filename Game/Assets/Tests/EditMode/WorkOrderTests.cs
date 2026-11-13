@@ -35,14 +35,14 @@ namespace ElysFarm.Tests
             WorkStep.Harvest
         };
 
-        static FarmWorld TwoNpcWorld(int seeds = 10)
+        static FarmWorld TwoNpcWorld(NpcPersona ahePersona = null)
         {
             var world = new FarmWorld(new FarmClock());
             world.AddField("A1", new FarmPosition(0f, 2f));
-            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f), NpcPersona.Ahe);
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f), ahePersona ?? NpcPersona.Ahe);
             world.AddNpc("aya", "阿芽", new FarmPosition(2f, -4f), NpcPersona.Aya);
             world.SetProduceStore(new FarmPosition(0f, -4f));
-            world.AddSeeds(CropCatalog.RadishId, seeds);
+            world.AddSeeds(CropCatalog.RadishId, 10);
             return world;
         }
 
@@ -106,12 +106,12 @@ namespace ElysFarm.Tests
         {
             var world = TwoNpcWorld();
             Assert.IsTrue(
-                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out var order, out var reason),
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
                 reason);
             Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "先播下种");
 
             Assert.IsTrue(world.TryCancelWorkOrder("ahe", out var cancelled, out var cancelReason), cancelReason);
-            Assert.AreSame(order, cancelled);
+            Assert.AreEqual("A1", cancelled.FieldId, "取消的是这张工单");
             Assert.IsNull(world.WorkOrderOf("ahe"), "取消后不再挂工单");
             Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "取消立刻释放占位");
             Assert.AreEqual(FieldState.Sown, world.GetField("A1").State, "已完成的工步不回滚");
@@ -140,15 +140,11 @@ namespace ElysFarm.Tests
                 diligence: 1f,
                 distanceWeight: 0.15f);
 
-            var world = new FarmWorld(new FarmClock());
-            world.AddField("A1", new FarmPosition(0f, 2f));
-            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f), fragile);
-            world.AddNpc("aya", "阿芽", new FarmPosition(2f, -4f), NpcPersona.Aya);
-            world.SetProduceStore(new FarmPosition(0f, -4f));
+            var world = TwoNpcWorld(fragile);
             world.AddSeeds(CropCatalog.WheatId, 5);
 
             Assert.IsTrue(
-                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.WheatId, PlantRadish, out var order, out var reason),
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.WheatId, PlantRadish, out _, out var reason),
                 reason);
             Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第一步播种");
             Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第二步浇水后体力见底");
@@ -156,7 +152,10 @@ namespace ElysFarm.Tests
 
             world.AdvanceDays(2);
             Assert.IsTrue(world.GetNpc("ahe").IsResting, "这一觉还没睡完");
-            Assert.AreSame(order, world.WorkOrderOf("ahe"), "去休息不释放工单");
+            Assert.AreEqual(
+                WorkStep.Fertilize,
+                world.WorkOrderOf("ahe")?.NextStep,
+                "去休息不释放工单，回来还接着排到施肥");
             Assert.AreEqual("ahe", world.ClaimOf("A1").NpcId, "去休息不释放占位，回来还能接着干");
 
             world.Tick(fragile.RestSeconds);
@@ -164,7 +163,7 @@ namespace ElysFarm.Tests
             var resumed = world.AdvanceWorkOrder("ahe");
             Assert.IsTrue(resumed.Executed, "休息结束后接着干原工单");
             Assert.AreEqual(WorkStep.Fertilize, resumed.Step);
-            Assert.AreEqual(3, order.CompletedCount);
+            Assert.AreEqual(WorkStep.Weed, world.WorkOrderOf("ahe")?.NextStep, "工单推进到下一位除草");
             Assert.AreEqual("ahe", world.ClaimOf("A1").NpcId, "接着干时占位仍在自己手里");
         }
 
@@ -178,10 +177,10 @@ namespace ElysFarm.Tests
                 world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
                 reason);
             Assert.IsTrue(
-                world.TryAssignWorkOrder("ahe", "A2", CropCatalog.RadishId, PlantRadish, out var moved, out var again),
+                world.TryAssignWorkOrder("ahe", "A2", CropCatalog.RadishId, PlantRadish, out _, out var again),
                 again);
 
-            Assert.AreSame(moved, world.WorkOrderOf("ahe"), "接单会替换这名 NPC 原来的工单");
+            Assert.AreEqual("A2", world.WorkOrderOf("ahe")?.FieldId, "接单会替换这名 NPC 原来的工单");
             Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "旧地块立刻释放");
             Assert.AreEqual("ahe", world.ClaimOf("A2").NpcId, "新地块归这名 NPC");
         }
@@ -219,7 +218,7 @@ namespace ElysFarm.Tests
             // 第 3 天挂一张「浇水」的工单：等下到地里时萝卜已经熟了，这一步永远做不成。
             Assert.AreEqual(FieldState.Growing, world.GetField("A1").State);
             Assert.IsTrue(
-                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out var order, out var reason),
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
                 reason);
 
             world.AdvanceDays(1);

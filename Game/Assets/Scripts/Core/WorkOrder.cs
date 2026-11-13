@@ -10,6 +10,9 @@ namespace ElysFarm.Core
     /// </summary>
     public sealed class WorkOrder
     {
+        /// <summary>超过这么多游戏日没有进展就自动放弃；规格定的是「超过一个游戏日」。</summary>
+        public const int AbandonAfterIdleDays = 1;
+
         readonly List<WorkStep> steps;
 
         /// <summary>接单的 NPC。</summary>
@@ -80,6 +83,12 @@ namespace ElysFarm.Core
         internal void MarkProgress(int day)
         {
             LastProgressDay = day;
+        }
+
+        /// <summary>到 day 为止已经连续多少个游戏日没有进展；刚有进展时为 0。</summary>
+        public int DaysWithoutProgress(int day)
+        {
+            return day - LastProgressDay;
         }
     }
 }

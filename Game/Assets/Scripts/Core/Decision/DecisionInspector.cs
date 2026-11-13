@@ -25,6 +25,7 @@ namespace ElysFarm.Core
                 memories,
                 intent,
                 candidates,
+                world.FieldClaims,
                 lastCall,
                 new NpcStatus(npc.Stamina, npc.Mood, npc.Hunger));
         }

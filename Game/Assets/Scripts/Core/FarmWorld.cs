@@ -592,10 +592,14 @@ namespace ElysFarm.Core
             }
 
             // 接单即占住整块地：一块地同一时刻只属于一张工单。
+            if (!TryClaimField(npcId, fieldId, out reason))
+            {
+                return false;
+            }
+
             ReleaseWorkOrderOf(npcId);
             order = new WorkOrder(npcId, fieldId, resolvedSpeciesId, steps, Clock.Day);
             workOrdersByNpc[npcId] = order;
-            claimOfField[fieldId] = npcId;
             lastDecisions.Remove(npcId);
             return true;
         }
@@ -640,8 +644,7 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
-        /// 全部地块的占位归属，按地块加入顺序。决策可视化用它画出「地块归谁」，
-        /// 与候选与否决原因同源——被占的地块在别人那里只有带名字的否决理由。
+        /// 全部地块的占位归属，按地块加入顺序；只读查询，与「谁占着这块地」同源。
         /// </summary>
         public IReadOnlyList<FieldClaim> FieldClaims
         {
@@ -661,6 +664,44 @@ namespace ElysFarm.Core
         internal Npc ClaimOwnerOf(string fieldId)
         {
             return claimOfField.TryGetValue(fieldId, out var npcId) ? GetNpc(npcId) : null;
+        }
+
+        /// <summary>
+        /// 把地块记到这名 NPC 名下。校验里已经挡过一次，这里再挡一次是因为登记才是
+        /// 「一块地只属于一张工单、一名 NPC 只占一块地」这条不变量的落点：将来多一个登记入口
+        /// 也不会把别人的地抢走。被拒时不改动任何状态。
+        /// </summary>
+        bool TryClaimField(string npcId, string fieldId, out string reason)
+        {
+            if (claimOfField.TryGetValue(fieldId, out var holder) && holder != npcId)
+            {
+                reason = ActionValidator.ClaimedReason(GetNpc(holder));
+                return false;
+            }
+
+            UnclaimFieldOf(npcId);
+            claimOfField[fieldId] = npcId;
+            reason = null;
+            return true;
+        }
+
+        /// <summary>释放这名 NPC 名下的占位（如果还有）；工单由 <see cref="ReleaseWorkOrderOf"/> 一并清掉。</summary>
+        void UnclaimFieldOf(string npcId)
+        {
+            string claimedField = null;
+            foreach (var pair in claimOfField)
+            {
+                if (pair.Value == npcId)
+                {
+                    claimedField = pair.Key;
+                    break;
+                }
+            }
+
+            if (claimedField != null)
+            {
+                claimOfField.Remove(claimedField);
+            }
         }
 
         /// <summary>清掉这名 NPC 的工单并释放它占着的地块；已完成的工步不回滚。</summary>
@@ -734,7 +775,7 @@ namespace ElysFarm.Core
             }
 
             // 等条件（还没熟、刚浇过）只说明还没到时候；别的拒绝意味着这单活做不下去了，
-            // 释放占位，别把地块锁死在一张永远推进不了的工单上。
+            // 释放占位，别让一张永远推进不了的工单一直占着这块地。
             if (!ActionValidator.IsWaiting(result.Reason))
             {
                 ReleaseWorkOrderOf(npcId);
@@ -789,9 +830,6 @@ namespace ElysFarm.Core
             return IsAtProduceStore(npc) && Ledger.TryDeposit(npc.Id, speciesId, count);
         }
 
-        /// <summary>工单多少游戏日没有进展就自动放弃；规格定的是「超过一个游戏日」。</summary>
-        const int IdleDaysBeforeAbandon = 1;
-
         void SettleDay(int day)
         {
             // 跨日后时间衰减变了，上一次回答命中的顺序不再可信，回到按当前意图检索。
@@ -812,8 +850,8 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
-        /// 兜底规则：超过一个游戏日没有进展的工单自动放弃，占位随之释放，农场不会死锁在一个
-        /// 没人推进的工单上。NPC 去休息不释放——休息是有界、会自己结束的状态，回来还能接着干。
+        /// 兜底规则：超过一个游戏日没有进展的工单自动放弃，占位随之释放，农场不会一直占着
+        /// 没人推进的地块。NPC 去休息不释放——休息时长由人设固定，睡醒就回来接着干。
         /// </summary>
         void AbandonStaleWorkOrders(int day)
         {
@@ -827,11 +865,12 @@ namespace ElysFarm.Core
             {
                 if (GetNpc(order.NpcId).IsResting)
                 {
+                    // 休息不是停滞：占位留着，停滞计时也跟着清零。
                     order.MarkProgress(day);
                     continue;
                 }
 
-                if (day - order.LastProgressDay > IdleDaysBeforeAbandon)
+                if (order.DaysWithoutProgress(day) > WorkOrder.AbandonAfterIdleDays)
                 {
                     stale.Add(order.NpcId);
                 }

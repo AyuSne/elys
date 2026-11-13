@@ -48,7 +48,9 @@ namespace ElysFarm.Core
 
     /// <summary>
     /// 决策可视化层的一次只读快照，恰好五项：记忆、意图、候选动作、最近一次模型调用、状态条。
-    /// 不包含 prompt 原文，也不包含 token 流；UI 只渲染快照，不持有领域状态。
+    /// 候选那一项另附各块地的占位归属（见 <see cref="FieldClaim"/>），因为「这块地不归你」正是
+    /// 候选被否决的原因之一，不另立第 6 项。不包含 prompt 原文，也不包含 token 流；
+    /// UI 只渲染快照，不持有领域状态。
     /// </summary>
     public sealed class DecisionSnapshot
     {
@@ -58,6 +60,7 @@ namespace ElysFarm.Core
             IReadOnlyList<MemoryHit> memories,
             string intent,
             IReadOnlyList<StepCandidate> candidates,
+            IReadOnlyList<FieldClaim> fieldClaims,
             ModelCallInfo modelCall,
             NpcStatus status)
         {
@@ -66,6 +69,7 @@ namespace ElysFarm.Core
             Memories = memories;
             Intent = intent;
             Candidates = candidates;
+            FieldClaims = fieldClaims;
             ModelCall = modelCall;
             Status = status;
         }
@@ -84,6 +88,12 @@ namespace ElysFarm.Core
 
         /// <summary>第 3 项：候选工步；无效候选自带动作校验给出的否决原因。</summary>
         public IReadOnlyList<StepCandidate> Candidates { get; }
+
+        /// <summary>
+        /// 第 3 项的注脚：每块地归谁占着，按地块加入顺序。被占的地块在别人那里只有一条
+        /// 「阿禾正在弄这块地」的否决原因，这一行让观察者对照得到是谁。
+        /// </summary>
+        public IReadOnlyList<FieldClaim> FieldClaims { get; }
 
         /// <summary>第 4 项：最近一次模型调用（模型名 / 耗时 / token）。</summary>
         public ModelCallInfo ModelCall { get; }

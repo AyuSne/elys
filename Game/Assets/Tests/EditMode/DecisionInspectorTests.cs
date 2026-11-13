@@ -188,6 +188,24 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 决策快照带出地块归属_被占的地块在别人那里只有否决原因()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantPlan, out _, out var reason),
+                reason);
+
+            var ahe = world.Inspect("ahe");
+            Assert.AreEqual("阿禾", ahe.FieldClaims.Single(c => c.FieldId == "A1").NpcName, "抽屉据此显示地块归属");
+
+            var aya = world.Inspect("aya");
+            Assert.IsFalse(aya.Candidates.Any(c => c.FieldId == "A1" && c.IsValid), "别人占着的地块不给有效候选");
+            Assert.IsTrue(
+                aya.Candidates.Any(c => c.FieldId == "A1" && c.RejectionReason == "阿禾正在弄这块地"),
+                "被占的候选要带着占位者的名字被否决");
+        }
+
+        [Test]
         public void 读取决策快照不改变任何游戏状态()
         {
             var world = NewWorld();
