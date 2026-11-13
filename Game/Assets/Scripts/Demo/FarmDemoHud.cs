@@ -490,9 +490,12 @@ namespace ElysFarm.Demo
 
             // 空输入提示画在名字右边，不占「你：… · 理解成…」那一行：
             // 后者始终显示实际锁定的地块与工步（#17），不能被一句轻提示顶掉。
+            // 提示浮在农场上，给一块羊皮纸底，别让 12pt 墨色字直接压在草上。
             if (IsEmptyHintActive)
             {
-                GUI.Label(new Rect(tag.xMax + 96f, tag.y + 2f, 430f, 28f), emptyInputHint, skin.Small);
+                var toast = new Rect(tag.xMax + 96f, tag.y + 2f, 360f, 28f);
+                skin.DrawPanel(toast, skin.Panel);
+                GUI.Label(toast, emptyInputHint, skin.SmallInk);
             }
 
             var frame = new Rect(box.x + 4f, box.y + 4f, 136f, 136f);
