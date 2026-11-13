@@ -577,11 +577,13 @@ namespace ElysFarm.Core
 
         /// <summary>
         /// 拒绝台词要带地块：玩家才知道是哪块地不满足哪条前置条件（「A1 还没熟」）。
-        /// 例外是 NPC 自己在休息——那是人的状态，不是地的问题。
+        /// 休息是人的状态，不是地的问题，换成「A1 的活等我歇完再干」而不是「A1 正在休息」。
         /// </summary>
         static string RefusalLine(string fieldId, string reason)
         {
-            return reason == Npc.RestingReason ? reason : $"{fieldId} {reason}";
+            return reason == Npc.RestingReason
+                ? $"{fieldId} 的活等我歇完再干"
+                : $"{fieldId} {reason}";
         }
 
         /// <summary>

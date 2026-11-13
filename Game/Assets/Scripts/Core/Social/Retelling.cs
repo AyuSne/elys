@@ -37,9 +37,6 @@ namespace ElysFarm.Core
         /// <summary>被谈论的 NPC。</summary>
         public string SubjectId => Learned.SubjectId;
 
-        /// <summary>被谈论的 NPC 的展示名。</summary>
-        public string SubjectName => Learned.SubjectName;
-
         /// <summary>关于这个人的说法。</summary>
         public string Claim => Learned.Claim;
 

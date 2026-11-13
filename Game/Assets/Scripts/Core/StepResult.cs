@@ -65,10 +65,13 @@ namespace ElysFarm.Core
                 reason);
         }
 
-        /// <summary>没有可执行的工步；工单层面按做不下去处理。</summary>
+        /// <summary>
+        /// 没有可执行的工步。它同样按理由分态：NPC 在休息时这一步只是等条件，
+        /// 不能和「没接单」这类做不下去的事混成一句「没做成」。
+        /// </summary>
         public static StepResult None(string npcId, string reason)
         {
-            return new StepResult(StepOutcome.Failed, npcId, null, null, 0, reason);
+            return new StepResult(ActionValidator.DispositionOf(reason), npcId, null, null, 0, reason);
         }
     }
 }

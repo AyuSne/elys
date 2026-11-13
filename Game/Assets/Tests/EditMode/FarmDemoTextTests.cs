@@ -40,8 +40,36 @@ namespace ElysFarm.Tests
             var card = FarmDemoText.CardIntent(world, world.GetNpc("ahe"), "前往 A1 · 施肥");
 
             Assert.AreEqual(world.Inspect("ahe").Intent, card, "卡片与抽屉必须是同一句话");
-            StringAssert.StartsWith("等 ", card, "等条件在卡片上也说「等…」");
+            StringAssert.StartsWith("等肥力降下来", card, "等条件在卡片上也说「等…」");
             StringAssert.DoesNotContain("没做成", card);
+        }
+
+        [Test]
+        public void 休息时三人卡与抽屉也显示同一句()
+        {
+            // 干两步就累垮的人设：第二刀之后进休息，意图行照旧只认领域那一句。
+            var fragile = new NpcPersona(
+                "fragile",
+                decisionSeconds: 0f,
+                exertionPerStep: 0.45f,
+                restThreshold: Npc.MinStamina,
+                restSeconds: 60f,
+                restRecovery: 0.60f,
+                diligence: 1f,
+                distanceWeight: 0.15f);
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f), fragile);
+            world.AddSeeds(CropCatalog.RadishId, 10);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Water).Executed);
+            var npc = world.GetNpc("ahe");
+            Assert.IsTrue(npc.IsResting, "体力降到阈值以下应去休息");
+
+            var card = FarmDemoText.CardIntent(world, npc, "歇着（体力 10%，还剩 60 秒）");
+
+            StringAssert.StartsWith("休息中", card, "休息也读领域那一句");
+            Assert.AreEqual(world.Inspect("ahe").Intent, card, "卡片与抽屉必须是同一句话");
         }
 
         [Test]

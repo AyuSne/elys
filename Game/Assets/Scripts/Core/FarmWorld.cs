@@ -290,7 +290,7 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            var learned = heard.Retold(speaker.Id, speaker.DisplayName);
+            var learned = heard.Retold(speaker.DisplayName);
             hearsay.Learn(listener.Id, learned);
             Remember(listener.Id, learned.TextFor(listener.Id), learned.Importance);
             retelling = new Retelling(speaker.Id, speaker.DisplayName, listener.Id, heard, learned);
@@ -796,9 +796,9 @@ namespace ElysFarm.Core
                 }
             }
 
-            // 等条件（还没熟、刚浇过）只说明还没到时候；别的拒绝意味着这单活做不下去了，
-            // 释放占位，别让一张永远推进不了的工单一直占着这块地。
-            if (!ActionValidator.IsWaiting(result.Reason))
+            // 等条件（还没熟、刚浇过）只说明还没到时候；别的（失败）意味着这单活做不下去了，
+            // 释放占位，别让一张永远推进不了的工单一直占着这块地。分态判据只有 StepOutcome 一份。
+            if (result.Outcome != StepOutcome.Waiting)
             {
                 ReleaseWorkOrderOf(npcId);
             }

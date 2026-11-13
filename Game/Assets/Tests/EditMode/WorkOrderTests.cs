@@ -306,9 +306,9 @@ namespace ElysFarm.Tests
             Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "先浇水，下一步轮到施肥");
 
             var line = world.IntentOf("ahe");
-            StringAssert.StartsWith("等 ", line, "等条件要显示成「等…」");
+            StringAssert.StartsWith("等肥力降下来", line, "等条件要说「等什么」，不是「现在是什么样」");
             StringAssert.Contains("A1", line);
-            StringAssert.Contains("肥力还够", line, "等条件要带条件名");
+            StringAssert.Contains("施肥", line);
             StringAssert.DoesNotContain("没做成", line, "「没做成」只用于失败");
 
             var waiting = world.AdvanceWorkOrder("ahe");
@@ -329,9 +329,8 @@ namespace ElysFarm.Tests
             Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第三步施肥");
 
             var line = world.IntentOf("ahe");
-            StringAssert.StartsWith("等 ", line, "没什么草可除也是等条件");
+            StringAssert.StartsWith("等草长出来", line, "没什么草可除也是等条件，要说清等什么");
             StringAssert.Contains("除草", line);
-            StringAssert.Contains("没什么草可除", line);
             StringAssert.DoesNotContain("没做成", line);
             Assert.AreEqual(WorkStep.Weed, world.WorkOrderOf("ahe")?.NextStep, "等草长出来，工单保留");
         }
@@ -349,9 +348,9 @@ namespace ElysFarm.Tests
 
             var line = world.IntentOf("ahe");
             StringAssert.StartsWith("没做成：", line, "真正的失败才说没做成");
+            StringAssert.Contains("种子库里没有萝卜种子了", line, "失败要带理由");
             StringAssert.Contains("A1", line);
             StringAssert.Contains("播种", line);
-            StringAssert.Contains("种子库里没有萝卜种子了", line, "失败要带理由");
 
             var failed = world.AdvanceWorkOrder("ahe");
             Assert.AreEqual(StepOutcome.Failed, failed.Outcome);
@@ -386,9 +385,9 @@ namespace ElysFarm.Tests
             Assert.AreEqual(FieldState.Mature, field.State, "萝卜熟了");
 
             var line = world.IntentOf("ahe");
-            StringAssert.StartsWith("跳过 ", line, "不必做的工步说「跳过」，不是「等」也不是「没做成」");
+            StringAssert.StartsWith("不用施肥", line, "不必做的工步说「不用…」，不是「等」也不是「没做成」");
             StringAssert.Contains("A1", line);
-            StringAssert.Contains("施肥", line);
+            StringAssert.Contains("已经熟了", line);
 
             var skipped = world.AdvanceWorkOrder("ahe");
             Assert.AreEqual(StepOutcome.Skipped, skipped.Outcome);

@@ -36,8 +36,11 @@ namespace ElysFarm.Demo
         /// <summary>三人卡行内「取消」按钮的宽度；行里留出这么宽才不压到意图文字。</summary>
         const float CancelWidth = 52f;
 
+        /// <summary>三人卡一行里头像那一列的宽度：名字、体力条与意图文字都从这之后开始。</summary>
+        const float RowTextOffset = 48f;
+
         /// <summary>三人卡那一行意图文字的可用宽度：行宽减去头像与名字那一列。</summary>
-        const float IntentWidth = CardWidth - 16f - 48f;
+        const float IntentWidth = CardWidth - 16f - RowTextOffset;
 
         /// <summary>对话框正文最多两行；本地追问的回答可能到 80+ 字，超出就省略，不能硬切在边外。</summary>
         const int ReplyLimit = 110;
@@ -342,17 +345,17 @@ namespace ElysFarm.Demo
             GUI.Box(frame, GUIContent.none, skin.Slot);
             DrawFace(new Rect(frame.x + 2f, frame.y + 2f, 32f, 32f), npc);
 
-            GUI.Label(new Rect(row.x + 48f, row.y + 12f, 110f, 26f), npc.DisplayName, skin.BodyBold);
+            GUI.Label(new Rect(row.x + RowTextOffset, row.y + 12f, 110f, 26f), npc.DisplayName, skin.BodyBold);
             GUI.Label(
                 new Rect(row.xMax - CancelWidth - 50f, row.y + 14f, 44f, 22f),
                 $"{npc.Stamina:P0}",
                 skin.SmallRight);
             DrawBar(
-                new Rect(row.x + 48f, row.y + 34f, 146f, 8f),
+                new Rect(row.x + RowTextOffset, row.y + 34f, 146f, 8f),
                 npc.Stamina,
                 npc.IsResting ? HudSkin.GreenActive : HudSkin.Green);
             GUI.Label(
-                new Rect(row.x + 48f, row.y + 42f, IntentWidth, 22f),
+                new Rect(row.x + RowTextOffset, row.y + 42f, IntentWidth, 22f),
                 IntentLine(npc),
                 skin.Small);
         }

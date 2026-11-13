@@ -16,7 +16,6 @@ namespace ElysFarm.Core
             string claim,
             int importance,
             int hops,
-            string sourceId = null,
             string sourceName = null)
         {
             SubjectId = subjectId ?? string.Empty;
@@ -24,7 +23,6 @@ namespace ElysFarm.Core
             Claim = claim ?? string.Empty;
             Importance = MemoryStore.ClampImportance(importance);
             Hops = Math.Max(0, hops);
-            SourceId = sourceId ?? string.Empty;
             SourceName = sourceName ?? string.Empty;
         }
 
@@ -43,9 +41,6 @@ namespace ElysFarm.Core
         /// <summary>转了几手：直接听玩家说记 0，第一次转述记 1。</summary>
         public int Hops { get; }
 
-        /// <summary>这事是听谁说的（NPC id）；空表示直接听玩家说的。</summary>
-        public string SourceId { get; }
-
         /// <summary>这事是听谁说的（展示名）；空表示直接听玩家说的，转述时只说「听说」。</summary>
         public string SourceName { get; }
 
@@ -56,7 +51,7 @@ namespace ElysFarm.Core
         /// 再转述一手：重要性减一，手数加一，来源换成当下讲的人。
         /// 返回的是听者记下的那一条，不是讲的人说的那句话。
         /// </summary>
-        public Hearsay Retold(string speakerId, string speakerName)
+        public Hearsay Retold(string speakerName)
         {
             return new Hearsay(
                 SubjectId,
@@ -64,7 +59,6 @@ namespace ElysFarm.Core
                 Claim,
                 Math.Max(1, Importance - 1),
                 Hops + 1,
-                speakerId,
                 speakerName);
         }
 

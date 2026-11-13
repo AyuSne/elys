@@ -22,30 +22,36 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
-        /// 三人卡那一行的当前意图。NPC 手上有工单时直接用领域给出的意图行
+        /// 三人卡那一行的当前意图。NPC 手上有工单或在休息时直接用领域给出的意图行
         /// （<see cref="FarmWorld.IntentOf"/>，也就是决策抽屉第 2 项的那句话）——
-        /// 「等条件 / 跳过 / 没做成」因此不会在卡片与抽屉上各说一套；
-        /// 没有工单时才显示演示层自己的临时状态（前往、歇着、待命…）。
+        /// 「等条件 / 跳过 / 没做成」因此不会在卡片与抽屉上各说一套；其余时候才显示演示层
+        /// 自己的临时状态（前往、待命、跟 X 说…）。
         /// </summary>
         public static string CardIntent(FarmWorld world, Npc npc, string demoIntent)
         {
-            return world != null && npc != null && world.WorkOrderOf(npc.Id) != null
+            if (world == null || npc == null)
+            {
+                return demoIntent;
+            }
+
+            return npc.IsResting || world.WorkOrderOf(npc.Id) != null
                 ? world.IntentOf(npc.Id)
                 : demoIntent;
         }
 
         /// <summary>
         /// 把 HUD 里的一行动态文案截短，避免面板被长句撑开。
-        /// 卡片那一行按像素宽度截（<see cref="Fit"/>），这里留给字数固定、不需要量字宽的场合。
+        /// 卡片那一行按像素宽度截（<see cref="Fit"/>），这里给字数固定、不必量字宽的场合；
+        /// 取的是「放得下 maxLength 个字」这同一个含义，截短规则只此一份。
         /// </summary>
         public static string Shorten(string text, int maxLength)
         {
-            if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
-            {
-                return text;
-            }
+            return Fit(text, maxLength, LengthOf);
+        }
 
-            return text.Substring(0, maxLength) + "…";
+        static float LengthOf(string text)
+        {
+            return text?.Length ?? 0;
         }
 
         /// <summary>
