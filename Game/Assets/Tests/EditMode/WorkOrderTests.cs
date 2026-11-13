@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using ElysFarm.Core;
 using NUnit.Framework;
 
@@ -33,6 +34,207 @@ namespace ElysFarm.Tests
             WorkStep.Weed,
             WorkStep.Harvest
         };
+
+        static FarmWorld TwoNpcWorld(int seeds = 10)
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f), NpcPersona.Ahe);
+            world.AddNpc("aya", "阿芽", new FarmPosition(2f, -4f), NpcPersona.Aya);
+            world.SetProduceStore(new FarmPosition(0f, -4f));
+            world.AddSeeds(CropCatalog.RadishId, seeds);
+            return world;
+        }
+
+        [Test]
+        public void 接单即占住地块_别人再对这块地下令得到带名字的拒绝()
+        {
+            var world = TwoNpcWorld();
+            var field = world.GetField("A1");
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
+                reason);
+
+            var claim = world.ClaimOf("A1");
+            Assert.IsTrue(claim.IsClaimed, "接单即占住整块地");
+            Assert.AreEqual("ahe", claim.NpcId);
+            Assert.AreEqual("阿禾", claim.NpcName);
+            Assert.AreEqual("阿禾", world.FieldClaims.Single(c => c.FieldId == "A1").NpcName, "抽屉据此显示地块归属");
+
+            Assert.IsFalse(
+                world.TryAssignWorkOrder("aya", "A1", CropCatalog.RadishId, PlantRadish, out var order, out var rejected),
+                "同一块地不能同时属于两张工单");
+            Assert.IsNull(order);
+            Assert.AreEqual("阿禾正在弄这块地", rejected, "拒绝要说清是谁占着");
+            Assert.IsNull(world.WorkOrderOf("aya"), "被拒的那次不能登记工单");
+            Assert.AreEqual(FieldState.Empty, field.State, "被拒的那次不能改动地块");
+            Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.RadishId), "被拒的那次不能扣种子");
+
+            var blocked = world.ExecuteStep("aya", "A1", WorkStep.Sow);
+            Assert.IsFalse(blocked.Executed, "直接指向被占地块的工步也要过占位校验");
+            Assert.AreEqual("阿禾正在弄这块地", blocked.Reason);
+            Assert.IsFalse(
+                world.RankCandidates("aya").Any(c => c.FieldId == "A1" && c.IsValid),
+                "别人占着的地块不再给出有效候选");
+        }
+
+        [Test]
+        public void 工单完成后地块立刻可以被别人认领()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed, "先种上，才有浇水可做");
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out var order, out var reason),
+                reason);
+            Assert.IsTrue(world.ClaimOf("A1").IsClaimed, "接单即占住");
+
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed);
+            Assert.IsTrue(order.IsComplete);
+            Assert.IsNull(world.WorkOrderOf("ahe"), "工单完成后应清空");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "工单完成后占位立刻释放");
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("aya", "A1", null, new[] { WorkStep.Fertilize }, out _, out var next),
+                next);
+            Assert.AreEqual("aya", world.ClaimOf("A1").NpcId, "释放后别人马上能接手");
+        }
+
+        [Test]
+        public void 取消工单会释放占位但不回滚已完成的工步()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out var order, out var reason),
+                reason);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "先播下种");
+
+            Assert.IsTrue(world.TryCancelWorkOrder("ahe", out var cancelled, out var cancelReason), cancelReason);
+            Assert.AreSame(order, cancelled);
+            Assert.IsNull(world.WorkOrderOf("ahe"), "取消后不再挂工单");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "取消立刻释放占位");
+            Assert.AreEqual(FieldState.Sown, world.GetField("A1").State, "已完成的工步不回滚");
+            Assert.AreEqual(9, world.Ledger.SeedsOf(CropCatalog.RadishId), "播下去的种子不会退回来");
+
+            Assert.IsFalse(world.TryCancelWorkOrder("ahe", out _, out var empty), "没有工单时取消要给理由");
+            Assert.AreEqual("没有接单", empty);
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("aya", "A1", null, new[] { WorkStep.Water }, out _, out var next),
+                next);
+            Assert.AreEqual("aya", world.ClaimOf("A1").NpcId, "取消释放后别人马上能接手");
+        }
+
+        [Test]
+        public void 去休息不释放占位_回来还能接着干()
+        {
+            // 干两步就累垮、一觉睡过两个游戏日的人设：用来验证休息不算「没进展」。
+            var fragile = new NpcPersona(
+                "fragile",
+                decisionSeconds: 0f,
+                exertionPerStep: 0.45f,
+                restThreshold: Npc.MinStamina,
+                restSeconds: FarmClock.SecondsPerDay * 2f + 50f,
+                restRecovery: 0.60f,
+                diligence: 1f,
+                distanceWeight: 0.15f);
+
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f), fragile);
+            world.AddNpc("aya", "阿芽", new FarmPosition(2f, -4f), NpcPersona.Aya);
+            world.SetProduceStore(new FarmPosition(0f, -4f));
+            world.AddSeeds(CropCatalog.WheatId, 5);
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.WheatId, PlantRadish, out var order, out var reason),
+                reason);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第一步播种");
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第二步浇水后体力见底");
+            Assert.IsTrue(world.GetNpc("ahe").IsResting, "体力降到阈值应去休息");
+
+            world.AdvanceDays(2);
+            Assert.IsTrue(world.GetNpc("ahe").IsResting, "这一觉还没睡完");
+            Assert.AreSame(order, world.WorkOrderOf("ahe"), "去休息不释放工单");
+            Assert.AreEqual("ahe", world.ClaimOf("A1").NpcId, "去休息不释放占位，回来还能接着干");
+
+            world.Tick(fragile.RestSeconds);
+            Assert.IsFalse(world.GetNpc("ahe").IsResting, "休息够时长就该起身");
+            var resumed = world.AdvanceWorkOrder("ahe");
+            Assert.IsTrue(resumed.Executed, "休息结束后接着干原工单");
+            Assert.AreEqual(WorkStep.Fertilize, resumed.Step);
+            Assert.AreEqual(3, order.CompletedCount);
+            Assert.AreEqual("ahe", world.ClaimOf("A1").NpcId, "接着干时占位仍在自己手里");
+        }
+
+        [Test]
+        public void 对同一块地的工单完成前换地接单会释放原来的占位()
+        {
+            var world = TwoNpcWorld();
+            world.AddField("A2", new FarmPosition(6f, 2f));
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
+                reason);
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A2", CropCatalog.RadishId, PlantRadish, out var moved, out var again),
+                again);
+
+            Assert.AreSame(moved, world.WorkOrderOf("ahe"), "接单会替换这名 NPC 原来的工单");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "旧地块立刻释放");
+            Assert.AreEqual("ahe", world.ClaimOf("A2").NpcId, "新地块归这名 NPC");
+        }
+
+        [Test]
+        public void 超过一个游戏日没有进展的工单自动放弃并释放占位()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
+                reason);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "播下种；此后没人再推进这张工单");
+
+            world.AdvanceDays(1);
+            Assert.IsNotNull(world.WorkOrderOf("ahe"), "才一个游戏日，工单先留着");
+            Assert.AreEqual("ahe", world.ClaimOf("A1").NpcId, "留着的工单也留着占位");
+
+            world.AdvanceDays(1);
+            Assert.IsNull(world.WorkOrderOf("ahe"), "超过一个游戏日没有进展就自动放弃");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "放弃后释放占位");
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("aya", "A1", null, new[] { WorkStep.Water }, out _, out var next),
+                "释放后别人能接这块地：" + next);
+        }
+
+        [Test]
+        public void 被拒且无法继续时立刻释放占位()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Water).Executed);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Fertilize).Executed);
+            world.AdvanceDays(2);
+
+            // 第 3 天挂一张「浇水」的工单：等下到地里时萝卜已经熟了，这一步永远做不成。
+            Assert.AreEqual(FieldState.Growing, world.GetField("A1").State);
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out var order, out var reason),
+                reason);
+
+            world.AdvanceDays(1);
+            Assert.AreEqual(FieldState.Mature, world.GetField("A1").State, "萝卜在第 4 天成熟");
+
+            var blocked = world.AdvanceWorkOrder("ahe");
+            Assert.IsFalse(blocked.Executed);
+            Assert.AreEqual("已经熟了，先收了吧", blocked.Reason);
+            Assert.IsNull(world.WorkOrderOf("ahe"), "做不下去的工单不能一直挂着");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "放弃后释放占位");
+
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("aya", "A1", null, new[] { WorkStep.Harvest }, out _, out var next),
+                next);
+        }
 
         [Test]
         public void 一句话派出的工单按五个工步顺序执行到收获()

@@ -45,6 +45,14 @@ namespace ElysFarm.Core
             string sowSpeciesId,
             out string reason)
         {
+            // 占位先于地块状态：同一时刻一块地只属于一张工单，别人连试都不该试。
+            var owner = world.ClaimOwnerOf(field.Id);
+            if (owner != null && owner != npc)
+            {
+                reason = ClaimedReason(owner);
+                return false;
+            }
+
             if (!field.Can(step, out reason))
             {
                 return false;
@@ -216,6 +224,29 @@ namespace ElysFarm.Core
         public static string SeedShortageReason(CropSpecies species)
         {
             return $"种子库里没有{species.DisplayName}种子了";
+        }
+
+        /// <summary>
+        /// 对已被别人占住的地块下令时的统一可读理由：点名是谁在弄，玩家才知道该等还是该换一块。
+        /// </summary>
+        public static string ClaimedReason(Npc owner)
+        {
+            return $"{owner.DisplayName}正在弄这块地";
+        }
+
+        /// <summary>
+        /// 这些拒绝只是「还没到时候」：等条件到了再试，工单因此保留。
+        /// 别的拒绝（种子耗尽、地块状态变了）意味着这单活做不下去了，占位必须立刻释放。
+        /// 理由取自 <see cref="Field.Can"/> 与 <see cref="Npc.RestingReason"/> 的同一批常量，
+        /// 剧本与领域层共用这份清单，免得一边在等、另一边已经放弃。
+        /// </summary>
+        public static bool IsWaiting(string reason)
+        {
+            return reason == Field.NotMatureReason
+                || reason == Field.NoWeedsReason
+                || reason == Field.WateredReason
+                || reason == Field.FertileReason
+                || reason == Npc.RestingReason;
         }
     }
 }

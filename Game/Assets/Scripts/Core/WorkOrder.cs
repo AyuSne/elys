@@ -27,13 +27,16 @@ namespace ElysFarm.Core
         /// <summary>已经执行完的工步数。</summary>
         public int CompletedCount { get; private set; }
 
+        /// <summary>最近一次有进展的游戏日——接单那天也算。超过一个游戏日没进展就会被自动放弃。</summary>
+        public int LastProgressDay { get; private set; }
+
         /// <summary>所有工步都已执行。</summary>
         public bool IsComplete => CompletedCount >= steps.Count;
 
         /// <summary>下一个待执行的工步；完成后为 null。</summary>
         public WorkStep? NextStep => IsComplete ? (WorkStep?)null : steps[CompletedCount];
 
-        internal WorkOrder(string npcId, string fieldId, string speciesId, IEnumerable<WorkStep> plannedSteps)
+        internal WorkOrder(string npcId, string fieldId, string speciesId, IEnumerable<WorkStep> plannedSteps, int day)
         {
             if (string.IsNullOrWhiteSpace(npcId))
             {
@@ -54,6 +57,7 @@ namespace ElysFarm.Core
             FieldId = fieldId;
             SpeciesId = speciesId;
             steps = new List<WorkStep>(plannedSteps);
+            LastProgressDay = day;
             if (steps.Count == 0)
             {
                 throw new ArgumentException("工单至少需要一个工步", nameof(plannedSteps));
@@ -70,6 +74,12 @@ namespace ElysFarm.Core
 
             CompletedCount++;
             return true;
+        }
+
+        /// <summary>记下这天有进展：执行了计划工步、插做了维护，或者 NPC 在休息。</summary>
+        internal void MarkProgress(int day)
+        {
+            LastProgressDay = day;
         }
     }
 }

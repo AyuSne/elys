@@ -304,10 +304,9 @@ namespace ElysFarm.Demo
 
             static bool IsNaturalFieldWait(string reason)
             {
-                return reason == "还没熟"
-                    || reason == "没什么草可除"
-                    || reason == "刚浇过，不渴"
-                    || reason == "肥力还够";
+                // 与领域层共用一份「等条件」清单：各写一套的话，一边在等、另一边已经放弃，
+                // 剧本会挂在「没有登记工单」上，而不是给出可读的失败原因。
+                return ActionValidator.IsWaiting(reason);
             }
 
             void DriveDay(int day)

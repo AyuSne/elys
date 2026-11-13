@@ -25,6 +25,7 @@ namespace ElysFarm.Core
         readonly Dictionary<string, Field> fieldsById = new Dictionary<string, Field>();
         readonly Dictionary<string, Npc> npcsById = new Dictionary<string, Npc>();
         readonly Dictionary<string, WorkOrder> workOrdersByNpc = new Dictionary<string, WorkOrder>();
+        readonly Dictionary<string, string> claimOfField = new Dictionary<string, string>();
         readonly Dictionary<string, StepCandidate> lastDecisions = new Dictionary<string, StepCandidate>();
         readonly Dictionary<string, IReadOnlyList<MemoryHit>> lastRecalls =
             new Dictionary<string, IReadOnlyList<MemoryHit>>();
@@ -499,6 +500,15 @@ namespace ElysFarm.Core
                 Clock.Day,
                 MemoryImportanceOf(step));
             log.Add(new WorkLogEntry(Clock.Day, npc.Id, field.Id, step, produced));
+
+            // 在自己的地块上做成任何一件事都算进展：计划工步、插做的维护都算，
+            // 否则等成熟的长周期工单会被「没进展」的兜底规则误伤。
+            var progress = WorkOrderOf(npcId);
+            if (progress != null && progress.FieldId == fieldId)
+            {
+                progress.MarkProgress(Clock.Day);
+            }
+
             return StepResult.Success(npcId, fieldId, step, produced);
         }
 
@@ -581,8 +591,11 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            order = new WorkOrder(npcId, fieldId, resolvedSpeciesId, steps);
+            // 接单即占住整块地：一块地同一时刻只属于一张工单。
+            ReleaseWorkOrderOf(npcId);
+            order = new WorkOrder(npcId, fieldId, resolvedSpeciesId, steps, Clock.Day);
             workOrdersByNpc[npcId] = order;
+            claimOfField[fieldId] = npcId;
             lastDecisions.Remove(npcId);
             return true;
         }
@@ -591,6 +604,78 @@ namespace ElysFarm.Core
         public WorkOrder WorkOrderOf(string npcId)
         {
             return workOrdersByNpc.TryGetValue(npcId, out var order) ? order : null;
+        }
+
+        /// <summary>
+        /// 取消某名 NPC 当前的工单（见 GLOSSARY「占位」的释放时机）：释放占位，
+        /// 已经做过的工步不回滚——浇过的水还在，播下去的种子不会退回来。
+        /// 没有接单时不改动任何状态，并给出可读理由。
+        /// </summary>
+        public bool TryCancelWorkOrder(string npcId, out WorkOrder cancelled, out string reason)
+        {
+            _ = GetNpc(npcId);
+            var order = WorkOrderOf(npcId);
+            if (order == null)
+            {
+                cancelled = null;
+                reason = "没有接单";
+                return false;
+            }
+
+            ReleaseWorkOrderOf(npcId);
+            cancelled = order;
+            reason = null;
+            return true;
+        }
+
+        /// <summary>
+        /// 某块地此刻的占位归属（见 GLOSSARY「占位」）；无人认领时 <see cref="FieldClaim.IsClaimed"/> 为 false。
+        /// </summary>
+        public FieldClaim ClaimOf(string fieldId)
+        {
+            var field = GetField(fieldId);
+            return claimOfField.TryGetValue(field.Id, out var npcId)
+                ? new FieldClaim(field.Id, npcId, GetNpc(npcId).DisplayName)
+                : FieldClaim.Free(field.Id);
+        }
+
+        /// <summary>
+        /// 全部地块的占位归属，按地块加入顺序。决策可视化用它画出「地块归谁」，
+        /// 与候选与否决原因同源——被占的地块在别人那里只有带名字的否决理由。
+        /// </summary>
+        public IReadOnlyList<FieldClaim> FieldClaims
+        {
+            get
+            {
+                var claims = new List<FieldClaim>(fields.Count);
+                foreach (var field in fields)
+                {
+                    claims.Add(ClaimOf(field.Id));
+                }
+
+                return claims;
+            }
+        }
+
+        /// <summary>谁占着这块地；无人认领时为 null。动作校验用它挡下别人的工步。</summary>
+        internal Npc ClaimOwnerOf(string fieldId)
+        {
+            return claimOfField.TryGetValue(fieldId, out var npcId) ? GetNpc(npcId) : null;
+        }
+
+        /// <summary>清掉这名 NPC 的工单并释放它占着的地块；已完成的工步不回滚。</summary>
+        void ReleaseWorkOrderOf(string npcId)
+        {
+            if (!workOrdersByNpc.TryGetValue(npcId, out var order))
+            {
+                return;
+            }
+
+            workOrdersByNpc.Remove(npcId);
+            if (claimOfField.TryGetValue(order.FieldId, out var ownerId) && ownerId == npcId)
+            {
+                claimOfField.Remove(order.FieldId);
+            }
         }
 
         /// <summary>种植类工单在等待成熟时，允许插做的维护工步。</summary>
@@ -622,7 +707,7 @@ namespace ElysFarm.Core
             var step = order.NextStep;
             if (!step.HasValue)
             {
-                workOrdersByNpc.Remove(npcId);
+                ReleaseWorkOrderOf(npcId);
                 return StepResult.None(npcId, "工单已完成");
             }
 
@@ -632,7 +717,7 @@ namespace ElysFarm.Core
                 order.Advance();
                 if (order.IsComplete)
                 {
-                    workOrdersByNpc.Remove(npcId);
+                    ReleaseWorkOrderOf(npcId);
                 }
 
                 return result;
@@ -646,6 +731,13 @@ namespace ElysFarm.Core
                 {
                     return maintained;
                 }
+            }
+
+            // 等条件（还没熟、刚浇过）只说明还没到时候；别的拒绝意味着这单活做不下去了，
+            // 释放占位，别把地块锁死在一张永远推进不了的工单上。
+            if (!ActionValidator.IsWaiting(result.Reason))
+            {
+                ReleaseWorkOrderOf(npcId);
             }
 
             return result;
@@ -697,6 +789,9 @@ namespace ElysFarm.Core
             return IsAtProduceStore(npc) && Ledger.TryDeposit(npc.Id, speciesId, count);
         }
 
+        /// <summary>工单多少游戏日没有进展就自动放弃；规格定的是「超过一个游戏日」。</summary>
+        const int IdleDaysBeforeAbandon = 1;
+
         void SettleDay(int day)
         {
             // 跨日后时间衰减变了，上一次回答命中的顺序不再可信，回到按当前意图检索。
@@ -712,7 +807,40 @@ namespace ElysFarm.Core
                 npc.RecoverDay();
             }
 
+            AbandonStaleWorkOrders(day);
             DaySettled?.Invoke(day);
+        }
+
+        /// <summary>
+        /// 兜底规则：超过一个游戏日没有进展的工单自动放弃，占位随之释放，农场不会死锁在一个
+        /// 没人推进的工单上。NPC 去休息不释放——休息是有界、会自己结束的状态，回来还能接着干。
+        /// </summary>
+        void AbandonStaleWorkOrders(int day)
+        {
+            if (workOrdersByNpc.Count == 0)
+            {
+                return;
+            }
+
+            var stale = new List<string>();
+            foreach (var order in workOrdersByNpc.Values)
+            {
+                if (GetNpc(order.NpcId).IsResting)
+                {
+                    order.MarkProgress(day);
+                    continue;
+                }
+
+                if (day - order.LastProgressDay > IdleDaysBeforeAbandon)
+                {
+                    stale.Add(order.NpcId);
+                }
+            }
+
+            foreach (var npcId in stale)
+            {
+                ReleaseWorkOrderOf(npcId);
+            }
         }
     }
 }

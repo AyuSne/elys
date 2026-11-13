@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using ElysFarm.Core;
 using UnityEngine;
 
@@ -649,6 +650,7 @@ namespace ElysFarm.Demo
         {
             GUILayout.Space(4f);
             GUILayout.Label($"③ 候选动作与否决原因（共 {candidates.Count} 条）", skin.BodyBold);
+            GUILayout.Label(FieldClaimsLine(), skin.SmallWrap);
 
             var validShown = 0;
             var rejectedShown = 0;
@@ -674,6 +676,27 @@ namespace ElysFarm.Demo
                         skin.SmallWrap);
                 }
             }
+        }
+
+        /// <summary>
+        /// ③ 的一行注脚：每块地归谁。占位就是候选被否决的原因之一，所以它读同一份
+        /// <see cref="FarmWorld.FieldClaims"/>，不另存一份归属，也不算第 6 项。
+        /// </summary>
+        string FieldClaimsLine()
+        {
+            const string Prefix = "地块归属：";
+            var line = new StringBuilder(Prefix);
+            foreach (var claim in demo.World.FieldClaims)
+            {
+                if (line.Length > Prefix.Length)
+                {
+                    line.Append(" · ");
+                }
+
+                line.Append(claim.FieldId).Append(' ').Append(claim.IsClaimed ? claim.NpcName : "无人");
+            }
+
+            return line.ToString();
         }
 
         void DrawModelCall(ModelCallInfo call)

@@ -59,6 +59,18 @@ namespace ElysFarm.Core
 
         const string MatureReason = "已经熟了，先收了吧";
 
+        /// <summary>作物还没熟，收获、浇水这类工步只能等——工单因此保留。</summary>
+        public const string NotMatureReason = "还没熟";
+
+        /// <summary>没有草可除，只能等草长出来。</summary>
+        public const string NoWeedsReason = "没什么草可除";
+
+        /// <summary>刚浇过水，不渴；等水分掉下去再说。</summary>
+        public const string WateredReason = "刚浇过，不渴";
+
+        /// <summary>肥力还够，等它掉下去再说。</summary>
+        public const string FertileReason = "肥力还够";
+
         public Field(string id, FarmPosition position, float fertility = 0.5f, float resilience = 0.5f)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -128,7 +140,7 @@ namespace ElysFarm.Core
 
                     if (Water >= 0.99f)
                     {
-                        reason = "刚浇过，不渴";
+                        reason = WateredReason;
                         return false;
                     }
 
@@ -150,7 +162,7 @@ namespace ElysFarm.Core
 
                     if (Fertility >= 0.99f)
                     {
-                        reason = "肥力还够";
+                        reason = FertileReason;
                         return false;
                     }
 
@@ -172,7 +184,7 @@ namespace ElysFarm.Core
 
                     if (Weeds <= 0.01f)
                     {
-                        reason = "没什么草可除";
+                        reason = NoWeedsReason;
                         return false;
                     }
 
@@ -182,7 +194,7 @@ namespace ElysFarm.Core
                 case WorkStep.Harvest:
                     if (State != FieldState.Mature)
                     {
-                        reason = "还没熟";
+                        reason = NotMatureReason;
                         return false;
                     }
 
