@@ -29,7 +29,7 @@
 
 - 需要 `await` 的 EditMode 测试直接写 `[Test] public async Task ...`，不需要 `[UnityTest]` 协程。用 `Task.WhenAny` + 很小的 deadline 测超时，别用 `.Result` / `.Wait()` 阻塞主线程。
 - 测试程序集 `overrideReferences: true` 时，引用新 asmdef（例如 `ElysFarm.Model`）要显式加进 `references`；想在测试里直接用 Newtonsoft 还要加 `precompiledReferences`，否则编译不到。
-- 全套 170 个测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
+- 全套测试本身不到 0.5 秒，主要时间花在打开工程与编译；不要用测试跑代替编译检查，也别在没改代码时反复跑全套。
 - #9 的表现层测试在 `ElysFarm.Tests` 里引用 `ElysFarm.Demo`；`overrideReferences: true` 时只在 `references` 里加程序集名就够，不需要 `precompiledReferences`。2D 的纯逻辑测试（`CameraRig`、`CropStages`、`PixelArt`、`FarmLayout`、`SortingOrder`、`FarmStartup`）同样只引这个程序集。
 - 2D 的素材测试不 `Resources.Load` 真实 PNG；切格与四方向都用纯函数断言，素材本身由 Play Mode 截图验收。3D 版本（`main` 合并前的历史）仍用 `Resources/Quaternius` 与 `ArtMaterialTests`，2D 分支已删除这组测试并移出 `Resources/Quaternius`。`AssetLayoutTests` 是 #16 的打包护栏：它只检查 `Assets/Resources` 的文件布局（没有 FBX/材质、PixelArt 目录仍在），不加载贴图；移动素材目录会让它红，这是有意为之。跑 `unity command test run --mode editor` 比关掉 Editor 再开快得多，TDD 循环用前者。
 
@@ -86,12 +86,12 @@
 - `FarmWorld.Inspect` 是只读快照：不要在里面推进决定、扣体力或写记忆；测试 `读取决策快照不改变任何游戏状态` 会盯住时钟、账本与 NPC 状态。决策可视化的测试仍打 `FarmWorld` 这条缝，不为面板或 `DecisionInspector` 另开接缝。
 - 记忆的 `0.5×相似度 + 0.3×importance + 0.2×时间衰减` 在 `MemoryStore`，两段式：先按相似度召回 10 条，再加权取 3 条。相似度有向量时用余弦，没有时退回 bigram Jaccard；两种尺度**不能逐条混排**——只要有一条记忆缺向量或维度不对，整次检索退回关键词。不要把排序第一的候选塞进 cue，否则「意图指向 A2」会被 A1 的候选稀释。追问的 cue 是玩家原话；`Inspect` 在追问后展示 `RecallForAnswer` 缓存，没有缓存才用 `IntentOf`。
 - embedding 走 `IModelClient.EmbedAsync`（硅基流动 `/embeddings`，bge-m3 固定 1024 维，`input` 支持数组）。路由器的批量请求把「检索线索 + 最近缺向量的记忆」一起送；硬超时 2 秒，任何失败都退回关键词，不能挡对话。测试用假客户端返回固定向量，不联网；真实端点只用 `script eval` 或手工请求验。实测两条无关中文短句余弦约 0.5，排序看相对差。
-- 追问的「依据」是领域行为，不是 HUD 文案：`LocalIntentParser.QueryReply` 按「上次那件事 / 为什么没干活 / 状态 / 在干什么」四类生成，回答必带地块、工步、体力或记忆原话；`QueryFacts.Build` 把这串当成本地事实（既是提示词里的唯一依据，也是回退台词），`QueryFacts.Accepts` 只放行「地块、工步、体力都在、没编出事实里没有的地块或第 N 天、问往事时仍引用那条记忆」的措辞——#20 之后不再由路由器往模型回答后面追加依据，改掉事实就整句作废回退事实串。别把这段搬进演示层，否则离线追问会退化成套话。改 `AppendWhatDoing` 时注意工单分支也要带体力，「你在干什么」的验收靠它。`QueryReply` 与抽屉都读同一次 `RecallForAnswer`，问往事优先玩家原话（`BestPlayerMemory`）这条规则不能改。
+- 追问的「依据」是领域行为，不是 HUD 文案：`LocalIntentParser.QueryReply` 按「上次那件事 / 为什么没干活 / 状态 / 在干什么」四类生成，回答必带地块、工步、体力或记忆原话；`QueryFacts.Build` 把这串当成本地事实（既是提示词里的唯一依据，也是回退台词），`QueryFacts.Accepts` 只放行「地块、工步、体力都在、没编出事实里没有的地块或第 N 天、问往事时仍引用那条记忆」的措辞——#20 之后不再由路由器往模型回答后面追加依据，改掉事实就整句作废回退事实串。别把这段搬进演示层，否则离线追问会退化成套话。改 `AppendWhatDoing` 时注意工单分支也要带体力，「你在干什么」的验收靠它。`QueryReply` 与决策可视化都读同一次 `RecallForAnswer`，问往事优先玩家原话（`BestPlayerMemory`）这条规则不能改。
 - `FarmWorld.Remember` 会清掉该 NPC 的 `RecallForAnswer` 缓存（记忆排序变了）；`ExecuteStep`、`TryDecide`、跨日也会清。改缓存生命周期时跑 `MemoryTests.决策面板显示最近一次追问命中的记忆` 和 `DecisionInspectorTests.读取决策快照不改变任何游戏状态`。
 - 心情与饥饿只供状态条展示与表达层的状态摘要，由工步、休息与跨日结算驱动；不要把它们加进效用打分，否则会改 ADR-0002 的公式和 #5 的测试预期。
 - 决策可视化五项是记忆 / 意图 / 候选与否决原因 / 最近一次模型调用 / 状态条；面板只能读快照，不要把 prompt、token 流、工单进度或人设注脚塞进去。
 - 先读 `GLOSSARY.md` 再命名。`仓库` / `carry` 都是明文 Avoid 的词；本票因此做了一次大范围重命名（产出仓 / 随身 / held）。
-- 三个出口的最终裁决点在 `LocalIntentParser.IsFarmRequest`（#8）：请求一定进动作校验，非请求一定不产生工单；模型只提供细节。改词表后跑 `ChatTests`。`种子` / `种类` 里的「种」是名词，`FirstActionIndex` 会跳过；新增动作词时要同步 `DetectGoal`，否则会出现「是请求但没有目标」的拒绝。
+- 三个出口的最终裁决点在 `LocalIntentParser.IsFarmRequest`（#8）：请求一定进动作校验，非请求一定不产生工单；模型只提供细节。改词表后跑 `ChatTests`。#20 起 `IntentRouter.ResolveAsync` 直接拿 `LocalIntentParser.Parse` 的出口与模型分类比：非请求句里追问（带问句标记）与闲聊也由本地定，模型把「你在干什么」判成 chat 会被纠正成 query——否则追问没有事实注入，还会把玩家的话写回记忆。`种子` / `种类` 里的「种」是名词，`FirstActionIndex` 会跳过；新增动作词时要同步 `DetectGoal`，否则会出现「是请求但没有目标」的拒绝。
 - 动作词必须是**连写的**才算数：「除草」能识别，「把…的草除了」里没有相邻的动作词，整句会被判成闲聊。演示里的例句照 `ActionWords` 写（「去东边那块地除草」），别用「把…的草除一下」这种拆开的说法。
 - 闲聊只走 `FarmWorld.RememberChat`：它一次写「玩家说「…」」记忆并提取传闻。`FarmWorld.TryRetell` 只写听者的记忆（说法原样、来源换人、importance 每转一手减一），不要顺手给讲者补记忆或流水，否则 A→B→C 的断言会被重复条目搅乱。
 - 演示层的 NPC 对话每 4 秒触发一次：挑一名不走路、不休息的 NPC，找一名不走路且听得见的同伴；把两人的 `NextActionAt` 往后推 1.2 秒，意图文案才留得住（`UpdateNpc` 在 `NextActionAt` 之前直接返回）。

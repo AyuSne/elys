@@ -125,7 +125,7 @@ namespace ElysFarm.Core
             return $"玩家说「{Shorten(text, PlayerChatMaxLength)}」";
         }
 
-        /// <summary>只收没有向量、维度不对或数值非法的向量；其余一律按不可用处理。</summary>
+        /// <summary>只收非空且数值合法的向量；空向量、含 NaN / 无穷的向量一律按不可用处理。</summary>
         static float[] UsableVector(float[] vector)
         {
             if (vector == null || vector.Length == 0)

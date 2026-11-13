@@ -164,7 +164,8 @@ namespace ElysFarm.Core
 
         /// <summary>
         /// 把一份草稿落到三个出口。出口的最终裁决权在本地：农活请求不能被模型当成闲聊吞掉，
-        /// 纯闲聊也不能被模型凭空变成一条农活；闲聊在此之后另走一次表达层调用。
+        /// 纯闲聊也不能被模型凭空变成一条农活；追问与闲聊之间同样以本地规则为准。
+        /// 闲聊与追问在此之后各走一次表达层调用。
         /// </summary>
         async Task<IntentResult> ResolveAsync(
             RouteContext route,
@@ -178,13 +179,14 @@ namespace ElysFarm.Core
             }
 
             // 出口以玩家原话为准，模型只负责理解细节（地块、品种、措辞）。
-            var isRequest = LocalIntentParser.IsFarmRequest(route.Text, route.World, route.Npc);
-            if (isRequest != (draft.Outlet == IntentOutlet.FarmCommand))
+            // 不是农活请求时，追问还是闲聊也由本地规则定（带问句标记的是追问）：
+            // 否则模型把「你在干什么」判成闲聊，回答既没有事实注入，又会把话写回记忆。
+            var local = LocalIntentParser.Parse(route.Text, route.World, route.Npc);
+            if (local.Outlet != draft.Outlet)
             {
-                var corrected = LocalIntentParser.Parse(route.Text, route.World, route.Npc);
                 // 出口可以改，importance 仍是分类调用给的分数：闲聊被误判成农活时也要留得住。
-                corrected.SetImportance(draft.Importance);
-                draft = corrected;
+                local.SetImportance(draft.Importance);
+                draft = local;
                 call = Corrected(call);
             }
 
@@ -302,7 +304,21 @@ namespace ElysFarm.Core
                 }
             }
 
-            if (localTemplate && call.Succeeded)
+            if (classification.Outcome == ModelCallOutcome.Correction)
+            {
+                // ADR-0004：本地出口纠正过模型的分类时，结果始终标 Correction 并保留那次分类调用的
+                // 模型名、耗时与 token；表达层成功与否只决定台词来自模型还是本地模板，不能覆盖这个标记。
+                call = new ModelCallInfo(
+                    classification.Model,
+                    classification.LatencySeconds,
+                    classification.PromptTokens,
+                    classification.CompletionTokens,
+                    ModelCallOutcome.Correction,
+                    localTemplate
+                        ? "分类被本地出口纠正；表达层没给出可用台词，台词来自本地模板"
+                        : "分类被本地出口纠正；台词由表达层生成");
+            }
+            else if (localTemplate && call.Succeeded)
             {
                 // 分类成功了，但表达层没赶上剩余预算：整体按超时展示，别让 HUD 以为这句是模型说的。
                 call = new ModelCallInfo(
@@ -312,18 +328,6 @@ namespace ElysFarm.Core
                     call.CompletionTokens,
                     ModelCallOutcome.Timeout,
                     "表达层没有剩余预算");
-            }
-            else if (!localTemplate && classification.Outcome == ModelCallOutcome.Correction)
-            {
-                // ADR-0004：本地出口纠正过模型的分类时，结果仍标 Correction 并保留那次分类调用的
-                // 模型名、耗时与 token；台词由表达层说，但观察者要能看出出口是谁定的。
-                call = new ModelCallInfo(
-                    classification.Model,
-                    classification.LatencySeconds,
-                    classification.PromptTokens,
-                    classification.CompletionTokens,
-                    ModelCallOutcome.Correction,
-                    "分类被本地出口纠正；台词由表达层生成");
             }
 
             return IntentResult.ReadOnly(outlet, reply, localTemplate, call);

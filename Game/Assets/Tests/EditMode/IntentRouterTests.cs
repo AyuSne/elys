@@ -611,6 +611,13 @@ namespace ElysFarm.Tests
 
             Assert.AreEqual(IntentOutlet.Query, result.Outlet);
             StringAssert.Contains("你让我给西边", result.Reply, "回答玩家的问题时应引用玩家当时的交代");
+
+            // 回答与决策可视化展示的是同一次检索；#7 的「优先玩家原话」规则压过「必须引用第 1 项」，
+            // 所以这里第 1 项仍是权重最高的自己的动作，回答引用第 2 项。验收场景里玩家原话排第 1，
+            // 由 QueryTests.记忆追问沿用记忆里的地块与游戏日_并与决策可视化第1项一致 盯住。
+            var panelHits = world.Inspect("ahe").Memories;
+            StringAssert.Contains("给 A1 浇了水", panelHits[0].Text, "第 1 项是权重最高的那条");
+            StringAssert.Contains("玩家让我给西边（A1）浇水", panelHits[1].Text, "玩家原话排在第 2 项");
         }
 
         [Test]

@@ -149,10 +149,7 @@ namespace ElysFarm.Core
             IReadOnlyList<DialogueTurn> history)
         {
             var user = new StringBuilder();
-            user.Append("农场的真实状态：\n");
-            PromptFarmState.AppendFields(user, world);
-            PromptFarmState.AppendNpc(user, world, npc, includeMoodAndHunger: true);
-            PromptFarmState.AppendMemories(user, memories);
+            AppendState(user, world, npc, memories);
             AppendHistory(user, npc, history);
             user.Append($"玩家说：{playerText}");
             return user.ToString();
@@ -167,16 +164,26 @@ namespace ElysFarm.Core
             IReadOnlyList<DialogueTurn> history)
         {
             var user = new StringBuilder();
-            user.Append("农场的真实状态：\n");
-            PromptFarmState.AppendFields(user, world);
-            PromptFarmState.AppendNpc(user, world, npc, includeMoodAndHunger: true);
-            PromptFarmState.AppendMemories(user, facts.Memories);
+            AppendState(user, world, npc, facts.Memories);
             user.Append("本地事实（地块、工步、体力与命中的记忆都已核对，只能换一种说法）：\n");
             user.Append(PromptFarmState.OneLine(facts.Reply));
             user.Append('\n');
             AppendHistory(user, npc, history);
             user.Append($"玩家说：{playerText}");
             return user.ToString();
+        }
+
+        /// <summary>两份提示词共用的状态段：地块、NPC 状态（体力 / 心情 / 饥饿）与命中的记忆。</summary>
+        static void AppendState(
+            StringBuilder user,
+            FarmWorld world,
+            Npc npc,
+            IReadOnlyList<MemoryHit> memories)
+        {
+            user.Append("农场的真实状态：\n");
+            PromptFarmState.AppendFields(user, world);
+            PromptFarmState.AppendNpc(user, world, npc, includeMoodAndHunger: true);
+            PromptFarmState.AppendMemories(user, memories);
         }
 
         /// <summary>最近几轮进提示词的样子；闲聊与追问共用同一段，玩家原话始终在最后。</summary>

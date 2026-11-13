@@ -28,7 +28,7 @@ namespace ElysFarm.Core
         /// <summary>本地生成的事实串；也是模型失败时的回退台词。</summary>
         public string Reply { get; }
 
-        /// <summary>这次回答实际命中的记忆，与决策抽屉第 1 项同一次检索。</summary>
+        /// <summary>这次回答实际命中的记忆，与决策可视化第 1 项同一次检索。</summary>
         public IReadOnlyList<MemoryHit> Memories { get; }
 
         /// <summary>
@@ -109,7 +109,10 @@ namespace ElysFarm.Core
             return !Reply.Contains("体力") || reply.Contains("体力");
         }
 
-        /// <summary>台词里提到的事实串没有的地块（例如把 A1 说成 A2）说明它不是换说法。</summary>
+        /// <summary>
+        /// 台词里提到的地块必须来自事实或命中的记忆：把 A1 说成 A2 不算换说法，
+        /// 编出「A9」这种不存在的 id 也不算。
+        /// </summary>
         bool NamesOnlyKnownFields(string reply)
         {
             foreach (var fieldId in fieldIds)
@@ -122,7 +125,53 @@ namespace ElysFarm.Core
                 }
             }
 
-            return true;
+            return !MentionsUnknownFieldId(reply);
+        }
+
+        /// <summary>「字母 + 数字」形状的 id 必须在这个世界的地块表里，否则就是编出来的地块。</summary>
+        bool MentionsUnknownFieldId(string text)
+        {
+            var index = 0;
+            while (index < text.Length)
+            {
+                if (!IsAsciiLetter(text[index]))
+                {
+                    index++;
+                    continue;
+                }
+
+                var start = index;
+                while (index < text.Length && IsAsciiLetter(text[index]))
+                {
+                    index++;
+                }
+
+                var digitsAt = index;
+                while (index < text.Length && char.IsDigit(text[index]))
+                {
+                    index++;
+                }
+
+                if (index > digitsAt && !IsKnownFieldId(text.Substring(start, index - start)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        bool IsKnownFieldId(string token)
+        {
+            foreach (var fieldId in fieldIds)
+            {
+                if (string.Equals(fieldId, token, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>台词里的「第 N 天」必须是事实或命中的记忆里有的那一天。</summary>
@@ -184,7 +233,12 @@ namespace ElysFarm.Core
             return false;
         }
 
-        /// <summary>「A1」这种地块 id 不能误配到「XA10」里，所以按字母 + 数字的边界判。</summary>
+        static bool IsAsciiLetter(char value)
+        {
+            return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z');
+        }
+
+        /// <summary>「A1」这种地块 id 不能误配到「A10」里，所以还要求后面不是数字。</summary>
         static bool NamesField(string text, string fieldId)
         {
             var from = 0;

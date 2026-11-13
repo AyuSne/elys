@@ -129,7 +129,7 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 
 ### 报告里看什么
 
-`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。全量 196 个用例，
+`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。全量 199 个用例，
 覆盖领域闭环、时钟、三本账、三人效用打分与休息、决策可视化五项、记忆的两段式与向量检索、
 追问、闲聊与转述（含追问的事实注入与闲聊的表达层、降级）、意图路由（含模型失败降级）、
 模型协议与密钥来源、2D 表现层的机位、作物阶段、像素切格、布局、排序与头顶表情，
@@ -178,13 +178,14 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 口吻与接续（#19） | `ChatTests.同一句闲聊三名NPC的提示词带各自口吻`、`ChatTests.闲聊提示词只带最近六轮对话`、`ChatTests.第二轮闲聊的提示词接上第一轮`、`DialogueBookTests.对话簿给出表达层要的最近六轮` | 同一句话三人提示词两两不同；最近 6 轮最旧在前，第二轮带着第一轮进提示词 |
 | importance 不动（#19） | `IntentRouterTests.闲聊记忆的重要性由模型打分`、`ChatTests.模型把纯闲聊误判成农活时不产生工单` | 重要性仍由分类调用打分；出口被本地纠正时分数不退回默认值 |
 | 追问走表达层（#20） | `QueryTests.追问的回答由表达层另说一次_不用分类调用的reply`、`QueryTests.追问的提示词注入本地事实与口吻` | 分类之后另一次调用，system 带口吻与「只换说法」，user 带本地事实、状态、记忆与最近 6 轮；不要求 JSON，`temperature 0.8`、`max_tokens 200` |
-| 事实由本地注入（#20） | `QueryTests.表达层丢掉体力时回退事实串_回答仍带地块工步体力`、`QueryTests.表达层编出事实里没有的地块时回退事实串`、`QueryTests.记忆追问编出记忆里没有的游戏日时回退事实串` | 「你在干什么」的回答带地块、工步、体力；台词改掉事实就作废，改用本地事实串 |
-| 追问与抽屉一致（#20） | `QueryTests.记忆追问沿用记忆里的地块与游戏日_并与抽屉第1项一致` | 「上次你让我浇的是哪块」引用记忆里的方位与游戏日，且与抽屉第 1 项一致 |
+| 事实由本地注入（#20） | `QueryTests.表达层丢掉体力时回退事实串_回答仍带地块工步体力`、`QueryTests.表达层编出事实里没有的地块时回退事实串`、`QueryTests.表达层编出不存在的地块id时回退事实串`、`QueryTests.记忆追问编出记忆里没有的游戏日时回退事实串` | 「你在干什么」的回答带地块、工步、体力；台词改掉或编出事实里没有的东西就作废，改用本地事实串 |
+| 追问与决策可视化一致（#20） | `QueryTests.记忆追问沿用记忆里的地块与游戏日_并与决策可视化第1项一致` | 「上次你让我浇的是哪块」引用记忆里的方位与游戏日，且与决策可视化第 1 项一致 |
+| 出口纠正（#20） | `QueryTests.模型把追问误判成闲聊时仍按追问回答且不写记忆`、`QueryTests.模型把追问误判成农活时仍走表达层且保留纠正标记`、`QueryTests.被本地纠正成追问且表达层失败时仍标纠正` | 模型判成闲聊 / 农活都由本地纠正成追问；`Correction` 与分类调用的 token 不被表达层成功或失败覆盖 |
 | 追问降级（#20） | `QueryTests.表达层空响应时回退事实串_回答仍带地块工步体力`、`QueryTests.表达层返回JSON时重试而不是把JSON当回答`、`QueryTests.分类调用不可用时追问仍试一次表达层`、`IntentRouterTests.离线追问回答当前状态与记忆依据` | 空响应与 JSON 重试一次；仍失败回退事实串，回答照样带地块、工步、体力 |
 | 密钥不泄露 | `SecretFileLocatorTests.*`、`DeepSeekProtocolTests.*` | 编辑器只读仓库根；播放器不隐式读密钥文件；请求体与降级符合协议 |
 
-领域测试只打 `FarmWorld` 与 `IModelClient` 两条主缝；`IntentRouter` 的三出口分流、闲聊与追问的
-表达层、`SecretFileLocator` 的密钥来源是三条既有的例外缝。模型测试用假客户端，不联网、不花钱；
+领域测试只打 `FarmWorld` 与 `IModelClient` 两条主缝；`IntentRouter`（三出口分流与闲聊 / 追问的
+表达层）与 `SecretFileLocator` 的密钥来源是两条既有的例外缝。模型测试用假客户端，不联网、不花钱；
 2D 的表现层测试打在纯逻辑接缝（`CropStages`、`CameraRig`、`PixelArt`、`PortraitFace`、
 `FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup`、`DialogueBook`）上，不打开场景、不测渲染。
 包本身的装配由构建脚本固定（`FarmBuild` 只把 `FarmDemo.unity` 传给 `BuildPlayer`），

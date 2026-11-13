@@ -132,7 +132,7 @@ namespace ElysFarm.Tests
             StringAssert.Contains("A1", result.Reply, "回答必须点名当前工单的地块");
             StringAssert.Contains("浇水", result.Reply, "回答必须说出下一步工步");
             StringAssert.Contains("体力", result.Reply, "「你在干什么」的回答必须带体力");
-            Assert.IsTrue(result.UsedFallback, "台词丢了一条事实，只能回退本地事实串并标「本地模板」");
+            Assert.IsTrue(result.UsedFallback, "台词丢了一条事实，只能回退本地事实串");
             Assert.AreEqual(ModelCallOutcome.Unusable, result.Call.Outcome);
             Assert.AreEqual(3, requests.Count, "分类一次，表达层重试一次后回退");
         }
@@ -195,7 +195,7 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public async Task 记忆追问沿用记忆里的地块与游戏日_并与抽屉第1项一致()
+        public async Task 记忆追问沿用记忆里的地块与游戏日_并与决策可视化第1项一致()
         {
             var world = NewWorld();
             Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
@@ -224,9 +224,15 @@ namespace ElysFarm.Tests
             StringAssert.Contains("西边", result.Reply, "回答必须引用记忆里的方位");
             StringAssert.Contains("A1", result.Reply, "回答必须落到记忆里的地块");
 
-            var drawer = world.Inspect("ahe").Memories[0];
-            StringAssert.Contains("玩家让我给西边（A1）浇水", drawer.Text, "抽屉第 1 项应是这次追问实际命中的记忆");
-            StringAssert.Contains($"第 {drawer.Day} 天", result.Reply, "回答引用的游戏日要与抽屉第 1 项一致");
+            var panelMemory = world.Inspect("ahe").Memories[0];
+            StringAssert.Contains(
+                "玩家让我给西边（A1）浇水",
+                panelMemory.Text,
+                "决策可视化第 1 项应是这次追问实际命中的记忆");
+            StringAssert.Contains(
+                $"第 {panelMemory.Day} 天",
+                result.Reply,
+                "回答引用的游戏日要与决策可视化第 1 项一致");
         }
 
         [Test]
@@ -292,7 +298,7 @@ namespace ElysFarm.Tests
             StringAssert.Contains("A1", result.Reply, "模型失败时事实串仍可用");
             StringAssert.Contains("浇水", result.Reply);
             StringAssert.Contains("体力", result.Reply);
-            Assert.IsTrue(result.UsedFallback, "HUD 要据此标出「本地模板」");
+            Assert.IsTrue(result.UsedFallback, "模型失败时标记本地降级");
             Assert.AreEqual(ModelCallOutcome.Unusable, result.Call.Outcome);
             Assert.AreEqual("fake-deepseek", result.Call.Model, "失败也要能展示模型名");
             Assert.AreEqual(0, world.WorkOrderOf("ahe").CompletedCount, "追问只读，工单不动");
@@ -367,6 +373,41 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public async Task 被本地纠正成追问且表达层失败时仍标纠正()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
+                reason);
+            var client = new ScriptedModelClient((request, _) => Task.FromResult(new ChatResponse(
+                request.JsonOutput
+                    ? "{\"outlet\":\"farm_command\",\"goal\":\"plant\",\"field\":\"A1\",\"species\":\"radish\",\"reply\":\"\"}"
+                    : "   ",
+                "fake-deepseek",
+                1.25d,
+                123,
+                45)));
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "你在干什么",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            Assert.IsTrue(result.UsedFallback, "表达层没给出可用台词，台词来自本地事实串");
+            Assert.AreEqual(
+                ModelCallOutcome.Correction,
+                result.Call.Outcome,
+                "ADR-0004：出口被本地纠正过，表达层失败也不能覆盖这个标记");
+            Assert.AreEqual(123, result.Call.PromptTokens, "仍保留分类调用的 token");
+            Assert.AreEqual(45, result.Call.CompletionTokens);
+            StringAssert.Contains("A1", result.Reply, "回退的事实串仍带地块");
+            StringAssert.Contains("体力", result.Reply, "回退的事实串仍带体力");
+        }
+
+        [Test]
         public async Task 分类调用不可用时追问仍试一次表达层()
         {
             var world = NewWorld();
@@ -391,6 +432,69 @@ namespace ElysFarm.Tests
             Assert.AreEqual("我在待命，A1 的萝卜是第 1 天种的，体力满着。", result.Reply);
             Assert.IsFalse(result.UsedFallback, "台词是模型说的，HUD 不该标「本地模板」");
             Assert.AreEqual(ModelCallOutcome.Ok, result.Call.Outcome);
+        }
+
+        [Test]
+        public async Task 表达层编出不存在的地块id时回退事实串()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
+                reason);
+
+            var client = new ScriptedModelClient((request, _) => Task.FromResult(new ChatResponse(
+                request.JsonOutput
+                    ? "{\"outlet\":\"query\"}"
+                    : "我这就去 A1 浇水，A9 那块也看看，体力还有八成。",
+                "fake-deepseek")));
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "你在干什么",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe));
+
+            StringAssert.DoesNotContain("A9", result.Reply, "A9 不是这个世界的地块，不能留在回答里");
+            StringAssert.Contains("A1", result.Reply);
+            Assert.IsTrue(result.UsedFallback, "编出不存在的地块 id 就作废这份措辞");
+        }
+
+        [Test]
+        public async Task 模型把追问误判成闲聊时仍按追问回答且不写记忆()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
+                reason);
+
+            var client = new ScriptedModelClient((request, _) => Task.FromResult(new ChatResponse(
+                request.JsonOutput
+                    ? "{\"outlet\":\"chat\",\"importance\":9}"
+                    : "我这就去 A1 浇水，体力还有八成。",
+                "fake-deepseek",
+                1.1d,
+                90,
+                25)));
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "你在干什么",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe));
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet, "带问句标记的句子由本地规则判为追问");
+            Assert.AreEqual("我这就去 A1 浇水，体力还有八成。", result.Reply, "追问的事实注入仍要生效");
+            Assert.IsFalse(result.UsedFallback);
+            Assert.AreEqual(ModelCallOutcome.Correction, result.Call.Outcome, "模型的分类被本地出口纠正");
+            Assert.AreEqual(90, result.Call.PromptTokens, "纠正时仍保留分类调用的 token");
+            Assert.AreEqual(25, result.Call.CompletionTokens);
+            Assert.AreEqual(WorkStep.Water, world.WorkOrderOf("ahe").NextStep.Value, "追问不能推进工单");
+            foreach (var memory in world.RetrieveMemories("ahe", "你在干什么"))
+            {
+                StringAssert.DoesNotContain("你在干什么", memory.Text, "追问只读，不能写回玩家原话");
+            }
         }
 
         static FarmWorld NewWorld()
