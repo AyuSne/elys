@@ -536,7 +536,13 @@ namespace ElysFarm.Core
                     break;
             }
 
-            npc.ExertStep();
+            // 体力见底会当场转入休息：「开始休息」也是自主目标的释放时机（见 GLOSSARY「占位」），
+            // 与上面「执行完一步」的释放分开写，换触发位置也不会漏。
+            if (npc.ExertStep())
+            {
+                ReleaseAutonomousGoal(npcId);
+            }
+
             memories.Remember(
                 npc.Id,
                 MemoryTextOf(field.Id, step, memorySpecies, produced),
@@ -744,16 +750,29 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
-        /// 这块地被玩家点名的工单接走了：别人正要去这块地的自主目标立刻作废，
-        /// 免得三人卡上还挂着一条「前往」、走到地里才被判被占。玩家指令永远优先。
+        /// 让自己手里的地方都交出去：自主目标与意图行一起清。跨日结算用它，
+        /// 不在别处再写一遍两个 Clear()。
         /// </summary>
-        void ReleaseAutonomousGoalOnField(string fieldId)
+        void ReleaseAllAutonomousGoals()
         {
-            var owner = AutonomousOwnerOf(fieldId);
-            if (owner != null)
+            autonomousGoalOfNpc.Clear();
+            lastDecisions.Clear();
+        }
+
+        /// <summary>
+        /// 候选排序里「这块地归谁」的唯一判据：别人占着的（工单占位或自主目标）就给出那个人，
+        /// 自己占着或无人占着时为 null。动作校验仍只读工单占位——两条读路径各管各的（#27）。
+        /// </summary>
+        internal Npc CandidateBlockerOf(string fieldId, Npc npc)
+        {
+            var claimOwner = ClaimOwnerOf(fieldId);
+            if (claimOwner != null && claimOwner != npc)
             {
-                ReleaseAutonomousGoal(owner.Id);
+                return claimOwner;
             }
+
+            var goalOwner = AutonomousOwnerOf(fieldId);
+            return goalOwner != null && goalOwner != npc ? goalOwner : null;
         }
 
         /// <summary>
@@ -769,9 +788,8 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            // 工单占位优先于自主目标：这一句点名指令一接单，别人正要去这块地的打算就作废。
-            ReleaseAutonomousGoalOnField(fieldId);
-
+            // 工单占位此前已校验过：这里只登记，不替玩家指令清别人的自主目标——
+            // 自主目标不参与动作校验，玩家点名的指令本来就是优先的（#27）。
             UnclaimFieldOf(npcId);
             claimOfField[fieldId] = npcId;
             reason = null;
@@ -944,8 +962,7 @@ namespace ElysFarm.Core
 
             // 跨日结算也是自主目标的释放时机（见 GLOSSARY「占位」）：昨天打算去的地方，
             // 今天不该还占着；地块重新对别人开放，NPC 醒来再自己挑。
-            autonomousGoalOfNpc.Clear();
-            lastDecisions.Clear();
+            ReleaseAllAutonomousGoals();
 
             RestockSeeds(day);
 

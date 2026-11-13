@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using ElysFarm.Core;
 using NUnit.Framework;
@@ -215,6 +216,10 @@ namespace ElysFarm.Tests
 
             var aya = world.Inspect("aya");
             Assert.IsFalse(aya.Candidates.Any(c => c.IsValid), "唯一的 A1 已经有人正要去");
+            Assert.AreEqual(
+                Enum.GetValues(typeof(WorkStep)).Length,
+                aya.Candidates.Count(c => c.FieldId == "A1"),
+                "A1 的五个工步都该出现在候选里，下面的全称断言才不是空真");
             Assert.IsTrue(
                 aya.Candidates.Where(c => c.FieldId == "A1").All(c => c.RejectionReason == "阿禾正在弄这块地"),
                 "被自主目标占住的候选，理由与工单占位同一句说法");

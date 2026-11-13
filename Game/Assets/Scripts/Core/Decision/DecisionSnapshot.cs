@@ -93,8 +93,10 @@ namespace ElysFarm.Core
         public IReadOnlyList<StepCandidate> Candidates { get; }
 
         /// <summary>
-        /// 第 3 项的注脚：每块地归谁占着，按地块加入顺序。被占的地块在别人那里只有一条
+        /// 第 3 项的注脚：每块地归哪张工单占着，按地块加入顺序。被占的地块在别人那里只有一条
         /// 「阿禾正在弄这块地」的否决原因，这一行让观察者对照得到是谁。
+        /// 只记工单占位：自主挑活的目标（#27）不给公开查询，它只体现在候选的否决原因里，
+        /// 所以「无人」的那一行不代表这一刻没人正要去。
         /// </summary>
         public IReadOnlyList<FieldClaim> FieldClaims { get; }
 

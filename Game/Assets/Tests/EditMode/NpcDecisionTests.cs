@@ -244,6 +244,20 @@ namespace ElysFarm.Tests
             Assert.Greater(restSeconds["aya"], WindowSeconds / 2f, "阿芽有一半以上时间在摸鱼");
         }
 
+        /// <summary>
+        /// #27 的自主目标用例大多只需要一块地、两名同时能决定的 NPC：
+        /// 一个先挑中，另一个看它挑不挑得到。需要多块地的用例自己再 AddField。
+        /// </summary>
+        static FarmWorld GoalWorld(NpcPersona ahePersona = null)
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f), ahePersona);
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+            return world;
+        }
+
         [Test]
         public void 同一刻决定的三名NPC各自挑一块不同的地()
         {
@@ -274,11 +288,7 @@ namespace ElysFarm.Tests
         [Test]
         public void 自主目标在执行一步后释放_别人随后能挑到()
         {
-            var world = new FarmWorld(new FarmClock());
-            world.AddField("A1", new FarmPosition(0f, 2f));
-            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
-            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
-            world.AddSeeds(CropCatalog.RadishId, 10);
+            var world = GoalWorld();
 
             Assert.IsTrue(world.TryDecide("ahe", out var ahePick, out var aheReason), aheReason);
             Assert.AreEqual("A1", ahePick.FieldId);
@@ -295,23 +305,19 @@ namespace ElysFarm.Tests
         [Test]
         public void 自主目标不挡玩家点名的指令()
         {
-            var world = new FarmWorld(new FarmClock());
-            world.AddField("A1", new FarmPosition(0f, 2f));
-            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
-            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
-            world.AddSeeds(CropCatalog.RadishId, 10);
+            var world = GoalWorld();
 
             Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
             Assert.AreEqual("A1", pick.FieldId);
 
             // 阿禾正要去 A1，玩家却点名让阿芽去 A1 播种：指令照样接单、照样做得成。
+            // 自主目标不进动作校验，所以这里不用清掉阿禾的打算，玩家的指令也优先。
             Assert.IsTrue(
                 world.TryAssignWorkOrder("aya", "A1", CropCatalog.RadishId, new[] { WorkStep.Sow }, out _, out var assigned),
                 "自主目标不该挡玩家点名的指令：" + assigned);
             Assert.AreEqual("aya", world.ClaimOf("A1").NpcId, "接单即占住整块地");
             Assert.IsTrue(world.ExecuteStep("aya", "A1", WorkStep.Sow).Executed, "点名指令照常执行");
 
-            StringAssert.DoesNotContain("自主", world.IntentOf("ahe"), "指令接单后，阿禾不再声称正要去那块地");
             Assert.IsFalse(world.TryDecide("ahe", out _, out var blocked), "A1 已经归阿芽的工单，阿禾挑不到");
             Assert.AreEqual("现在没有该干的活", blocked);
         }
@@ -319,12 +325,8 @@ namespace ElysFarm.Tests
         [Test]
         public void 改主意之后旧地块重新对别人开放()
         {
-            var world = new FarmWorld(new FarmClock());
-            world.AddField("A1", new FarmPosition(0f, 2f));
+            var world = GoalWorld();
             world.AddField("A2", new FarmPosition(0f, -20f));
-            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
-            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
-            world.AddSeeds(CropCatalog.RadishId, 10);
 
             Assert.IsTrue(world.TryDecide("ahe", out var first, out var firstReason), firstReason);
             Assert.AreEqual("A1", first.FieldId, "站在近处，先挑 A1");
@@ -352,11 +354,7 @@ namespace ElysFarm.Tests
                 diligence: 1f,
                 distanceWeight: 0.15f);
 
-            var world = new FarmWorld(new FarmClock());
-            world.AddField("A1", new FarmPosition(0f, 2f));
-            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f), sleepy);
-            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
-            world.AddSeeds(CropCatalog.RadishId, 10);
+            var world = GoalWorld(sleepy);
 
             Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
             Assert.IsTrue(world.ExecuteStep("ahe", pick.FieldId, pick.Step).Executed);
@@ -369,11 +367,7 @@ namespace ElysFarm.Tests
         [Test]
         public void 跨日之后自主目标不再挡着别人()
         {
-            var world = new FarmWorld(new FarmClock());
-            world.AddField("A1", new FarmPosition(0f, 2f));
-            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
-            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
-            world.AddSeeds(CropCatalog.RadishId, 10);
+            var world = GoalWorld();
 
             Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
             Assert.AreEqual("A1", pick.FieldId);

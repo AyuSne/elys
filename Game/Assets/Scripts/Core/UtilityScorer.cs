@@ -60,13 +60,14 @@ namespace ElysFarm.Core
             string reason;
             bool isValid;
 
-            // 自主目标只在这一条读路径上生效：别人正要去的地块，在候选排序里与工单占位同等对待，
-            // 理由也用同一句「<名字>正在弄这块地」。动作校验不读它，玩家点名的指令不受影响（#27）。
-            var goalOwner = world.AutonomousOwnerOf(field.Id);
-            if (goalOwner != null && goalOwner != npc)
+            // 候选排序里先问一句「这块地归谁」：工单占位与自主目标在候选上同等对待，理由同一句
+            // 「<名字>正在弄这块地」；判据只有 FarmWorld.CandidateBlockerOf 一处。
+            // 动作校验不读自主目标，所以玩家点名的指令不受影响（#27）。
+            var blocker = world.CandidateBlockerOf(field.Id, npc);
+            if (blocker != null)
             {
                 isValid = false;
-                reason = ActionValidator.ClaimedReason(goalOwner);
+                reason = ActionValidator.ClaimedReason(blocker);
             }
             else
             {

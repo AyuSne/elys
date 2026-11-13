@@ -212,7 +212,27 @@ namespace ElysFarm.Tests
 
             Assert.IsTrue(result.Accepted, "自主目标不该挡住玩家的指令：" + result.Reply);
             Assert.AreEqual("A2", result.FieldId, "没有可挑的地块时退回最近的一块");
-            StringAssert.DoesNotContain("自主", world.IntentOf("ahe"), "指令接单后，阿禾的自主目标让位");
+            Assert.AreEqual("aya", world.ClaimOf("A2").NpcId, "退回的那块地被这张工单接走");
+        }
+
+        [Test]
+        public async Task 所有地块都被人正要去且最近那块做不了时_退回最近地块并给理由()
+        {
+            // 与上一条同一副布景，但把最近的 A2 浇满：退回最近地块之后，这一步仍要过动作校验，
+            // 拒绝台词带地块与真实理由，而不是一句「有人在弄」。
+            var world = DryingFieldPair(withAtu: true);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A2", WorkStep.Water).Executed, "把最近的 A2 浇满");
+            Assert.IsTrue(world.TryDecide("ahe", out var ahePick, out var aheReason), aheReason);
+            Assert.AreEqual("A2", ahePick.FieldId, "阿禾的自主目标仍落在 A2（施肥）");
+            Assert.IsTrue(world.TryDecide("atu", out var atuPick, out var atuReason), atuReason);
+            Assert.AreEqual("A1", atuPick.FieldId);
+
+            var router = new IntentRouter();
+            var result = await router.RouteAsync("给地浇水", world, world.GetNpc("aya"));
+
+            Assert.IsFalse(result.Accepted, "最近那块刚浇过，这单活做不了");
+            Assert.AreEqual("A2 刚浇过，不渴", result.Reply, "退回最近地块后由动作校验给理由");
+            Assert.IsNull(world.WorkOrderOf("aya"), "被拒的指令不能留工单");
         }
 
         /// <summary>

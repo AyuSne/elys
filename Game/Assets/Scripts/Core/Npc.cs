@@ -117,7 +117,11 @@ namespace ElysFarm.Core
             Position = position;
         }
 
-        internal void ExertStep()
+        /// <summary>
+        /// 执行一个工步的体力消耗；体力降到人设阈值时当场转入休息并返回 true。
+        /// 返回 true 表示「开始休息」这一刻到了——<see cref="FarmWorld"/> 据此释放自主目标。
+        /// </summary>
+        internal bool ExertStep()
         {
             Stamina = FarmMath.Clamp01(Stamina - Persona.ExertionPerStep);
             Hunger = FarmMath.Clamp01(Hunger + HungerPerStep);
@@ -126,7 +130,10 @@ namespace ElysFarm.Core
             if (Stamina <= Persona.RestThreshold)
             {
                 BeginRest();
+                return true;
             }
+
+            return false;
         }
 
         /// <summary>一次成功的决定开始计时；由 <see cref="FarmWorld.TryDecide"/> 调用。</summary>
