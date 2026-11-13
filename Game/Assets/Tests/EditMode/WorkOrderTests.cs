@@ -377,7 +377,7 @@ namespace ElysFarm.Tests
             var failed = world.AdvanceWorkOrder("ahe");
             Assert.AreEqual(StepOutcome.Failed, failed.Outcome);
             Assert.IsFalse(failed.Executed);
-            Assert.AreEqual("那块地还种着东西", failed.Reason, "判定与文案读同一句理由");
+            Assert.AreEqual(Field.SownReason, failed.Reason, "结果带的就是领域里那一个常量");
             Assert.IsNull(world.WorkOrderOf("ahe"), "做不下去的工单不再挂着");
             Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "地被抢走后立刻释放占位，不挂一个游戏日等它变空");
         }

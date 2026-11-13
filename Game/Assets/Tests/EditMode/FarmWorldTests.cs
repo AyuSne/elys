@@ -349,7 +349,7 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 已经被种上的地块播种候选带一句实话的否决理由()
+        public void 已经被种上的地块不给有效播种候选_否决理由只有一个来源()
         {
             var world = NewWorld();
             var field = world.GetField("A1");
@@ -358,15 +358,10 @@ namespace ElysFarm.Tests
             var sow = world.RankCandidates("ahe").Single(c => c.FieldId == "A1" && c.Step == WorkStep.Sow);
             Assert.IsFalse(sow.IsValid, "地里还种着东西，不能再播");
             Assert.AreEqual(Field.SownReason, sow.RejectionReason, "候选否决行读领域里的同一个常量");
-            StringAssert.DoesNotContain("还没空出来", sow.RejectionReason, "候选否决行不再说「还没空出来」");
 
             Assert.IsFalse(field.Can(WorkStep.Sow, out var reason));
             Assert.AreEqual(Field.SownReason, reason);
             Assert.AreEqual("那块地还种着东西", Field.SownReason, "理由只有这一个常量来源，文案就是这句");
-            Assert.AreEqual(
-                StepOutcome.Failed,
-                ActionValidator.DispositionOf(Field.SownReason),
-                "地被抢种是做不下去，不是等条件");
         }
     }
 }
