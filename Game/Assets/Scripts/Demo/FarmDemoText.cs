@@ -67,6 +67,46 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
+        /// 种子库补货的累计行：把散在流水里的若干天的补货合成一句，用来对账——
+        /// 背包里的种子比开局多，多出来的就是这一串入账。没有补货时为空。
+        /// </summary>
+        public static string RestockTotalLine(IReadOnlyList<SeedRestock> restocks)
+        {
+            if (restocks == null || restocks.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            // 品种按第一次补货的顺序出现；同品种后几天累加，流水因此能对上账本。
+            var speciesIds = new List<string>();
+            var counts = new List<int>();
+            foreach (var restock in restocks)
+            {
+                var index = speciesIds.IndexOf(restock.SpeciesId);
+                if (index < 0)
+                {
+                    speciesIds.Add(restock.SpeciesId);
+                    counts.Add(restock.Count);
+                }
+                else
+                {
+                    counts[index] += restock.Count;
+                }
+            }
+
+            var builder = new StringBuilder("种子库补货累计");
+            for (var i = 0; i < speciesIds.Count; i++)
+            {
+                builder.Append(" · ")
+                    .Append(SpeciesName(speciesIds[i]))
+                    .Append(" +")
+                    .Append(counts[i]);
+            }
+
+            return builder.ToString();
+        }
+
+        /// <summary>
         /// 三人卡那一行的当前意图。NPC 手上有工单或在休息时直接用领域给出的意图行
         /// （<see cref="FarmWorld.IntentOf"/>，也就是决策抽屉第 2 项的那句话）——
         /// 「等条件 / 跳过 / 没做成」因此不会在卡片与抽屉上各说一套；其余时候才显示演示层

@@ -102,21 +102,6 @@ namespace ElysFarm.Demo
 
             var verified = world.Ledger.Verify(out var ledgerError);
 
-            // 补货流水既进 HUD 也进证据：种子数为什么涨，三份 trace 里读得到。
-            var radishRestocked = 0;
-            var wheatRestocked = 0;
-            foreach (var restock in world.SeedRestocks)
-            {
-                if (restock.SpeciesId == CropCatalog.RadishId)
-                {
-                    radishRestocked += restock.Count;
-                }
-                else if (restock.SpeciesId == CropCatalog.WheatId)
-                {
-                    wheatRestocked += restock.Count;
-                }
-            }
-
             return new ScenarioFinal
             {
                 Day = world.Clock.Day,
@@ -127,8 +112,8 @@ namespace ElysFarm.Demo
                 WheatProduce = world.Ledger.ProduceOf(CropCatalog.WheatId),
                 SeedsAdded = world.Ledger.SeedsAdded,
                 SeedsRemoved = world.Ledger.SeedsRemoved,
-                RadishRestocked = radishRestocked,
-                WheatRestocked = wheatRestocked,
+                RadishRestocked = world.RestockedSeedsOf(CropCatalog.RadishId),
+                WheatRestocked = world.RestockedSeedsOf(CropCatalog.WheatId),
                 ProduceAdded = world.Ledger.ProduceAdded,
                 LedgerVerified = verified,
                 LedgerError = ledgerError ?? string.Empty,

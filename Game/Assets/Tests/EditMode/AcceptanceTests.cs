@@ -86,7 +86,7 @@ namespace ElysFarm.Tests
             RunLoop(world, out _);
 
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
-            Assert.AreEqual(15, world.Ledger.SeedsOf(CropCatalog.RadishId), "10 颗开局，播种扣 1 颗，等成熟的 3 天每天补 2 颗");
+            Assert.AreEqual(SeedCount - 1 + 2 * 3, world.Ledger.SeedsOf(CropCatalog.RadishId), "开局 10 颗，播种扣 1 颗，等成熟的 3 天每天补 2 颗");
             Assert.AreEqual(1, world.Ledger.SeedsRemoved, "只播种过一次");
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId), "萝卜每次收获 3 个");
             Assert.AreEqual(3, world.Ledger.ProduceAdded, "产出仓的入账应等于收获总量");

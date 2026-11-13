@@ -19,7 +19,7 @@ namespace ElysFarm.Core
         /// <summary>两次决定之间、还没拿定主意时的意图文案；演示行与决策可视化共用。</summary>
         public const string ThinkingReason = "琢磨着干点啥…";
 
-        /// <summary>每个游戏日结算时补进种子库的萝卜种子数；这是演示规则，不做经济平衡。</summary>
+        /// <summary>每个游戏日结算时补进种子库的萝卜种子数。</summary>
         const int RadishSeedsPerDay = 2;
 
         /// <summary>每个游戏日结算时补进种子库的小麦种子数。</summary>
@@ -60,6 +60,24 @@ namespace ElysFarm.Core
 
         /// <summary>种子库的补货流水，按发生顺序；每个游戏日结算时补一次。</summary>
         public IReadOnlyList<SeedRestock> SeedRestocks => seedRestocks;
+
+        /// <summary>
+        /// 某品种累计补进种子库的数量。种子库流水与账本入账同源，证据与 HUD 都读它，
+        /// 不在演示层重算补货政策。
+        /// </summary>
+        public int RestockedSeedsOf(string speciesId)
+        {
+            var total = 0;
+            foreach (var restock in seedRestocks)
+            {
+                if (restock.SpeciesId == speciesId)
+                {
+                    total += restock.Count;
+                }
+            }
+
+            return total;
+        }
 
         /// <summary>每个游戏日结算完毕后触发，参数为新的游戏日。</summary>
         public event Action<int> DaySettled;

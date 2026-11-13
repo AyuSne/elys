@@ -45,6 +45,9 @@ namespace ElysFarm.Demo
         /// <summary>对话框正文最多两行；本地追问的回答可能到 80+ 字，超出就省略，不能硬切在边外。</summary>
         const int ReplyLimit = 110;
 
+        /// <summary>抽屉流水里最多回看几个游戏日的种子库补货；更早的只靠累计行对账。</summary>
+        const int RestockDaysShown = 2;
+
         static readonly string[] Examples =
         {
             "去东边那块地除草",
@@ -761,9 +764,17 @@ namespace ElysFarm.Demo
             GUILayout.Label("流水", skin.BodyBold);
 
             // 种子库补货不是工步，却是账本流水的一部分：种子数涨了要能看见是怎么涨的。
-            foreach (var line in FarmDemoText.RestockLines(demo.World.SeedRestocks, 2))
+            // 最近两个游戏日逐日列出，更早的落在累计行里，结余因此对得上账。
+            var restocks = demo.World.SeedRestocks;
+            foreach (var line in FarmDemoText.RestockLines(restocks, RestockDaysShown))
             {
                 GUILayout.Label(line, skin.SmallWrap);
+            }
+
+            var restockTotal = FarmDemoText.RestockTotalLine(restocks);
+            if (!string.IsNullOrEmpty(restockTotal))
+            {
+                GUILayout.Label(restockTotal, skin.SmallWrap);
             }
 
             var log = demo.World.Log;

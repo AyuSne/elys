@@ -373,7 +373,7 @@ namespace ElysFarm.Tests
                 executed,
                 "一张工单应把五个工步按顺序跑完");
             Assert.AreEqual(FieldState.Harvested, field.State);
-            Assert.AreEqual(15, world.Ledger.SeedsOf(CropCatalog.RadishId), "播种扣 1 颗；等成熟的 3 天每天补 2 颗");
+            Assert.AreEqual(1, world.Ledger.SeedsRemoved, "播种扣 1 颗种子");
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId));
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
             Assert.IsNull(world.WorkOrderOf("ahe"));

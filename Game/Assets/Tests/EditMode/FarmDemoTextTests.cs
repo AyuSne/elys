@@ -84,7 +84,7 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 种子库补货流水按天合成一行()
+        public void 种子库补货流水按游戏日合成一行()
         {
             var restocks = new[]
             {
@@ -95,7 +95,7 @@ namespace ElysFarm.Tests
             };
 
             var latest = FarmDemoText.RestockLines(restocks, 1);
-            Assert.AreEqual(1, latest.Count, "只显示最近一天");
+            Assert.AreEqual(1, latest.Count, "只显示最近一个游戏日");
             Assert.AreEqual("第 3 天 · 种子库补货 · 萝卜 +2 · 小麦 +1", latest[0]);
 
             CollectionAssert.AreEqual(
@@ -105,10 +105,30 @@ namespace ElysFarm.Tests
                     "第 3 天 · 种子库补货 · 萝卜 +2 · 小麦 +1"
                 },
                 FarmDemoText.RestockLines(restocks, 2),
-                "同一天的多条补货合成一行，天数从早到晚");
+                "同一游戏日的多条补货合成一行，游戏日从早到晚");
 
             Assert.IsEmpty(FarmDemoText.RestockLines(null, 2));
             Assert.IsEmpty(FarmDemoText.RestockLines(new SeedRestock[0], 2), "还没跨日时没有补货流水");
+        }
+
+        [Test]
+        public void 种子库补货累计行用来对账()
+        {
+            var restocks = new[]
+            {
+                new SeedRestock(2, CropCatalog.RadishId, 2),
+                new SeedRestock(2, CropCatalog.WheatId, 1),
+                new SeedRestock(3, CropCatalog.RadishId, 2),
+                new SeedRestock(3, CropCatalog.WheatId, 1)
+            };
+
+            Assert.AreEqual(
+                "种子库补货累计 · 萝卜 +4 · 小麦 +2",
+                FarmDemoText.RestockTotalLine(restocks),
+                "累计行要把几天、几种补货合成一句，结余才对得上");
+
+            Assert.AreEqual(string.Empty, FarmDemoText.RestockTotalLine(null));
+            Assert.AreEqual(string.Empty, FarmDemoText.RestockTotalLine(new SeedRestock[0]));
         }
 
         [Test]

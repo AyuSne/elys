@@ -3,7 +3,6 @@ namespace ElysFarm.Core
     /// <summary>
     /// 种子库的一次补货入账（见 GLOSSARY「种子库」）。跨日结算时按固定数量把种子补进
     /// <see cref="FarmLedger"/>，并留下这条流水，种子数变化因此有据可查。
-    /// 数量固定，是演示规则，不做经济平衡。
     /// </summary>
     public readonly struct SeedRestock
     {
