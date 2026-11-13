@@ -46,6 +46,38 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 转述者说的是听谁说的()
+        {
+            var world = NewWorld();
+            world.RememberChat("atu", "阿芽今天偷懒了", 4);
+
+            Assert.IsTrue(world.TryRetell("atu", "ahe", out var first));
+            Assert.AreEqual("atu", first.SpeakerId, "头像与名字是转述者");
+            Assert.AreEqual("阿禾", world.GetNpc("ahe").DisplayName);
+            Assert.AreEqual("ahe", first.ListenerId);
+            Assert.AreEqual("听说阿芽今天偷懒了", first.Line, "第一手是从玩家那儿听来的，只挂「听说」");
+
+            Assert.IsTrue(world.TryRetell("ahe", "amiao", out var second));
+            Assert.AreEqual("ahe", second.SpeakerId, "再转一手，说话的是阿禾");
+            Assert.AreEqual("听阿土说，阿芽今天偷懒了", second.Line, "转述者要引述自己是从谁那儿听来的");
+        }
+
+        [Test]
+        public void 讲到听者自己时转述者用第二人称()
+        {
+            var world = NewWorld();
+            world.RememberChat("atu", "阿芽今天偷懒了", 4);
+
+            Assert.IsTrue(world.TryRetell("atu", "aya", out var told));
+
+            Assert.AreEqual("听说你今天偷懒了", told.Line, "讲到听者自己时说「你」");
+            StringAssert.Contains(
+                "听阿土说，你今天偷懒了",
+                world.RetrieveMemories("aya", "阿芽偷懒")[0].Text,
+                "听者的记忆仍是「听某人说，……」");
+        }
+
+        [Test]
         public void 一条传闻能从阿土传到阿禾再传到阿苗()
         {
             var world = NewWorld();

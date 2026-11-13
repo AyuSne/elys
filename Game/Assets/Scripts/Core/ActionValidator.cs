@@ -248,5 +248,28 @@ namespace ElysFarm.Core
                 || reason == Field.FertileReason
                 || reason == Npc.RestingReason;
         }
+
+        /// <summary>
+        /// 这一步不必做了：作物已经熟了，浇水、施肥、除草都没有意义。
+        /// 工单跳过它、接着做后面的工步（例如收获），而不是整张作废（见 ADR-0006）。
+        /// </summary>
+        public static bool IsSkippable(string reason)
+        {
+            return reason == Field.MatureReason;
+        }
+
+        /// <summary>
+        /// 没执行的一步属于哪一态：等条件、跳过还是失败。卡片与抽屉的「等…/跳过…/没做成…」
+        /// 都从这里分叉，与 <see cref="IsWaiting"/> / <see cref="IsSkippable"/> 是同一份判据。
+        /// </summary>
+        public static StepOutcome DispositionOf(string reason)
+        {
+            if (IsWaiting(reason))
+            {
+                return StepOutcome.Waiting;
+            }
+
+            return IsSkippable(reason) ? StepOutcome.Skipped : StepOutcome.Failed;
+        }
     }
 }

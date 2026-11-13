@@ -36,6 +36,9 @@ namespace ElysFarm.Demo
         /// <summary>三人卡行内「取消」按钮的宽度；行里留出这么宽才不压到意图文字。</summary>
         const float CancelWidth = 52f;
 
+        /// <summary>三人卡那一行意图文字的可用宽度：行宽减去头像与名字那一列。</summary>
+        const float IntentWidth = CardWidth - 16f - 48f;
+
         /// <summary>对话框正文最多两行；本地追问的回答可能到 80+ 字，超出就省略，不能硬切在边外。</summary>
         const int ReplyLimit = 110;
 
@@ -349,17 +352,17 @@ namespace ElysFarm.Demo
                 npc.Stamina,
                 npc.IsResting ? HudSkin.GreenActive : HudSkin.Green);
             GUI.Label(
-                new Rect(row.x + 48f, row.y + 42f, row.width - 48f, 22f),
+                new Rect(row.x + 48f, row.y + 42f, IntentWidth, 22f),
                 IntentLine(npc),
                 skin.Small);
         }
 
         string IntentLine(Npc npc)
         {
-            var text = npc.IsResting
-                ? $"歇着（还剩 {npc.RestSecondsRemaining:0} 秒）"
-                : demo.IntentOf(npc.Id);
-            return FarmDemoText.Shorten(text, 18);
+            // 有工单时与决策抽屉第 2 项是同一句话（等条件 / 跳过 / 没做成），没有工单才用演示层的临时状态。
+            // 卡片窄，按可用宽度收尾，不把字切在边上。
+            var line = FarmDemoText.CardIntent(demo.World, npc, demo.IntentOf(npc.Id));
+            return FarmDemoText.Fit(line, IntentWidth, text => skin.Small.CalcSize(new GUIContent(text)).x);
         }
 
         /// <summary>左下背包条：四格图标 + 数量；数字直接读三本账，不另存一份。</summary>

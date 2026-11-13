@@ -186,8 +186,9 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
-        /// 该 NPC 此刻的意图：有工单时给出下一步与等待原因，否则给出自主决定；休息中给出剩余时间。
-        /// 决策可视化层直接展示这句话，因此它只能来自领域状态，不能由 HUD 事后编造。
+        /// 该 NPC 此刻的意图：有工单时给出下一步与三态说法（等条件 / 跳过 / 没做成），
+        /// 否则给出自主决定；休息中给出剩余时间。
+        /// 决策可视化层与三人卡直接展示这句话，因此它只能来自领域状态，不能由 HUD 事后编造。
         /// </summary>
         public string IntentOf(string npcId)
         {
@@ -197,11 +198,16 @@ namespace ElysFarm.Core
             {
                 var next = order.NextStep.Value;
                 var field = GetField(order.FieldId);
-                var waiting = ActionValidator.Validate(this, npc, field, next, order.SpeciesId, out var reason)
-                    ? string.Empty
-                    : $"（{reason}）";
+                if (ActionValidator.Validate(this, npc, field, next, order.SpeciesId, out var reason))
+                {
+                    return StepOutcomeLabel.Of(order.FieldId, next, StepOutcome.Executed, null);
+                }
 
-                return $"工单：{order.FieldId} · {WorkStepLabel.Of(next)}{waiting}";
+                return StepOutcomeLabel.Of(
+                    order.FieldId,
+                    next,
+                    ActionValidator.DispositionOf(reason),
+                    reason);
             }
 
             if (npc.IsResting)
@@ -252,16 +258,17 @@ namespace ElysFarm.Core
         /// 让某名 NPC 把听来的事讲给另一名 NPC（见 GLOSSARY「转述」）。
         /// 两人要站得够近，讲的人手里要有对方还不知道的事；成功时只写听者的记忆，
         /// 说法原样带过去，来源换成当下讲的人，重要性随转手次数递减。
+        /// 返回的 <see cref="Retelling"/> 同时带出「转述者说的是哪句话」与「听者记下了什么」。
         /// </summary>
-        public bool TryRetell(string speakerId, string listenerId, out Hearsay retold)
+        public bool TryRetell(string speakerId, string listenerId, out Retelling retelling)
         {
-            return TryRetell(speakerId, listenerId, out retold, out _);
+            return TryRetell(speakerId, listenerId, out retelling, out _);
         }
 
         /// <summary>带失败理由的转述入口；失败时不改动任何状态。</summary>
-        public bool TryRetell(string speakerId, string listenerId, out Hearsay retold, out string reason)
+        public bool TryRetell(string speakerId, string listenerId, out Retelling retelling, out string reason)
         {
-            retold = default;
+            retelling = default;
 
             var speaker = GetNpc(speakerId);
             var listener = GetNpc(listenerId);
@@ -283,9 +290,10 @@ namespace ElysFarm.Core
                 return false;
             }
 
-            retold = heard.Retold();
-            hearsay.Learn(listener.Id, retold);
-            Remember(listener.Id, retold.TextFor(speaker.DisplayName, listener.Id), retold.Importance);
+            var learned = heard.Retold(speaker.Id, speaker.DisplayName);
+            hearsay.Learn(listener.Id, learned);
+            Remember(listener.Id, learned.TextFor(listener.Id), learned.Importance);
+            retelling = new Retelling(speaker.Id, speaker.DisplayName, listener.Id, heard, learned);
             reason = null;
             return true;
         }
@@ -756,6 +764,20 @@ namespace ElysFarm.Core
             if (result.Executed)
             {
                 order.Advance();
+                if (order.IsComplete)
+                {
+                    ReleaseWorkOrderOf(npcId);
+                }
+
+                return result;
+            }
+
+            // 跳过：这一步不必做了（作物已经熟了，浇水/施肥/除草都没有意义）。
+            // 工单接着做后面的工步，占位留着；跳过本身算进展，否则兜底规则会把正在等的工单放掉。
+            if (result.Outcome == StepOutcome.Skipped)
+            {
+                order.Advance();
+                order.MarkProgress(Clock.Day);
                 if (order.IsComplete)
                 {
                     ReleaseWorkOrderOf(npcId);

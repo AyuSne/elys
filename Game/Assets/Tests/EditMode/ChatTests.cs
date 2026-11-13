@@ -402,7 +402,7 @@ namespace ElysFarm.Tests
 
             Assert.AreEqual(IntentOutlet.FarmCommand, result.Outlet);
             Assert.IsFalse(result.Accepted, "做不到的请求不能假装做了");
-            Assert.AreEqual("这块地还没空出来", result.Reply, "拒绝理由必须来自动作校验，不能自己编");
+            Assert.AreEqual("A1 还没空出来", result.Reply, "拒绝理由必须来自动作校验，不能自己编，也要带地块");
             Assert.IsNull(world.WorkOrderOf("ahe"));
             Assert.AreEqual(seedsAfterSow, world.Ledger.SeedsOf(CropCatalog.RadishId), "被拒绝的请求不能扣种子");
             Assert.AreEqual(1, world.Log.Count, "被拒绝的请求不能执行工步");

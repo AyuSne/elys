@@ -888,13 +888,9 @@ namespace ElysFarm.Demo
                 }
 
                 // 不在这里执行：走到地里后由 AdvanceWorkOrder 决定
-                // 是执行下一步，还是先做浇水/除草/施肥这类维护。
-                var canDoNext = World.GetField(order.FieldId).Can(next.Value, out var waitReason);
-                BeginWalkToField(
-                    view,
-                    order.FieldId,
-                    next.Value,
-                    canDoNext ? null : $"等 {order.FieldId} · {FarmDemoText.StepName(next.Value)}（{waitReason}）");
+                // 是执行下一步，还是先做浇水/除草/施肥这类维护、跳过不必做的一步。
+                // 意图行不在这里另编：三人卡与决策抽屉都读 FarmWorld.IntentOf 的同一句三态文案。
+                BeginWalkToField(view, order.FieldId, next.Value);
                 return;
             }
 
@@ -948,17 +944,18 @@ namespace ElysFarm.Demo
                     continue;
                 }
 
-                if (!World.TryRetell(speaker.Npc.Id, listener.Npc.Id, out var retold))
+                if (!World.TryRetell(speaker.Npc.Id, listener.Npc.Id, out var retelling))
                 {
                     continue;
                 }
 
                 PostEmote(speaker.Npc.Id, EmoteEvent.Retelling);
-                var line = retold.Line;
-                speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
-                listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
-                RetoldSpeakerId = speaker.Npc.Id;
-                RetoldLine = line;
+
+                // 说话的是转述者：头像与名字跟着她，台词里引述她是从谁那儿听来的。
+                speaker.Intent = $"跟{listener.Npc.DisplayName}说：{retelling.Heard.Line}";
+                listener.Intent = $"听{speaker.Npc.DisplayName}说：{retelling.Heard.Line}";
+                RetoldSpeakerId = retelling.SpeakerId;
+                RetoldLine = retelling.Line;
                 retoldUntil = Now + ChatHold;
                 speaker.NextActionAt = Now + ChatHold;
                 listener.NextActionAt = Now + ChatHold;
@@ -966,13 +963,13 @@ namespace ElysFarm.Demo
             }
         }
 
-        void BeginWalkToField(NpcView view, string fieldId, WorkStep step, string intentHint = null)
+        void BeginWalkToField(NpcView view, string fieldId, WorkStep step)
         {
             view.PendingFieldId = fieldId;
             view.PendingStep = step;
             view.WalkTarget = FieldStandPoint(fieldId, view.Slot);
             view.Walking = true;
-            view.Intent = intentHint ?? $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
+            view.Intent = $"前往 {fieldId} · {FarmDemoText.StepName(step)}";
         }
 
         /// <summary>走到地块南侧、离地一格的位置；三个站位横向错开，避免三个人叠在一起。</summary>
@@ -1056,7 +1053,13 @@ namespace ElysFarm.Demo
             }
             else
             {
-                view.Intent = npc.IsResting ? "太累了，去歇会儿" : $"没做成：{result.Reason}";
+                // 等条件 / 跳过 / 没做成三态的说法只有一份（Core 的 StepOutcomeLabel）；
+                // 有工单时卡片会用领域那一句，这里主要留给自主挑活时的临时状态。
+                var blockedFieldId = string.IsNullOrEmpty(result.FieldId) ? view.PendingFieldId : result.FieldId;
+                var blockedStep = result.Step ?? view.PendingStep;
+                view.Intent = npc.IsResting
+                    ? "太累了，去歇会儿"
+                    : StepOutcomeLabel.Of(blockedFieldId, blockedStep, result.Outcome, result.Reason);
                 view.NextActionAt = Now + IdlePause;
             }
 

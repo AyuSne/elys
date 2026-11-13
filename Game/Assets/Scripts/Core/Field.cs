@@ -57,7 +57,8 @@ namespace ElysFarm.Core
 
         const string NotPlantedReason = "地里什么都没种";
 
-        const string MatureReason = "已经熟了，先收了吧";
+        /// <summary>作物已经熟了，浇水、施肥、除草都没有意义——工单跳过这些工步（见 ADR-0006）。</summary>
+        public const string MatureReason = "已经熟了，先收了吧";
 
         /// <summary>作物还没熟，收获、浇水这类工步只能等——工单因此保留。</summary>
         public const string NotMatureReason = "还没熟";
@@ -118,7 +119,7 @@ namespace ElysFarm.Core
                 case WorkStep.Sow:
                     if (!IsFree)
                     {
-                        reason = "这块地还没空出来";
+                        reason = "还没空出来";
                         return false;
                     }
 

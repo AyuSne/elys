@@ -259,7 +259,7 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 被拒且无法继续时立刻释放占位()
+        public void 只剩一步且它已不必做时跳过算完工并释放占位()
         {
             var world = TwoNpcWorld();
             Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
@@ -267,7 +267,7 @@ namespace ElysFarm.Tests
             Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Fertilize).Executed);
             world.AdvanceDays(2);
 
-            // 第 3 天挂一张「浇水」的工单：等下到地里时萝卜已经熟了，这一步永远做不成。
+            // 第 3 天挂一张「浇水」的工单：等下到地里时萝卜已经熟了，这一步不必再做了。
             Assert.AreEqual(FieldState.Growing, world.GetField("A1").State);
             Assert.IsTrue(
                 world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
@@ -276,15 +276,132 @@ namespace ElysFarm.Tests
             world.AdvanceDays(1);
             Assert.AreEqual(FieldState.Mature, world.GetField("A1").State, "萝卜在第 4 天成熟");
 
-            var blocked = world.AdvanceWorkOrder("ahe");
-            Assert.IsFalse(blocked.Executed);
-            Assert.AreEqual("已经熟了，先收了吧", blocked.Reason);
-            Assert.IsNull(world.WorkOrderOf("ahe"), "做不下去的工单不能一直挂着");
-            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "放弃后释放占位");
+            var skipped = world.AdvanceWorkOrder("ahe");
+            Assert.IsFalse(skipped.Executed);
+            Assert.AreEqual(StepOutcome.Skipped, skipped.Outcome);
+            Assert.AreEqual(Field.MatureReason, skipped.Reason);
+            Assert.IsNull(world.WorkOrderOf("ahe"), "最后一步跳过，工单就算做完");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "完工后释放占位");
 
             Assert.IsTrue(
                 world.TryAssignWorkOrder("aya", "A1", null, new[] { WorkStep.Harvest }, out _, out var next),
                 next);
+        }
+
+        [Test]
+        public void 肥力还够这类等条件在意图行里显示等而不是没做成()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Fertilize).Executed, "先把肥力加满");
+            Assert.IsTrue(
+                world.TryAssignWorkOrder(
+                    "ahe",
+                    "A1",
+                    null,
+                    new[] { WorkStep.Water, WorkStep.Fertilize },
+                    out _,
+                    out var reason),
+                reason);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "先浇水，下一步轮到施肥");
+
+            var line = world.IntentOf("ahe");
+            StringAssert.StartsWith("等 ", line, "等条件要显示成「等…」");
+            StringAssert.Contains("A1", line);
+            StringAssert.Contains("肥力还够", line, "等条件要带条件名");
+            StringAssert.DoesNotContain("没做成", line, "「没做成」只用于失败");
+
+            var waiting = world.AdvanceWorkOrder("ahe");
+            Assert.IsFalse(waiting.Executed);
+            Assert.IsNotNull(world.WorkOrderOf("ahe"), "等条件的工单要留到条件满足");
+            Assert.AreEqual(WorkStep.Fertilize, world.WorkOrderOf("ahe")?.NextStep);
+        }
+
+        [Test]
+        public void 没什么草可除时意图行也显示等条件()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, PlantRadish, out _, out var reason),
+                reason);
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第一步播种");
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第二步浇水");
+            Assert.IsTrue(world.AdvanceWorkOrder("ahe").Executed, "第三步施肥");
+
+            var line = world.IntentOf("ahe");
+            StringAssert.StartsWith("等 ", line, "没什么草可除也是等条件");
+            StringAssert.Contains("除草", line);
+            StringAssert.Contains("没什么草可除", line);
+            StringAssert.DoesNotContain("没做成", line);
+            Assert.AreEqual(WorkStep.Weed, world.WorkOrderOf("ahe")?.NextStep, "等草长出来，工单保留");
+        }
+
+        [Test]
+        public void 真做不下去时意图行显示没做成并带理由()
+        {
+            var world = TwoNpcWorld();
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", CropCatalog.RadishId, new[] { WorkStep.Sow }, out _, out var reason),
+                reason);
+
+            // 接单之后种子被别的活吃光：这一步再也做不成，不能显示成「等」。
+            Assert.IsTrue(world.Ledger.TryTakeSeeds(CropCatalog.RadishId, 10), "把种子库取空");
+
+            var line = world.IntentOf("ahe");
+            StringAssert.StartsWith("没做成：", line, "真正的失败才说没做成");
+            StringAssert.Contains("A1", line);
+            StringAssert.Contains("播种", line);
+            StringAssert.Contains("种子库里没有萝卜种子了", line, "失败要带理由");
+
+            var failed = world.AdvanceWorkOrder("ahe");
+            Assert.AreEqual(StepOutcome.Failed, failed.Outcome);
+            Assert.IsFalse(failed.Executed);
+            Assert.IsNull(world.WorkOrderOf("ahe"), "做不下去的工单不再挂着");
+            Assert.IsFalse(world.ClaimOf("A1").IsClaimed, "失败要释放占位");
+        }
+
+        [Test]
+        public void 作物熟了以后没意义的工步记为跳过_工单继续到收获()
+        {
+            var world = TwoNpcWorld();
+            var field = world.GetField("A1");
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Water).Executed);
+            world.AdvanceDays(2);
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Water).Executed, "再浇一次，让它在接到工单后熟");
+            world.AdvanceDays(1);
+
+            // 第 4 天接单：作物第二天就熟，施肥这一步到时已经没有意义。
+            Assert.AreEqual(FieldState.Growing, field.State);
+            Assert.IsTrue(
+                world.TryAssignWorkOrder(
+                    "ahe",
+                    "A1",
+                    null,
+                    new[] { WorkStep.Fertilize, WorkStep.Harvest },
+                    out var order,
+                    out var reason),
+                reason);
+            world.AdvanceDays(1);
+            Assert.AreEqual(FieldState.Mature, field.State, "萝卜熟了");
+
+            var line = world.IntentOf("ahe");
+            StringAssert.StartsWith("跳过 ", line, "不必做的工步说「跳过」，不是「等」也不是「没做成」");
+            StringAssert.Contains("A1", line);
+            StringAssert.Contains("施肥", line);
+
+            var skipped = world.AdvanceWorkOrder("ahe");
+            Assert.AreEqual(StepOutcome.Skipped, skipped.Outcome);
+            Assert.IsFalse(skipped.Executed);
+            Assert.IsNotNull(world.WorkOrderOf("ahe"), "跳过一步不等于整张工单作废");
+            Assert.AreEqual(WorkStep.Harvest, order.NextStep, "跳过之后接着排到收获");
+            Assert.AreEqual("ahe", world.ClaimOf("A1").NpcId, "跳过不释放占位");
+
+            var harvested = world.AdvanceWorkOrder("ahe");
+            Assert.IsTrue(harvested.Executed, "跳过后照样收得成");
+            Assert.AreEqual(WorkStep.Harvest, harvested.Step);
+            Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId));
+            Assert.IsNull(world.WorkOrderOf("ahe"), "收获完，工单结束");
         }
 
         [Test]

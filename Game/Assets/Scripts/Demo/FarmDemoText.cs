@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using ElysFarm.Core;
@@ -20,7 +21,23 @@ namespace ElysFarm.Demo
             return CropCatalog.TryGet(speciesId, out var species) ? species.DisplayName : speciesId;
         }
 
-        /// <summary>把 HUD 里的一行动态文案截短，避免面板被长句撑开。</summary>
+        /// <summary>
+        /// 三人卡那一行的当前意图。NPC 手上有工单时直接用领域给出的意图行
+        /// （<see cref="FarmWorld.IntentOf"/>，也就是决策抽屉第 2 项的那句话）——
+        /// 「等条件 / 跳过 / 没做成」因此不会在卡片与抽屉上各说一套；
+        /// 没有工单时才显示演示层自己的临时状态（前往、歇着、待命…）。
+        /// </summary>
+        public static string CardIntent(FarmWorld world, Npc npc, string demoIntent)
+        {
+            return world != null && npc != null && world.WorkOrderOf(npc.Id) != null
+                ? world.IntentOf(npc.Id)
+                : demoIntent;
+        }
+
+        /// <summary>
+        /// 把 HUD 里的一行动态文案截短，避免面板被长句撑开。
+        /// 卡片那一行按像素宽度截（<see cref="Fit"/>），这里留给字数固定、不需要量字宽的场合。
+        /// </summary>
         public static string Shorten(string text, int maxLength)
         {
             if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
@@ -29,6 +46,30 @@ namespace ElysFarm.Demo
             }
 
             return text.Substring(0, maxLength) + "…";
+        }
+
+        /// <summary>
+        /// 按可用宽度截短一行文案：放得下就原样返回，放不下就截到最后一个放得下的字再加省略号。
+        /// 字宽由调用方量（HUD 用当前字体样式），所以这里不依赖 UnityEngine，可以单测。
+        /// 三人卡与决策抽屉是同一句话，卡片只按自己的宽度收尾，不会把字切在边上。
+        /// </summary>
+        public static string Fit(string text, float maxWidth, Func<string, float> measure)
+        {
+            if (string.IsNullOrEmpty(text) || measure == null || maxWidth <= 0f || measure(text) <= maxWidth)
+            {
+                return text;
+            }
+
+            for (var length = text.Length - 1; length > 0; length--)
+            {
+                var candidate = text.Substring(0, length).TrimEnd() + "…";
+                if (measure(candidate) <= maxWidth)
+                {
+                    return candidate;
+                }
+            }
+
+            return "…";
         }
 
         /// <summary>把路由器接单的结果摊成一行「理解成」，让玩家确认没听错。</summary>

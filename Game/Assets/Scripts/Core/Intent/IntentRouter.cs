@@ -397,7 +397,7 @@ namespace ElysFarm.Core
                     out var order,
                     out var reason))
             {
-                return IntentResult.Refuse(reason, usedFallback, call);
+                return IntentResult.Refuse(RefusalLine(field.Id, reason), usedFallback, call);
             }
 
             // 玩家的话也要记住：跨日之后再问「上次你让我浇的是哪块」得答得出来。
@@ -573,6 +573,15 @@ namespace ElysFarm.Core
                 call.CompletionTokens,
                 ModelCallOutcome.Unusable,
                 call.Detail);
+        }
+
+        /// <summary>
+        /// 拒绝台词要带地块：玩家才知道是哪块地不满足哪条前置条件（「A1 还没熟」）。
+        /// 例外是 NPC 自己在休息——那是人的状态，不是地的问题。
+        /// </summary>
+        static string RefusalLine(string fieldId, string reason)
+        {
+            return reason == Npc.RestingReason ? reason : $"{fieldId} {reason}";
         }
 
         /// <summary>
