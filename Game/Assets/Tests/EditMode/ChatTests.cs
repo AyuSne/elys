@@ -72,6 +72,7 @@ namespace ElysFarm.Tests
             StringAssert.Contains("阿禾", system);
             StringAssert.Contains("2–3 句", system, "回复长度是规格要求");
             StringAssert.Contains("体力", user, "当前状态要进 user");
+            StringAssert.Contains("心情", user, "状态摘要要带心情与饥饿");
             StringAssert.Contains("今天天气不错，晒了谷子", user, "检索到的记忆要进 user");
             StringAssert.Contains("你好呀", user, "上一轮玩家说的话要进 user");
             StringAssert.Contains("给 A1 浇了水。", user, "上一轮 NPC 的回话也要进 user");
@@ -148,7 +149,7 @@ namespace ElysFarm.Tests
                 var content = requests.Count == 1
                     ? "{\"outlet\":\"chat\",\"importance\":4}"
                     : requests.Count == 2
-                        ? "{\"outlet\":\"chat\",\"reply\":\"假的回答\"}"
+                        ? "\"{\"outlet\":\"chat\"}\""
                         : "天气不错，晒谷子正合适。";
                 return Task.FromResult(new ChatResponse(content, "fake-deepseek"));
             });
@@ -163,6 +164,80 @@ namespace ElysFarm.Tests
             Assert.AreEqual("天气不错，晒谷子正合适。", result.Reply);
             Assert.IsFalse(result.UsedFallback);
             StringAssert.DoesNotContain("outlet", result.Reply, "对话框里绝不能出现 JSON");
+        }
+
+        [Test]
+        public async Task 分类调用不可用时闲聊仍试一次表达层()
+        {
+            var world = NewWorld();
+            var requests = new List<ChatRequest>();
+            var client = new ScriptedModelClient((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(requests.Count == 1
+                    ? new ChatResponse("   ", "fake-deepseek")
+                    : new ChatResponse("天是挺好，适合晒谷子。", "fake-deepseek", 0.6d, 90, 18));
+            });
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "今天天气不错",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe));
+
+            Assert.AreEqual(2, requests.Count, "分类空响应之后仍要问一次表达层");
+            Assert.AreEqual("天是挺好，适合晒谷子。", result.Reply);
+            Assert.IsFalse(result.UsedFallback, "台词是模型说的，HUD 不该标「本地模板」");
+            Assert.AreEqual(ModelCallOutcome.Ok, result.Call.Outcome);
+        }
+
+        [Test]
+        public async Task 第二轮闲聊的提示词接上第一轮()
+        {
+            var world = NewWorld();
+            var book = new DialogueBook();
+            book.SwitchTo("ahe");
+            book.Record(
+                "ahe",
+                new DialogueRound(
+                    new DialogueTurn("今天天气不错", "是挺好，适合晒谷子。"),
+                    "闲聊",
+                    IntentOutlet.Chat,
+                    false));
+            book.Record(
+                "ahe",
+                new DialogueRound(
+                    new DialogueTurn("我想把谷子晒一晒", "行，等我把 A2 收了。"),
+                    "闲聊",
+                    IntentOutlet.Chat,
+                    false));
+
+            var prompt = string.Empty;
+            var client = new ScriptedModelClient((request, _) =>
+            {
+                if (request.JsonOutput)
+                {
+                    return Task.FromResult(new ChatResponse("{\"outlet\":\"chat\",\"importance\":4}", "fake"));
+                }
+
+                prompt = request.Messages[1].Content;
+                return Task.FromResult(new ChatResponse("成，我把簸箕找出来。", "fake"));
+            });
+            var npc = world.GetNpc("ahe");
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "那顺手把簸箕也拿出来",
+                world,
+                npc,
+                dialogue: new DialogueContext(NpcTones.Of(npc), book.HistoryOf(npc.Id)));
+
+            Assert.IsFalse(result.UsedFallback);
+            var first = prompt.IndexOf("今天天气不错", System.StringComparison.Ordinal);
+            var second = prompt.IndexOf("我想把谷子晒一晒", System.StringComparison.Ordinal);
+            Assert.GreaterOrEqual(first, 0, "第一轮的问话要带上");
+            Assert.GreaterOrEqual(second, 0, "第二轮的问话要带上");
+            Assert.Less(first, second, "最旧的一轮在前");
+            StringAssert.Contains("等我把 A2 收了。", prompt, "上一轮 NPC 的回话也要带上");
         }
 
         [Test]
@@ -338,11 +413,14 @@ namespace ElysFarm.Tests
         {
             var world = NewWorld();
             var requests = new List<ChatRequest>();
+            const string misclassifiedChat =
+                "{\"outlet\":\"farm_command\",\"goal\":\"plant\",\"field\":\"A1\",\"species\":\"radish\"," +
+                "\"reply\":\"\",\"importance\":9}";
             var client = new ScriptedModelClient((request, _) =>
             {
                 requests.Add(request);
                 return Task.FromResult(requests.Count == 1
-                    ? new ChatResponse(PlantRadishJson, "fake-deepseek", 1.25d, 123, 45)
+                    ? new ChatResponse(misclassifiedChat, "fake-deepseek", 1.25d, 123, 45)
                     : new ChatResponse("你好呀，今天想干点什么？", "fake-deepseek", 0.5d, 80, 12));
             });
 
@@ -359,6 +437,9 @@ namespace ElysFarm.Tests
             Assert.AreEqual(ModelCallOutcome.Correction, result.Call.Outcome, "ADR-0004：本地出口纠正过分类，结果仍标 Correction");
             Assert.AreEqual(123, result.Call.PromptTokens, "纠正时仍保留那次分类调用的 token");
             Assert.AreEqual(45, result.Call.CompletionTokens);
+            var memory = world.RetrieveMemories("ahe", "待命")[0];
+            StringAssert.Contains("你好呀", memory.Text, "闲聊仍写回记忆");
+            Assert.AreEqual(9, memory.Importance, "出口被纠正后 importance 仍来自分类调用");
         }
 
         [Test]

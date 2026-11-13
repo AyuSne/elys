@@ -129,7 +129,7 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 
 ### 报告里看什么
 
-`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。全量 183 个用例，
+`TestResults/editmode.xml` 是标准 NUnit 3 XML，CI 与 IDE 都能直接读。全量 185 个用例，
 覆盖领域闭环、时钟、三本账、三人效用打分与休息、决策可视化五项、记忆的两段式与向量检索、
 追问、闲聊与转述（含闲聊的表达层与降级）、意图路由（含模型失败降级）、模型协议与密钥来源、
 2D 表现层的机位、作物阶段、像素切格、布局、排序与头顶表情，以及 #10 的三条固定剧本。
@@ -173,9 +173,9 @@ Unity 工程在 `Game/` 子目录，所以命令要带 `Game`；`cd Game` 之后
 | 打包目录里没有 3D 素材（#16） | `AssetLayoutTests.Resources里不再有3D素材` | `Assets/Resources` 里没有 FBX/材质；PixelArt 目录仍在 |
 | 每 NPC 一份对话（#18） | `DialogueBookTests.*` | 切换后取回各自那一轮；没聊过为空；每人最多 6 轮，第 7 轮挤掉最旧 |
 | 闲聊走表达层（#19） | `ChatTests.闲聊走表达层_提示词带口吻状态记忆与最近六轮` | 分类之后单独一次调用：system 带口吻，user 带状态、记忆、最近 6 轮与玩家原话；不要求 JSON，`temperature 0.8`、`max_tokens 200` |
-| 闲聊降级（#19） | `ChatTests.闲聊空响应重试一次_仍失败只说一句故障台词`、`ChatTests.闲聊表达层重试一次拿到台词就不降级`、`ChatTests.闲聊表达层返回JSON时重试而不是把JSON塞进对话框` | 空响应与 JSON 冒充台词都重试一次；仍失败只说故障台词并标「本地模板」，不编答案 |
-| 口吻可区分（#19） | `ChatTests.同一句闲聊三名NPC的提示词带各自口吻`、`ChatTests.闲聊提示词只带最近六轮对话`、`DialogueBookTests.对话簿给出表达层要的最近六轮` | 同一句话三人提示词两两不同；最近 6 轮按最旧在前 |
-| importance 不动（#19） | `IntentRouterTests.闲聊记忆的重要性由模型打分` | 重要性仍由分类调用打分，回话由表达层给 |
+| 闲聊降级（#19） | `ChatTests.闲聊空响应重试一次_仍失败只说一句故障台词`、`ChatTests.闲聊表达层重试一次拿到台词就不降级`、`ChatTests.闲聊表达层返回JSON时重试而不是把JSON塞进对话框`、`ChatTests.分类调用不可用时闲聊仍试一次表达层` | 空响应与 JSON（含引号包住的 JSON）都重试一次；仍失败只说故障台词并标「本地模板」，不编答案 |
+| 口吻与接续（#19） | `ChatTests.同一句闲聊三名NPC的提示词带各自口吻`、`ChatTests.闲聊提示词只带最近六轮对话`、`ChatTests.第二轮闲聊的提示词接上第一轮`、`DialogueBookTests.对话簿给出表达层要的最近六轮` | 同一句话三人提示词两两不同；最近 6 轮最旧在前，第二轮带着第一轮进提示词 |
+| importance 不动（#19） | `IntentRouterTests.闲聊记忆的重要性由模型打分`、`ChatTests.模型把纯闲聊误判成农活时不产生工单` | 重要性仍由分类调用打分；出口被本地纠正时分数不退回默认值 |
 | 密钥不泄露 | `SecretFileLocatorTests.*`、`DeepSeekProtocolTests.*` | 编辑器只读仓库根；播放器不隐式读密钥文件；请求体与降级符合协议 |
 
 领域测试只打 `FarmWorld` 与 `IModelClient` 两条主缝；`IntentRouter` 的三出口分流与

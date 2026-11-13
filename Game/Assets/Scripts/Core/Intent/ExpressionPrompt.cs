@@ -40,23 +40,26 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
-        /// 表达层返回的台词：去掉首尾引号与换行；空内容或 JSON 说明这一层没按规矩说话，
+        /// 表达层返回的台词：去掉换行与首尾引号；空内容或 JSON 说明这一层没按规矩说话，
         /// 返回 null 让路由器重试 / 降级，绝不把 JSON 塞进对话框。
         /// </summary>
         public static string CleanReply(string content)
         {
             var text = (content ?? string.Empty).Trim();
+
+            // 先剥引号再判 JSON：模型偶尔会把整段 JSON 包在引号里，
+            // 先判首字符会被引号骗过去，剥完就现形。
+            if (text.Length >= 2 && IsQuote(text[0]) && IsQuote(text[text.Length - 1]))
+            {
+                text = text.Substring(1, text.Length - 2).Trim();
+            }
+
             if (text.Length == 0 || text[0] == '{' || text[0] == '[' || text[0] == '`')
             {
                 return null;
             }
 
             text = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
-            if (text.Length >= 2 && IsQuote(text[0]) && IsQuote(text[text.Length - 1]))
-            {
-                text = text.Substring(1, text.Length - 2).Trim();
-            }
-
             return text.Length == 0 ? null : text;
         }
 
@@ -91,7 +94,7 @@ namespace ElysFarm.Core
             var user = new StringBuilder();
             user.Append("农场的真实状态：\n");
             PromptFarmState.AppendFields(user, world);
-            PromptFarmState.AppendNpc(user, world, npc);
+            PromptFarmState.AppendNpc(user, world, npc, includeMoodAndHunger: true);
             PromptFarmState.AppendMemories(user, memories);
 
             user.Append($"{DialogueContext.MaxRounds} 轮内的最近对话（最旧在前）：");

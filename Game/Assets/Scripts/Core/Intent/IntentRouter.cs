@@ -181,13 +181,16 @@ namespace ElysFarm.Core
             var isRequest = LocalIntentParser.IsFarmRequest(route.Text, route.World, route.Npc);
             if (isRequest != (draft.Outlet == IntentOutlet.FarmCommand))
             {
-                draft = LocalIntentParser.Parse(route.Text, route.World, route.Npc);
+                var corrected = LocalIntentParser.Parse(route.Text, route.World, route.Npc);
+                // 出口可以改，importance 仍是分类调用给的分数：闲聊被误判成农活时也要留得住。
+                corrected.SetImportance(draft.Importance);
+                draft = corrected;
                 call = Corrected(call);
             }
 
             if (draft.Outlet == IntentOutlet.Chat)
             {
-                return await ChatAsync(route, draft, usedFallback, call);
+                return await ChatAsync(route, draft, call);
             }
 
             return ResolveQueryOrCommand(route, draft, usedFallback, call);
@@ -197,12 +200,12 @@ namespace ElysFarm.Core
         /// 闲聊的表达层：分类之后单独一次调用，只负责说法。
         /// 台词由模型给；模型不可用、空响应重试后仍失败、或返回 JSON 时只说故障台词，
         /// 并把结果标成本地降级，HUD 据此标出「本地模板」。
+        /// 分类调用没拿到可用结果时照样发这一次：出口已由本地规则定为闲聊，回话仍可以问模型。
         /// importance 仍用分类调用给出的分数写回记忆，地块、时钟与背包不动。
         /// </summary>
         async Task<IntentResult> ChatAsync(
             RouteContext route,
             IntentDraft draft,
-            bool usedFallback,
             ModelCallInfo classification)
         {
             route.World.RememberChat(
@@ -215,7 +218,7 @@ namespace ElysFarm.Core
             var localTemplate = true;
 
             var budget = route.Remaining;
-            if (!usedFallback && budget > MinCallSeconds)
+            if (client != null && budget > MinCallSeconds)
             {
                 var clock = Stopwatch.StartNew();
                 for (var attempt = 0; attempt < ExpressionAttempts; attempt++)

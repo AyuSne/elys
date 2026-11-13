@@ -25,6 +25,19 @@ namespace ElysFarm.Core
         /// <summary>模型给这条玩家原话打的重要性，1–10；0 表示没给，由路由器用默认值。</summary>
         public int Importance { get; private set; }
 
+        /// <summary>
+        /// 采用模型在 JSON 里给出的 importance（0 表示没给，保持原样）。
+        /// 出口被本地纠正时，这个分数要跟着纠正后的草稿走，否则「闲聊的重要性由分类调用打分」
+        /// 会在误判成农活的路径上退回默认值。
+        /// </summary>
+        public void SetImportance(int importance)
+        {
+            if (importance > 0)
+            {
+                Importance = importance;
+            }
+        }
+
         public bool IsRefusal { get; private set; }
 
         public static IntentDraft Command(FarmGoal goal, string fieldToken, string speciesToken, string reply)
@@ -109,6 +122,7 @@ namespace ElysFarm.Core
             var field = (string)json["field"];
             var species = (string)json["species"];
             var reply = (string)json["reply"];
+            var importance = (int?)json["importance"] ?? 0;
 
             if (string.IsNullOrWhiteSpace(goalText) || goalText == "none")
             {
@@ -123,6 +137,7 @@ namespace ElysFarm.Core
             }
 
             draft = IntentDraft.Command(goal, NormalizeNone(field), NormalizeNone(species), reply);
+            draft.SetImportance(importance);
             return true;
         }
 

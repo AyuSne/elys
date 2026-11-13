@@ -39,11 +39,19 @@ namespace ElysFarm.Core
             user.Append('\n');
         }
 
-        /// <summary>NPC 的状态与当前意图。</summary>
-        public static void AppendNpc(StringBuilder user, FarmWorld world, Npc npc)
+        /// <summary>
+        /// NPC 的状态与当前意图。心情与饥饿只在表达层的状态摘要里出现：
+        /// 分类提示词只要体力与位置，别悄悄改既有分类调用看到的信息。
+        /// </summary>
+        public static void AppendNpc(StringBuilder user, FarmWorld world, Npc npc, bool includeMoodAndHunger = false)
         {
-            user.Append($"NPC：{npc.DisplayName}（{npc.Id}），体力 {npc.Stamina:P0}，心情 {npc.Mood:P0}，");
-            user.Append($"饥饿 {npc.Hunger:P0}，当前位置 x={npc.Position.X:0.#}, z={npc.Position.Z:0.#}。\n");
+            user.Append($"NPC：{npc.DisplayName}（{npc.Id}），体力 {npc.Stamina:P0}，");
+            if (includeMoodAndHunger)
+            {
+                user.Append($"心情 {npc.Mood:P0}，饥饿 {npc.Hunger:P0}，");
+            }
+
+            user.Append($"当前位置 x={npc.Position.X:0.#}, z={npc.Position.Z:0.#}。\n");
             user.Append($"NPC 当前意图：{world.IntentOf(npc.Id)}。\n");
         }
 
