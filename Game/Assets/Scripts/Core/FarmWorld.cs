@@ -33,6 +33,7 @@ namespace ElysFarm.Core
         readonly Dictionary<string, Npc> npcsById = new Dictionary<string, Npc>();
         readonly Dictionary<string, WorkOrder> workOrdersByNpc = new Dictionary<string, WorkOrder>();
         readonly Dictionary<string, string> claimOfField = new Dictionary<string, string>();
+        readonly Dictionary<string, string> autonomousGoalOfNpc = new Dictionary<string, string>();
         readonly Dictionary<string, StepCandidate> lastDecisions = new Dictionary<string, StepCandidate>();
         readonly Dictionary<string, IReadOnlyList<MemoryHit>> lastRecalls =
             new Dictionary<string, IReadOnlyList<MemoryHit>>();
@@ -440,6 +441,10 @@ namespace ElysFarm.Core
                 return false;
             }
 
+            // 这次决定顶掉上一次的打算：旧地块先交出去（见 GLOSSARY「占位」的释放时机），
+            // 再从候选里挑；挑不到活时手上也不该还留着一个「正要去」。
+            ReleaseAutonomousGoal(npcId);
+
             var best = NextStep(npcId);
             if (!best.HasValue)
             {
@@ -448,6 +453,7 @@ namespace ElysFarm.Core
             }
 
             candidate = best.Value;
+            autonomousGoalOfNpc[npcId] = candidate.FieldId;
             lastDecisions[npcId] = candidate;
             lastRecalls.Remove(npcId);
             npc.MarkDecided();
@@ -484,8 +490,9 @@ namespace ElysFarm.Core
             var npc = GetNpc(npcId);
             var field = GetField(fieldId);
 
-            // 一次执行尝试会消耗掉上一次自主决定：无论成败，NPC 都不该继续声称自己「正要去」那件事。
-            lastDecisions.Remove(npcId);
+            // 一次执行尝试会消耗掉上一次自主决定：无论成败，NPC 都不该继续声称自己「正要去」那件事，
+            // 那块地也随之对别人开放（体力见底时当场转入的休息同样走这里）。
+            ReleaseAutonomousGoal(npcId);
             lastRecalls.Remove(npcId);
 
             if (!ActionValidator.Validate(this, npc, field, step, sowSpeciesId, out var reason))
@@ -636,7 +643,9 @@ namespace ElysFarm.Core
             ReleaseWorkOrderOf(npcId);
             order = new WorkOrder(npcId, fieldId, resolvedSpeciesId, steps, Clock.Day);
             workOrdersByNpc[npcId] = order;
-            lastDecisions.Remove(npcId);
+
+            // 被派了工单：这名 NPC 的自主目标让位给玩家的指令。
+            ReleaseAutonomousGoal(npcId);
             return true;
         }
 
@@ -663,6 +672,9 @@ namespace ElysFarm.Core
             }
 
             ReleaseWorkOrderOf(npcId);
+
+            // 取消工单顺手交出手里的自主目标：这两份登记都不该在「不干了」之后继续占着地块。
+            ReleaseAutonomousGoal(npcId);
             cancelled = order;
             reason = null;
             return true;
@@ -703,6 +715,48 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
+        /// 谁正要去这块地（自主目标，见 GLOSSARY「占位」）；没人正要去时为 null。
+        /// 只给候选排序用：动作校验不读它，玩家点名的指令因此不会被自主目标挡住（#27）。
+        /// </summary>
+        internal Npc AutonomousOwnerOf(string fieldId)
+        {
+            string ownerId = null;
+            foreach (var pair in autonomousGoalOfNpc)
+            {
+                if (pair.Value == fieldId)
+                {
+                    ownerId = pair.Key;
+                    break;
+                }
+            }
+
+            return ownerId != null ? GetNpc(ownerId) : null;
+        }
+
+        /// <summary>
+        /// 交出一名 NPC 的自主目标：它不再「正要去」那块地，别人立刻能挑，意图行也不再写「自主：…」。
+        /// 登记与意图共用一个生命周期，两处才不会各说一套。
+        /// </summary>
+        void ReleaseAutonomousGoal(string npcId)
+        {
+            autonomousGoalOfNpc.Remove(npcId);
+            lastDecisions.Remove(npcId);
+        }
+
+        /// <summary>
+        /// 这块地被玩家点名的工单接走了：别人正要去这块地的自主目标立刻作废，
+        /// 免得三人卡上还挂着一条「前往」、走到地里才被判被占。玩家指令永远优先。
+        /// </summary>
+        void ReleaseAutonomousGoalOnField(string fieldId)
+        {
+            var owner = AutonomousOwnerOf(fieldId);
+            if (owner != null)
+            {
+                ReleaseAutonomousGoal(owner.Id);
+            }
+        }
+
+        /// <summary>
         /// 把地块记到这名 NPC 名下。校验里已经挡过一次，这里再挡一次是因为登记才是
         /// 「一块地只属于一张工单、一名 NPC 只占一块地」这条不变量的落点：将来多一个登记入口
         /// 也不会把别人的地抢走。被拒时不改动任何状态。
@@ -714,6 +768,9 @@ namespace ElysFarm.Core
                 reason = ActionValidator.ClaimedReason(GetNpc(holder));
                 return false;
             }
+
+            // 工单占位优先于自主目标：这一句点名指令一接单，别人正要去这块地的打算就作废。
+            ReleaseAutonomousGoalOnField(fieldId);
 
             UnclaimFieldOf(npcId);
             claimOfField[fieldId] = npcId;
@@ -884,6 +941,11 @@ namespace ElysFarm.Core
         {
             // 跨日后时间衰减变了，上一次回答命中的顺序不再可信，回到按当前意图检索。
             lastRecalls.Clear();
+
+            // 跨日结算也是自主目标的释放时机（见 GLOSSARY「占位」）：昨天打算去的地方，
+            // 今天不该还占着；地块重新对别人开放，NPC 醒来再自己挑。
+            autonomousGoalOfNpc.Clear();
+            lastDecisions.Clear();
 
             RestockSeeds(day);
 

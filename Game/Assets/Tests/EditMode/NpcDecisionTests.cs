@@ -82,8 +82,12 @@ namespace ElysFarm.Tests
         [Test]
         public void 决定速度按人设拉开_阿芽先动阿土最后()
         {
+            // 三块地：一人一块才轮得开（#27 起，一人挑中的地块别人不会再挑）。
+            // 本用例只测「什么时候能决定」，所以地块给足，不让抢地插手。
             var world = new FarmWorld(new FarmClock());
             world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddField("A2", new FarmPosition(-20f, 2f));
+            world.AddField("A3", new FarmPosition(20f, 2f));
             world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f), NpcPersona.Ahe);
             world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f), NpcPersona.Aya);
             world.AddNpc("atu", "阿土", new FarmPosition(0f, -5f), NpcPersona.Atu);
@@ -238,6 +242,148 @@ namespace ElysFarm.Tests
             Assert.Greater(restSeconds["aya"], restSeconds["ahe"], "阿芽摸鱼，休息时间最长");
             Assert.Greater(restSeconds["aya"], restSeconds["atu"], "阿芽比阿土更常歇着");
             Assert.Greater(restSeconds["aya"], WindowSeconds / 2f, "阿芽有一半以上时间在摸鱼");
+        }
+
+        [Test]
+        public void 同一刻决定的三名NPC各自挑一块不同的地()
+        {
+            // #27：自主挑活也登记地块。三块同质的地、三名同时能决定的 NPC，
+            // 最高分那块只能归一个人；其余人改挑别的有效候选，而不是一起走向同一块地。
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(-4f, 2f));
+            world.AddField("A2", new FarmPosition(0f, 2f));
+            world.AddField("A3", new FarmPosition(4f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
+            world.AddNpc("atu", "阿土", new FarmPosition(0f, -5f));
+            world.AddSeeds(CropCatalog.RadishId, 30);
+
+            var picks = new List<string>();
+            foreach (var npc in world.Npcs)
+            {
+                Assert.IsTrue(
+                    world.TryDecide(npc.Id, out var candidate, out var reason),
+                    $"{npc.DisplayName}应有可挑的活：{reason}");
+                Assert.AreEqual(WorkStep.Sow, candidate.Step);
+                picks.Add(candidate.FieldId);
+            }
+
+            CollectionAssert.AllItemsAreUnique(picks, "同一刻挑活，一块地只能归一名 NPC");
+        }
+
+        [Test]
+        public void 自主目标在执行一步后释放_别人随后能挑到()
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            Assert.IsTrue(world.TryDecide("ahe", out var ahePick, out var aheReason), aheReason);
+            Assert.AreEqual("A1", ahePick.FieldId);
+            Assert.IsFalse(world.TryDecide("aya", out _, out var blocked), "阿禾正要去 A1，阿芽这一刻挑不到它");
+            Assert.AreEqual("现在没有该干的活", blocked);
+
+            Assert.IsTrue(world.ExecuteStep("ahe", ahePick.FieldId, ahePick.Step).Executed, "先把这一步做成");
+
+            Assert.IsTrue(world.TryDecide("aya", out var ayaPick, out var ayaReason), "阿禾做完一步就交出地块：" + ayaReason);
+            Assert.AreEqual("A1", ayaPick.FieldId);
+            Assert.AreEqual(WorkStep.Water, ayaPick.Step, "播完种的 A1 轮到浇水");
+        }
+
+        [Test]
+        public void 自主目标不挡玩家点名的指令()
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
+            Assert.AreEqual("A1", pick.FieldId);
+
+            // 阿禾正要去 A1，玩家却点名让阿芽去 A1 播种：指令照样接单、照样做得成。
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("aya", "A1", CropCatalog.RadishId, new[] { WorkStep.Sow }, out _, out var assigned),
+                "自主目标不该挡玩家点名的指令：" + assigned);
+            Assert.AreEqual("aya", world.ClaimOf("A1").NpcId, "接单即占住整块地");
+            Assert.IsTrue(world.ExecuteStep("aya", "A1", WorkStep.Sow).Executed, "点名指令照常执行");
+
+            StringAssert.DoesNotContain("自主", world.IntentOf("ahe"), "指令接单后，阿禾不再声称正要去那块地");
+            Assert.IsFalse(world.TryDecide("ahe", out _, out var blocked), "A1 已经归阿芽的工单，阿禾挑不到");
+            Assert.AreEqual("现在没有该干的活", blocked);
+        }
+
+        [Test]
+        public void 改主意之后旧地块重新对别人开放()
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddField("A2", new FarmPosition(0f, -20f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            Assert.IsTrue(world.TryDecide("ahe", out var first, out var firstReason), firstReason);
+            Assert.AreEqual("A1", first.FieldId, "站在近处，先挑 A1");
+
+            // 表现层每帧把位置写回领域；走到远处之后再决定就是「改主意」。
+            world.MoveNpc("ahe", new FarmPosition(0f, -30f));
+            Assert.IsTrue(world.TryDecide("ahe", out var second, out var secondReason), secondReason);
+            Assert.AreEqual("A2", second.FieldId, "现在 A2 更近，改挑 A2");
+
+            Assert.IsTrue(world.TryDecide("aya", out var pickup, out var pickupReason), "A1 已经交出来：" + pickupReason);
+            Assert.AreEqual("A1", pickup.FieldId, "改主意后旧地块对别人开放");
+        }
+
+        [Test]
+        public void 去休息之后自主目标不再挡着别人()
+        {
+            // 干一步就累垮的人设：执行完播种当场转入休息。
+            var sleepy = new NpcPersona(
+                "sleepy",
+                decisionSeconds: 0f,
+                exertionPerStep: 0.90f,
+                restThreshold: 0.95f,
+                restSeconds: 30f,
+                restRecovery: 0.60f,
+                diligence: 1f,
+                distanceWeight: 0.15f);
+
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f), sleepy);
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
+            Assert.IsTrue(world.ExecuteStep("ahe", pick.FieldId, pick.Step).Executed);
+            Assert.IsTrue(world.GetNpc("ahe").IsResting, "体力见底就该去休息");
+
+            Assert.IsTrue(world.TryDecide("aya", out var ayaPick, out var ayaReason), "阿禾去休息，地块交出来：" + ayaReason);
+            Assert.AreEqual("A1", ayaPick.FieldId);
+        }
+
+        [Test]
+        public void 跨日之后自主目标不再挡着别人()
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -5f));
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, -5f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
+            Assert.AreEqual("A1", pick.FieldId);
+            Assert.IsFalse(world.TryDecide("aya", out _, out _), "这一天里 A1 归阿禾");
+
+            world.AdvanceDays(1);
+            Assert.AreEqual("待命", world.IntentOf("ahe"), "跨日结算把昨天的打算一起清掉");
+
+            Assert.IsTrue(world.TryDecide("aya", out var ayaPick, out var ayaReason), "跨日后地块重新开放：" + ayaReason);
+            Assert.AreEqual("A1", ayaPick.FieldId);
         }
 
         [Test]

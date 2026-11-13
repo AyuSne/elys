@@ -183,6 +183,68 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public async Task 不点名地块时避开别人正要去的地块()
+        {
+            // A1 远、A2 近，两块地一样干：只按需求与距离打分时阿芽会挑近的 A2，
+            // 但阿禾正要去 A2（自主目标），所以「给地浇水」应落到 A1。
+            var world = DryingFieldPair();
+            Assert.IsTrue(world.TryDecide("ahe", out var ahePick, out var aheReason), aheReason);
+            Assert.AreEqual("A2", ahePick.FieldId, "阿禾挑近处的 A2");
+
+            var router = new IntentRouter();
+            var result = await router.RouteAsync("给地浇水", world, world.GetNpc("aya"));
+
+            Assert.IsTrue(result.Accepted, result.Reply);
+            Assert.AreEqual("A1", result.FieldId, "不点名地块时避开别人正要去的地块");
+        }
+
+        [Test]
+        public async Task 所有地块都被人正要去时_指令照旧落到最近地块()
+        {
+            var world = DryingFieldPair(withAtu: true);
+            Assert.IsTrue(world.TryDecide("ahe", out var ahePick, out var aheReason), aheReason);
+            Assert.AreEqual("A2", ahePick.FieldId);
+            Assert.IsTrue(world.TryDecide("atu", out var atuPick, out var atuReason), atuReason);
+            Assert.AreEqual("A1", atuPick.FieldId);
+
+            var router = new IntentRouter();
+            var result = await router.RouteAsync("给地浇水", world, world.GetNpc("aya"));
+
+            Assert.IsTrue(result.Accepted, "自主目标不该挡住玩家的指令：" + result.Reply);
+            Assert.AreEqual("A2", result.FieldId, "没有可挑的地块时退回最近的一块");
+            StringAssert.DoesNotContain("自主", world.IntentOf("ahe"), "指令接单后，阿禾的自主目标让位");
+        }
+
+        /// <summary>
+        /// 两块一样干的地：A1 远、A2 近，都已播种、都缺一轮水。
+        /// 阿芽与阿禾站在同一点，所以差别只在「谁正要去哪块地」。
+        /// </summary>
+        static FarmWorld DryingFieldPair(bool withAtu = false)
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 20f));
+            world.AddField("A2", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, 0f), NpcPersona.Ahe);
+            world.AddNpc("aya", "阿芽", new FarmPosition(0f, 0f), NpcPersona.Aya);
+            if (withAtu)
+            {
+                world.AddNpc("atu", "阿土", new FarmPosition(0f, 0f), NpcPersona.Atu);
+            }
+
+            world.SetProduceStore(new FarmPosition(0f, 0f));
+            world.AddSeeds(CropCatalog.RadishId, 10);
+
+            foreach (var fieldId in new[] { "A1", "A2" })
+            {
+                Assert.IsTrue(world.ExecuteStep("ahe", fieldId, WorkStep.Sow).Executed);
+                Assert.IsTrue(world.ExecuteStep("ahe", fieldId, WorkStep.Water).Executed);
+            }
+
+            world.AdvanceDays(1);
+            return world;
+        }
+
+        [Test]
         public async Task 拒绝台词直接使用动作校验给出的理由()
         {
             var world = NewWorld();

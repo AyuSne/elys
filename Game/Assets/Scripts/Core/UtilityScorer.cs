@@ -7,6 +7,8 @@ namespace ElysFarm.Core
     /// 手写效用打分（见 ADR-0002）：把地块的原始需求（<see cref="Field.Need"/>）按工步加权，
     /// 再乘体力系数、减距离扣分，得到候选工步的排序。
     /// 只做排序，不执行；执行必须再过 <see cref="ActionValidator"/>。
+    /// 排序时另外避开「别人正要去」的地块（自主目标，#27）——那是只读的候选排除，
+    /// 不进动作校验，所以玩家点名的指令照样能派到同一块地。
     /// </summary>
     public sealed class UtilityScorer
     {
@@ -55,7 +57,22 @@ namespace ElysFarm.Core
 
         static StepCandidate Score(FarmWorld world, Npc npc, Field field, WorkStep step)
         {
-            var isValid = ActionValidator.Validate(world, npc, field, step, out var reason);
+            string reason;
+            bool isValid;
+
+            // 自主目标只在这一条读路径上生效：别人正要去的地块，在候选排序里与工单占位同等对待，
+            // 理由也用同一句「<名字>正在弄这块地」。动作校验不读它，玩家点名的指令不受影响（#27）。
+            var goalOwner = world.AutonomousOwnerOf(field.Id);
+            if (goalOwner != null && goalOwner != npc)
+            {
+                isValid = false;
+                reason = ActionValidator.ClaimedReason(goalOwner);
+            }
+            else
+            {
+                isValid = ActionValidator.Validate(world, npc, field, step, out reason);
+            }
+
             var need = WeightedNeed(field, step);
             var personaWeight = npc.Persona.Diligence;
             var distance = npc.DistanceTo(field);

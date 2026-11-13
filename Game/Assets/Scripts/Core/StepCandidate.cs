@@ -30,7 +30,7 @@ namespace ElysFarm.Core
         /// <summary>此刻是否满足前置条件与资源约束。</summary>
         public bool IsValid { get; }
 
-        /// <summary>被否决的可读理由；有效候选为 null。</summary>
+        /// <summary>被否决的可读理由；有效候选为 null。理由来自动作校验，或来自「别人正要去这块地」（自主目标）。</summary>
         public string RejectionReason { get; }
 
         public StepCandidate(

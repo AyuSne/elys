@@ -206,6 +206,21 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 别人正要去的地块在候选里给出同一句否决理由()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
+            Assert.AreEqual("A1", pick.FieldId);
+            StringAssert.Contains("自主：A1", world.Inspect("ahe").Intent, "意图行与自主目标登记同源");
+
+            var aya = world.Inspect("aya");
+            Assert.IsFalse(aya.Candidates.Any(c => c.IsValid), "唯一的 A1 已经有人正要去");
+            Assert.IsTrue(
+                aya.Candidates.Where(c => c.FieldId == "A1").All(c => c.RejectionReason == "阿禾正在弄这块地"),
+                "被自主目标占住的候选，理由与工单占位同一句说法");
+        }
+
+        [Test]
         public void 读取决策快照不改变任何游戏状态()
         {
             var world = NewWorld();

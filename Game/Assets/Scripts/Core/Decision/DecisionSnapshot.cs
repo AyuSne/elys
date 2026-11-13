@@ -86,7 +86,10 @@ namespace ElysFarm.Core
         /// <summary>第 2 项：该 NPC 此刻的意图。</summary>
         public string Intent { get; }
 
-        /// <summary>第 3 项：候选工步；无效候选自带动作校验给出的否决原因。</summary>
+        /// <summary>
+        /// 第 3 项：候选工步；无效候选自带否决原因——动作校验给出的前置条件，
+        /// 或「别人正要去这块地」（自主目标）这一条候选排序的排除。
+        /// </summary>
         public IReadOnlyList<StepCandidate> Candidates { get; }
 
         /// <summary>
