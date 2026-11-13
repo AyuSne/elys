@@ -19,9 +19,16 @@ namespace ElysFarm.Core
         /// <summary>两次决定之间、还没拿定主意时的意图文案；演示行与决策可视化共用。</summary>
         public const string ThinkingReason = "琢磨着干点啥…";
 
+        /// <summary>每个游戏日结算时补进种子库的萝卜种子数；这是演示规则，不做经济平衡。</summary>
+        const int RadishSeedsPerDay = 2;
+
+        /// <summary>每个游戏日结算时补进种子库的小麦种子数。</summary>
+        const int WheatSeedsPerDay = 1;
+
         readonly List<Field> fields = new List<Field>();
         readonly List<Npc> npcs = new List<Npc>();
         readonly List<WorkLogEntry> log = new List<WorkLogEntry>();
+        readonly List<SeedRestock> seedRestocks = new List<SeedRestock>();
         readonly Dictionary<string, Field> fieldsById = new Dictionary<string, Field>();
         readonly Dictionary<string, Npc> npcsById = new Dictionary<string, Npc>();
         readonly Dictionary<string, WorkOrder> workOrdersByNpc = new Dictionary<string, WorkOrder>();
@@ -50,6 +57,9 @@ namespace ElysFarm.Core
 
         /// <summary>已执行工步的流水，按发生顺序。</summary>
         public IReadOnlyList<WorkLogEntry> Log => log;
+
+        /// <summary>种子库的补货流水，按发生顺序；每个游戏日结算时补一次。</summary>
+        public IReadOnlyList<SeedRestock> SeedRestocks => seedRestocks;
 
         /// <summary>每个游戏日结算完毕后触发，参数为新的游戏日。</summary>
         public event Action<int> DaySettled;
@@ -857,6 +867,8 @@ namespace ElysFarm.Core
             // 跨日后时间衰减变了，上一次回答命中的顺序不再可信，回到按当前意图检索。
             lastRecalls.Clear();
 
+            RestockSeeds(day);
+
             foreach (var field in fields)
             {
                 field.AdvanceDay();
@@ -869,6 +881,25 @@ namespace ElysFarm.Core
 
             AbandonStaleWorkOrders(day);
             DaySettled?.Invoke(day);
+        }
+
+        /// <summary>
+        /// 每个游戏日结算时给种子库补货：萝卜 +2、小麦 +1。种子会耗尽，补货让农场
+        /// 不会因为种子用完而空转；补货后仍然不够时，播种照旧被
+        /// <see cref="ActionValidator.TryResolveSow"/> 以「种子库里没有…种子了」拒绝。
+        /// 数量固定，这是演示规则，不做经济平衡。
+        /// </summary>
+        void RestockSeeds(int day)
+        {
+            RestockSeed(CropCatalog.RadishId, RadishSeedsPerDay, day);
+            RestockSeed(CropCatalog.WheatId, WheatSeedsPerDay, day);
+        }
+
+        /// <summary>一次补货既入账，也留下流水——种子数涨了要能说出来是怎么涨的。</summary>
+        void RestockSeed(string speciesId, int count, int day)
+        {
+            Ledger.AddSeeds(speciesId, count);
+            seedRestocks.Add(new SeedRestock(day, speciesId, count));
         }
 
         /// <summary>

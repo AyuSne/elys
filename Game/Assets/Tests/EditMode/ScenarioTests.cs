@@ -54,13 +54,16 @@ namespace ElysFarm.Tests
             Assert.AreEqual(CropStage.Mature, FieldById(final, "A3").Stage, "东边那块在这几天里自己熟了");
 
             Assert.IsTrue(final.LedgerVerified, final.LedgerError);
-            Assert.AreEqual(9, final.RadishSeeds, "萝卜种子 12 颗，开局两块地用掉 2 颗、这季再用 1 颗");
-            Assert.AreEqual(2, final.WheatSeeds, "小麦种子 4 颗，开局那块地用掉 2 颗");
+            Assert.AreEqual(15, final.RadishSeeds, "萝卜种子 12 颗，开局两块地与这季各用 1 颗，跨 3 天每天补 2 颗");
+            Assert.AreEqual(5, final.WheatSeeds, "小麦种子 4 颗，开局那块地用掉 2 颗，跨 3 天每天补 1 颗");
             Assert.AreEqual(3, final.RadishProduce, "萝卜每次收获 3 个");
             Assert.AreEqual(5, final.WheatProduce, "小麦每次收获 5 个");
-            Assert.AreEqual(16, final.SeedsAdded, "开局入账 12 萝卜 + 4 小麦");
+            Assert.AreEqual(25, final.SeedsAdded, "开局入账 12 萝卜 + 4 小麦，三天补货 6 萝卜 + 3 小麦");
             Assert.AreEqual(5, final.SeedsRemoved, "开局 2 萝卜 + 2 小麦，这季再 1 萝卜");
+            Assert.AreEqual(6, final.RadishRestocked, "第 2–4 天各补 2 颗萝卜种子");
+            Assert.AreEqual(3, final.WheatRestocked, "第 2–4 天各补 1 颗小麦种子");
             Assert.AreEqual(8, final.ProduceAdded, "小麦 5 个 + 萝卜 3 个");
+            StringAssert.Contains("restocks=radish:6,wheat:3", report.Trace, "补货流水要进证据");
 
             CollectionAssert.AreEqual(
                 new[]
@@ -105,7 +108,9 @@ namespace ElysFarm.Tests
             Assert.IsEmpty(report.Final.ActiveWorkOrders, "追问不能产生新工单");
             CollectionAssert.AreEqual(new[] { WorkStep.Water }, report.Final.Performed);
             Assert.IsTrue(report.Final.LedgerVerified, report.Final.LedgerError);
-            Assert.AreEqual(10, report.Final.RadishSeeds, "剧本三不播种");
+            Assert.AreEqual(12, report.Final.RadishSeeds, "剧本三不播种；跨一天补 2 颗萝卜种子");
+            Assert.AreEqual(2, report.Final.RadishRestocked, "跨到第 2 天补一次萝卜种子");
+            Assert.AreEqual(1, report.Final.WheatRestocked, "跨到第 2 天补一次小麦种子");
             Assert.AreEqual(0, report.Final.ProduceAdded, "剧本三不收获");
             StringAssert.Contains("scenario|memory", report.Trace);
         }
@@ -147,6 +152,7 @@ namespace ElysFarm.Tests
             Assert.AreEqual(0, report.Final.RadishProduce, "萝卜还没种出来");
             Assert.AreEqual(5, report.Final.WheatProduce, "中间那块小麦在剧本二里被收了");
             Assert.AreEqual(5, report.Final.SeedsRemoved, "开局两块萝卜 + 一块小麦，再加这次播种");
+            Assert.AreEqual(0, report.Final.RadishRestocked, "剧本二不推进游戏日，没有补货");
             Assert.AreEqual(5, report.Final.ProduceAdded);
         }
 

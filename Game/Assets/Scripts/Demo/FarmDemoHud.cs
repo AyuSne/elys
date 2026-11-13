@@ -759,6 +759,13 @@ namespace ElysFarm.Demo
         {
             GUILayout.Space(8f);
             GUILayout.Label("流水", skin.BodyBold);
+
+            // 种子库补货不是工步，却是账本流水的一部分：种子数涨了要能看见是怎么涨的。
+            foreach (var line in FarmDemoText.RestockLines(demo.World.SeedRestocks, 2))
+            {
+                GUILayout.Label(line, skin.SmallWrap);
+            }
+
             var log = demo.World.Log;
             if (log.Count == 0)
             {

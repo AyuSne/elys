@@ -108,7 +108,7 @@ namespace ElysFarm.Demo
     public static class FixedScreenplays
     {
         public const string FullFlowHint =
-            "五步工单：播种 → 浇水 → 施肥 → 除草 → 收获；跨到第 4 天，种子库扣种、产出仓入库。";
+            "五步工单：播种 → 浇水 → 施肥 → 除草 → 收获；跨到第 4 天，种子库每天补货、产出仓入库。";
 
         public const string RefusalHint =
             "拒绝理由来自动作校验：白名单外的品种与还没熟的作物；阿芽干到体力见底，自己说要歇会儿。";
@@ -155,7 +155,7 @@ namespace ElysFarm.Demo
                 ScenarioBeat.SetSpeed(1f),
                 ScenarioBeat.Caption(
                     "剧本一完成",
-                    "第 4 天：萝卜 3 个进产出仓；种子库 12 → 9，产出仓 0 → 8（小麦 5 + 萝卜 3）。",
+                    "第 4 天：萝卜 3 个进产出仓；每天补萝卜 2、小麦 1，种子库 9 → 15 / 2 → 5，产出仓 0 → 8。",
                     5f)
             };
         }

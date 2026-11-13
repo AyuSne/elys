@@ -435,7 +435,7 @@ namespace ElysFarm.Tests
 
             CollectionAssert.AreEqual(PlantRadish, executed, "应按工单顺序执行五个工步");
             Assert.AreEqual(FieldState.Harvested, field.State);
-            Assert.AreEqual(9, world.Ledger.SeedsOf(CropCatalog.RadishId), "播种扣 1 颗种子");
+            Assert.AreEqual(15, world.Ledger.SeedsOf(CropCatalog.RadishId), "播种扣 1 颗；等成熟的 3 天每天补 2 颗");
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId), "萝卜每次收获 3 个");
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
             Assert.IsNull(world.WorkOrderOf("ahe"), "工单完成后应清空");
@@ -479,7 +479,7 @@ namespace ElysFarm.Tests
             CollectionAssert.AreEqual(orderSteps, executed, "等待成熟期间可以插做维护，但五个工步仍按序完成");
             Assert.AreEqual(FieldState.Harvested, field.State, "长周期作物也要能自己等到收获");
             Assert.AreEqual(5, world.Ledger.ProduceOf(CropCatalog.WheatId));
-            Assert.AreEqual(3, world.Ledger.SeedsOf(CropCatalog.WheatId), "小麦每次播种消耗 2 颗种子");
+            Assert.AreEqual(10, world.Ledger.SeedsOf(CropCatalog.WheatId), "播种扣 2 颗；小麦长 7 天，每天补 1 颗");
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
         }
 

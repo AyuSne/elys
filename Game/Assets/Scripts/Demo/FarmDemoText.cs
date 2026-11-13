@@ -22,6 +22,51 @@ namespace ElysFarm.Demo
         }
 
         /// <summary>
+        /// 种子库补货的流水行：同一天的补货合成一行，最多显示最近 maxDays 天，按天数从早到晚。
+        /// 数字直接来自领域留下的 <see cref="SeedRestock"/>，HUD 不另算一遍。
+        /// </summary>
+        public static IReadOnlyList<string> RestockLines(IReadOnlyList<SeedRestock> restocks, int maxDays)
+        {
+            var lines = new List<string>();
+            if (restocks == null || restocks.Count == 0 || maxDays <= 0)
+            {
+                return lines;
+            }
+
+            // 从最近的一天往回收，最多 maxDays 个不同的游戏日；最后翻回时间顺序。
+            var days = new List<int>();
+            for (var i = restocks.Count - 1; i >= 0 && days.Count < maxDays; i--)
+            {
+                if (!days.Contains(restocks[i].Day))
+                {
+                    days.Add(restocks[i].Day);
+                }
+            }
+
+            days.Reverse();
+            foreach (var day in days)
+            {
+                lines.Add(RestockLineOf(restocks, day));
+            }
+
+            return lines;
+        }
+
+        static string RestockLineOf(IReadOnlyList<SeedRestock> restocks, int day)
+        {
+            var builder = new StringBuilder($"第 {day} 天 · 种子库补货");
+            foreach (var entry in restocks)
+            {
+                if (entry.Day == day)
+                {
+                    builder.Append(" · ").Append(SpeciesName(entry.SpeciesId)).Append(" +").Append(entry.Count);
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        /// <summary>
         /// 三人卡那一行的当前意图。NPC 手上有工单或在休息时直接用领域给出的意图行
         /// （<see cref="FarmWorld.IntentOf"/>，也就是决策抽屉第 2 项的那句话）——
         /// 「等条件 / 跳过 / 没做成」因此不会在卡片与抽屉上各说一套；其余时候才显示演示层

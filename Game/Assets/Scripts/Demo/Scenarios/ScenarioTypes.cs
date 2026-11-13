@@ -157,6 +157,12 @@ namespace ElysFarm.Demo
         /// <summary>累计被播种消耗的种子数。</summary>
         public int SeedsRemoved { get; internal set; }
 
+        /// <summary>累计补进种子库的萝卜种子。</summary>
+        public int RadishRestocked { get; internal set; }
+
+        /// <summary>累计补进种子库的小麦种子。</summary>
+        public int WheatRestocked { get; internal set; }
+
         /// <summary>累计入库的产出数。</summary>
         public int ProduceAdded { get; internal set; }
 
@@ -330,6 +336,7 @@ namespace ElysFarm.Demo
                 $"fields={fields}",
                 $"ledger=radish:{final.RadishSeeds},{final.RadishProduce};wheat:{final.WheatSeeds},{final.WheatProduce}",
                 $"totals={final.SeedsAdded},{final.SeedsRemoved},{final.ProduceAdded}",
+                $"restocks=radish:{final.RadishRestocked},wheat:{final.WheatRestocked}",
                 $"performed={Steps(final.Performed)}",
                 $"resting={Join(final.RestingNpcIds)}",
                 $"orders={Join(final.ActiveWorkOrders)}",

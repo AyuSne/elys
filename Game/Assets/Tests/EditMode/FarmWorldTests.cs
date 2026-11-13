@@ -67,7 +67,7 @@ namespace ElysFarm.Tests
             Assert.Contains(WorkStep.Weed, steps, "应当除过草");
             Assert.Contains(WorkStep.Harvest, steps, "应当收获");
             Assert.AreEqual(3, world.Ledger.ProduceOf(CropCatalog.RadishId), "萝卜每次收获 3 个");
-            Assert.AreEqual(9, world.Ledger.SeedsOf(CropCatalog.RadishId), "播种消耗 1 颗种子");
+            Assert.AreEqual(15, world.Ledger.SeedsOf(CropCatalog.RadishId), "播种消耗 1 颗；成熟前的 3 天每天补 2 颗");
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
         }
 
@@ -142,7 +142,7 @@ namespace ElysFarm.Tests
 
             Assert.AreEqual(FieldState.Harvested, field.State);
             Assert.AreEqual(1, world.Ledger.SeedsRemoved);
-            Assert.AreEqual(9, world.Ledger.SeedTotal);
+            Assert.AreEqual(18, world.Ledger.SeedTotal, "播种扣 1 颗；3 天里每天补 2 萝卜 + 1 小麦");
             Assert.AreEqual(3, world.Ledger.ProduceTotal);
             Assert.IsTrue(world.Ledger.Verify(out var error), error);
 
@@ -164,6 +164,74 @@ namespace ElysFarm.Tests
             Assert.AreEqual(2, world.Ledger.HeldAdded);
             Assert.AreEqual(2, world.Ledger.HeldRemoved);
             Assert.IsTrue(world.Ledger.Verify(out error), error);
+        }
+
+        [Test]
+        public void 跨日后种子库按固定数量补货()
+        {
+            var world = NewWorld();
+            Assert.AreEqual(10, world.Ledger.SeedTotal, "开局只有 10 颗萝卜种子");
+
+            world.AdvanceDays(1);
+
+            Assert.AreEqual(12, world.Ledger.SeedsOf(CropCatalog.RadishId), "萝卜每天补 2 颗");
+            Assert.AreEqual(1, world.Ledger.SeedsOf(CropCatalog.WheatId), "小麦每天补 1 颗");
+            Assert.AreEqual(13, world.Ledger.SeedTotal, "补货都要入账");
+            Assert.IsTrue(world.Ledger.Verify(out var error), error);
+
+            world.AdvanceDays(2);
+
+            Assert.AreEqual(16, world.Ledger.SeedsOf(CropCatalog.RadishId), "两天再补 4 颗萝卜种子");
+            Assert.AreEqual(3, world.Ledger.SeedsOf(CropCatalog.WheatId), "两天再补 2 颗小麦种子");
+            Assert.AreEqual(19, world.Ledger.SeedTotal);
+        }
+
+        [Test]
+        public void 补货仍不够时照旧说种子库里没有种子()
+        {
+            var world = new FarmWorld(new FarmClock());
+            world.AddField("A1", new FarmPosition(0f, 2f));
+            world.AddNpc("ahe", "阿禾", new FarmPosition(0f, -4f));
+            world.SetProduceStore(new FarmPosition(0f, -4f));
+
+            var empty = world.ExecuteStep("ahe", "A1", WorkStep.Sow, CropCatalog.WheatId);
+            Assert.IsFalse(empty.Executed, "一粒小麦种子都没有");
+            Assert.AreEqual("种子库里没有小麦种子了", empty.Reason, "拒绝理由沿用动作校验那一句");
+
+            world.AdvanceDays(1);
+            Assert.AreEqual(1, world.Ledger.SeedsOf(CropCatalog.WheatId), "一天只补 1 颗");
+            var shortOfCost = world.ExecuteStep("ahe", "A1", WorkStep.Sow, CropCatalog.WheatId);
+            Assert.IsFalse(shortOfCost.Executed, "小麦一次要 2 颗，补一天还不够");
+            Assert.AreEqual("种子库里没有小麦种子了", shortOfCost.Reason);
+            Assert.AreEqual(FieldState.Empty, world.GetField("A1").State, "被拒绝的播种不能改动地块");
+
+            world.AdvanceDays(1);
+            Assert.IsTrue(
+                world.ExecuteStep("ahe", "A1", WorkStep.Sow, CropCatalog.WheatId).Executed,
+                "第 3 天攒够 2 颗，农场就不再因为种子用完而空转");
+        }
+
+        [Test]
+        public void 补货写进种子库流水()
+        {
+            var world = NewWorld();
+            Assert.AreEqual(0, world.SeedRestocks.Count, "还没跨日，种子库流水里没有补货");
+
+            world.AdvanceDays(2);
+
+            var flow = world.SeedRestocks;
+            Assert.AreEqual(4, flow.Count, "两天 × 萝卜与小麦各一条");
+            Assert.AreEqual(2, flow[0].Day, "第一次补货发生在跨到第 2 天时");
+            Assert.AreEqual(CropCatalog.RadishId, flow[0].SpeciesId);
+            Assert.AreEqual(2, flow[0].Count, "萝卜每天补 2 颗");
+            Assert.AreEqual(CropCatalog.WheatId, flow[1].SpeciesId);
+            Assert.AreEqual(1, flow[1].Count, "小麦每天补 1 颗");
+            Assert.AreEqual(3, flow[2].Day, "第 3 天再补一次");
+            Assert.AreEqual(2, flow[2].Count);
+            Assert.AreEqual(CropCatalog.WheatId, flow[3].SpeciesId);
+            Assert.AreEqual(1, flow[3].Count);
+
+            Assert.IsTrue(world.Ledger.Verify(out var error), error);
         }
 
         [Test]
