@@ -406,6 +406,7 @@ namespace ElysFarm.Tests
             Assert.AreEqual(IntentOutlet.Query, result.Outlet);
             StringAssert.Contains("A1", result.Reply, "回答必须点名具体地块，不能只说套话");
             StringAssert.Contains("浇水", result.Reply, "回答必须说出下一步工步");
+            StringAssert.Contains("体力", result.Reply, "回答必须给出真实体力");
             StringAssert.Contains("第 1 天", result.Reply, "回答必须引用检索到的记忆及其游戏日");
             var order = world.WorkOrderOf("ahe");
             Assert.IsNotNull(order, "追问只读，不能丢掉工单");
@@ -444,20 +445,25 @@ namespace ElysFarm.Tests
             var prompt = string.Empty;
             var client = new ScriptedModelClient((request, _) =>
             {
-                prompt = request.Messages[request.Messages.Count - 1].Content;
+                if (request.JsonOutput)
+                {
+                    prompt = request.Messages[request.Messages.Count - 1].Content;
+                    return Task.FromResult(
+                        new ChatResponse("{\"outlet\":\"query\"}", "fake-deepseek"));
+                }
+
                 return Task.FromResult(
-                    new ChatResponse(
-                        "{\"outlet\":\"query\",\"reply\":\"我在 A1 播种，第 1 天的事我还记得。\"}",
-                        "fake-deepseek"));
+                    new ChatResponse("我在 A1 播下了萝卜，体力还满着。", "fake-deepseek"));
             });
 
             var result = await new IntentRouter(client).RouteAsync("你在干什么", world, world.GetNpc("ahe"));
 
             Assert.AreEqual(IntentOutlet.Query, result.Outlet);
-            StringAssert.Contains("在 A1 播下了萝卜", prompt, "检索命中的记忆必须注入提示词");
+            StringAssert.Contains("在 A1 播下了萝卜", prompt, "检索命中的记忆必须注入分类提示词");
             StringAssert.Contains("当前意图", prompt, "提示词要带上当前意图");
             StringAssert.Contains("待命", prompt);
-            Assert.AreEqual("我在 A1 播种，第 1 天的事我还记得。", result.Reply, "模型回答应原样返回");
+            Assert.AreEqual("我在 A1 播下了萝卜，体力还满着。", result.Reply, "回答由表达层换一种说法");
+            Assert.IsFalse(result.UsedFallback);
         }
 
         [Test]
@@ -470,9 +476,15 @@ namespace ElysFarm.Tests
             var prompt = string.Empty;
             var client = new ScriptedModelClient((request, _) =>
             {
-                prompt = request.Messages[request.Messages.Count - 1].Content;
+                if (request.JsonOutput)
+                {
+                    prompt = request.Messages[request.Messages.Count - 1].Content;
+                    return Task.FromResult(
+                        new ChatResponse("{\"outlet\":\"query\"}", "fake-deepseek"));
+                }
+
                 return Task.FromResult(
-                    new ChatResponse("{\"outlet\":\"query\",\"reply\":\"天气不错。\"}", "fake-deepseek"));
+                    new ChatResponse("天气不错，我还记得。体力也够。", "fake-deepseek"));
             })
             {
                 SupportsEmbeddings = true,
@@ -494,7 +506,7 @@ namespace ElysFarm.Tests
             Assert.GreaterOrEqual(weather, 0, "向量命中的记忆必须注入提示词");
             Assert.GreaterOrEqual(water, 0);
             Assert.Less(weather, water, "向量相近的记忆应排在关键词相近的记忆之前");
-            StringAssert.Contains("天气不错", result.Reply, "模型回答应原样保留");
+            StringAssert.Contains("天气不错", result.Reply, "回答仍要落在命中的那条记忆上");
         }
 
         [Test]
@@ -507,9 +519,15 @@ namespace ElysFarm.Tests
             var prompt = string.Empty;
             var client = new ScriptedModelClient((request, _) =>
             {
-                prompt = request.Messages[request.Messages.Count - 1].Content;
+                if (request.JsonOutput)
+                {
+                    prompt = request.Messages[request.Messages.Count - 1].Content;
+                    return Task.FromResult(
+                        new ChatResponse("{\"outlet\":\"query\"}", "fake-deepseek"));
+                }
+
                 return Task.FromResult(
-                    new ChatResponse("{\"outlet\":\"query\",\"reply\":\"我浇过 A1。\"}", "fake-deepseek"));
+                    new ChatResponse("我浇过 A1，第 1 天的事我还记得，体力也够。", "fake-deepseek"));
             })
             {
                 SupportsEmbeddings = true,
@@ -528,8 +546,8 @@ namespace ElysFarm.Tests
             var weather = prompt.IndexOf("今天天气不错", StringComparison.Ordinal);
             Assert.GreaterOrEqual(water, 0);
             Assert.Less(water, weather, "向量不可用时必须退回关键词排序");
-            StringAssert.Contains("我浇过 A1", result.Reply, "模型回答应保留");
-            StringAssert.Contains("第 1 天", result.Reply, "问「记得」时还要补上记忆依据");
+            StringAssert.Contains("我浇过 A1", result.Reply);
+            StringAssert.Contains("第 1 天", result.Reply, "问「记得」时要落到记忆里的游戏日");
         }
 
         [Test]
@@ -538,8 +556,10 @@ namespace ElysFarm.Tests
             var world = NewWorld();
             world.Remember("ahe", "在 A1 播下了萝卜", 6);
             var never = new TaskCompletionSource<IReadOnlyList<float[]>>();
-            var client = new ScriptedModelClient((_, __) =>
-                Task.FromResult(new ChatResponse("{\"outlet\":\"query\",\"reply\":\"我在播种。\"}", "fake")))
+            var client = new ScriptedModelClient((request, _) => Task.FromResult(
+                new ChatResponse(
+                    request.JsonOutput ? "{\"outlet\":\"query\"}" : "我在待命，体力满着，A1 的萝卜是第 1 天种的。",
+                    "fake")))
             {
                 SupportsEmbeddings = true,
                 OnEmbed = _ => never.Task
@@ -553,11 +573,14 @@ namespace ElysFarm.Tests
 
             Assert.AreEqual(IntentOutlet.Query, result.Outlet);
             Assert.AreEqual(1, client.EmbedCalls);
-            Assert.AreEqual("我在播种。", result.Reply, "向量超时不能挡住对话");
+            Assert.AreEqual(
+                "我在待命，体力满着，A1 的萝卜是第 1 天种的。",
+                result.Reply,
+                "向量超时不能挡住对话");
         }
 
         [Test]
-        public async Task 记忆追问即使模型提到地块也要补上记忆依据()
+        public async Task 记忆追问的措辞丢掉记忆依据时回退事实串()
         {
             var world = NewWorld();
             world.Remember("ahe", "玩家让我给西边（A1）浇水", 7);
@@ -569,6 +592,7 @@ namespace ElysFarm.Tests
                 world.GetNpc("ahe"));
 
             Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            Assert.IsTrue(result.UsedFallback, "JSON 冒充台词时回退本地事实串");
             StringAssert.Contains("第 1 天", result.Reply, "跨日追问必须落到记忆里的游戏日");
             StringAssert.Contains("西边", result.Reply, "跨日追问必须落到记忆里的方位");
         }

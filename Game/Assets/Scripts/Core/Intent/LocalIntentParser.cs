@@ -601,8 +601,9 @@ namespace ElysFarm.Core
         }
 
         /// <summary>
-        /// 离线追问的回答。按问题分成三类：上次那件事、为什么没去干活、现在在干什么；
-        /// 每条回答都落到具体地块 / 工步 / 体力，并附上检索到的记忆作为依据。
+        /// 追问的事实串。按问题分成三类：上次那件事、为什么没去干活、现在在干什么；
+        /// 每条都落到具体地块 / 工步 / 体力，并附上检索到的记忆作为依据。
+        /// 离线时它直接就是回答；在线时它进表达层提示词，模型给不出合格台词时也回退到它。
         /// </summary>
         internal static string QueryReply(
             FarmWorld world,
@@ -689,7 +690,7 @@ namespace ElysFarm.Core
             {
                 var step = order.NextStep.Value;
                 builder.Append($"我正要去 {order.FieldId} {WorkStepLabel.Of(step)}");
-                builder.Append($"（工单第 {order.CompletedCount + 1}/{order.Steps.Count} 步）");
+                builder.Append($"（工单第 {order.CompletedCount + 1}/{order.Steps.Count} 步），体力 {npc.Stamina:P0}");
                 if (!TryValidateOrderStep(world, npc, order, out var reason))
                 {
                     builder.Append($"，不过{TrimEnd(reason)}");
@@ -767,7 +768,11 @@ namespace ElysFarm.Core
                 $"体力 {npc.Stamina:P0}，心情 {npc.Mood:P0}，饥饿 {npc.Hunger:P0}。");
         }
 
-        static MemoryHit BestPlayerMemory(IReadOnlyList<MemoryHit> memories)
+        /// <summary>
+        /// 问往事时回答哪一条：优先玩家当时的那句话，没有再取权重最高的那条。
+        /// 追问事实串与措辞校验都读这里，两处不能各挑各的。
+        /// </summary>
+        internal static MemoryHit BestPlayerMemory(IReadOnlyList<MemoryHit> memories)
         {
             foreach (var memory in memories)
             {

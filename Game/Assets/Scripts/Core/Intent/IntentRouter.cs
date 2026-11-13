@@ -193,7 +193,12 @@ namespace ElysFarm.Core
                 return await ChatAsync(route, draft, call);
             }
 
-            return ResolveQueryOrCommand(route, draft, usedFallback, call);
+            if (draft.Outlet == IntentOutlet.Query)
+            {
+                return await QueryAsync(route, call);
+            }
+
+            return ResolveCommand(route, draft, usedFallback, call);
         }
 
         /// <summary>
@@ -213,7 +218,57 @@ namespace ElysFarm.Core
                 route.Text,
                 draft.Importance > 0 ? draft.Importance : MemoryContext.PlayerChatImportance);
 
-            var reply = ChatFailureLine;
+            return await ExpressAsync(
+                route,
+                IntentOutlet.Chat,
+                classification,
+                () => ExpressionPrompt.BuildChat(
+                    route.World,
+                    route.Npc,
+                    route.Text,
+                    route.Memories,
+                    route.Dialogue),
+                accepts: null,
+                localReply: ChatFailureLine);
+        }
+
+        /// <summary>
+        /// 追问的表达层：事实（地块、工步、体力、命中的记忆）先由本地算出来，模型只换一种说法。
+        /// 台词改掉事实、空响应或返回 JSON 时重试一次，仍不成立就回退事实串并标成本地降级；
+        /// 追问只读，不写记忆、不产生工单、不改地块与背包。
+        /// </summary>
+        async Task<IntentResult> QueryAsync(RouteContext route, ModelCallInfo classification)
+        {
+            var facts = QueryFacts.Build(route.World, route.Npc, route.Text, route.Memories);
+            return await ExpressAsync(
+                route,
+                IntentOutlet.Query,
+                classification,
+                () => ExpressionPrompt.BuildQuery(
+                    route.World,
+                    route.Npc,
+                    route.Text,
+                    facts,
+                    route.Dialogue),
+                accepts: facts.Accepts,
+                localReply: facts.Reply);
+        }
+
+        /// <summary>
+        /// 表达层的公共驱动：拿剩下的预算换一句台词，逐次重试直到可接受或用完次数。
+        /// 模型不可用、没预算、空响应与 JSON 冒充台词都退到 <paramref name="localReply"/>，
+        /// 结果标成本地降级；<paramref name="accepts"/> 为 null 表示模型说了就收（闲聊）。
+        /// 分类调用纠正过出口时，ADR-0004 要求结果仍标 Correction 并保留那次调用的模型名、耗时与 token。
+        /// </summary>
+        async Task<IntentResult> ExpressAsync(
+            RouteContext route,
+            IntentOutlet outlet,
+            ModelCallInfo classification,
+            Func<ChatRequest> build,
+            Func<string, bool> accepts,
+            string localReply)
+        {
+            var reply = localReply;
             var call = classification;
             var localTemplate = true;
 
@@ -229,17 +284,11 @@ namespace ElysFarm.Core
                         break;
                     }
 
-                    var request = ExpressionPrompt.BuildChat(
-                        route.World,
-                        route.Npc,
-                        route.Text,
-                        route.Memories,
-                        route.Dialogue);
-                    var expression = await CallAsync(request, left);
+                    var expression = await CallAsync(build(), left);
                     call = expression.Call;
 
                     var spoken = expression.Succeeded ? ExpressionPrompt.CleanReply(expression.Content) : null;
-                    if (spoken != null)
+                    if (spoken != null && (accepts == null || accepts(spoken)))
                     {
                         reply = spoken;
                         localTemplate = false;
@@ -277,32 +326,16 @@ namespace ElysFarm.Core
                     "分类被本地出口纠正；台词由表达层生成");
             }
 
-            return IntentResult.ReadOnly(IntentOutlet.Chat, reply, localTemplate, call);
+            return IntentResult.ReadOnly(outlet, reply, localTemplate, call);
         }
 
-        /// <summary>追问与农事指令：追问只读，指令进白名单与动作校验。</summary>
-        static IntentResult ResolveQueryOrCommand(
+        /// <summary>农事指令：白名单、地块与品种都要在本地再解析一次，然后进入动作校验。</summary>
+        static IntentResult ResolveCommand(
             RouteContext route,
             IntentDraft draft,
             bool usedFallback,
             ModelCallInfo call)
         {
-            if (draft.Outlet == IntentOutlet.Query)
-            {
-                // 本地追问必须重新生成：模型不可用时，draft 里的模板回复没有状态与记忆依据。
-                var localReply = LocalIntentParser.QueryReply(route.World, route.Npc, route.Text, route.Memories);
-                var queryReply = usedFallback
-                    ? localReply
-                    : MemoryContext.EnsureQueryBasis(
-                        ReplyOr(draft.Reply, localReply),
-                        route.World,
-                        route.Npc,
-                        route.Memories,
-                        LocalIntentParser.IsMemoryQuestion(route.Text),
-                        localReply);
-                return IntentResult.ReadOnly(IntentOutlet.Query, queryReply, usedFallback, call);
-            }
-
             if (draft.IsRefusal)
             {
                 return IntentResult.Refuse(draft.Reply, usedFallback, call);

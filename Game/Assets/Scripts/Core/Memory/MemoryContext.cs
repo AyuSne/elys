@@ -6,8 +6,9 @@ using System.Threading.Tasks;
 namespace ElysFarm.Core
 {
     /// <summary>
-    /// 记忆在对话里的编排：取检索线索的向量、把玩家的话写进记忆、给模型的空泛回答补依据。
-    /// 这里不改变地块、时钟或背包；三个出口的分流仍由 <see cref="IntentRouter"/> 负责。
+    /// 记忆在对话里的编排：取检索线索的向量、把玩家的话写进记忆、整理玩家指令的记忆文本。
+    /// 这里不改变地块、时钟或背包；三个出口的分流与追问事实的生成仍由
+    /// <see cref="IntentRouter"/> 与 <see cref="QueryFacts"/> 负责。
     /// </summary>
     internal static class MemoryContext
     {
@@ -124,70 +125,7 @@ namespace ElysFarm.Core
             return $"玩家说「{Shorten(text, PlayerChatMaxLength)}」";
         }
 
-        /// <summary>
-        /// 模型的追问回答如果既没提状态也没提记忆，补一句本地生成的依据。
-        /// 问「上次」时必须是记忆依据，只提当前地块不算答到了过去。
-        /// </summary>
-        public static string EnsureQueryBasis(
-            string reply,
-            FarmWorld world,
-            Npc npc,
-            IReadOnlyList<MemoryHit> memories,
-            bool requireMemory,
-            string localReply)
-        {
-            if (string.IsNullOrWhiteSpace(reply))
-            {
-                return localReply;
-            }
-
-            return HasQueryBasis(reply, world, npc, memories, requireMemory)
-                ? reply
-                : $"{reply.Trim()} {localReply}";
-        }
-
-        static bool HasQueryBasis(
-            string reply,
-            FarmWorld world,
-            Npc npc,
-            IReadOnlyList<MemoryHit> memories,
-            bool requireMemory)
-        {
-            if (memories != null)
-            {
-                foreach (var memory in memories)
-                {
-                    if (reply.Contains($"第 {memory.Day} 天") || reply.Contains(memory.Text))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            if (requireMemory)
-            {
-                return false;
-            }
-
-            foreach (var field in world.Fields)
-            {
-                if (reply.Contains(field.Id))
-                {
-                    return true;
-                }
-            }
-
-            foreach (WorkStep step in Enum.GetValues(typeof(WorkStep)))
-            {
-                if (reply.Contains(WorkStepLabel.Of(step)))
-                {
-                    return true;
-                }
-            }
-
-            return reply.Contains("体力") || reply.Contains("心情") || reply.Contains("饥饿");
-        }
-
+        /// <summary>只收没有向量、维度不对或数值非法的向量；其余一律按不可用处理。</summary>
         static float[] UsableVector(float[] vector)
         {
             if (vector == null || vector.Length == 0)
