@@ -61,29 +61,50 @@ namespace ElysFarm.Demo
         /// <summary>HUD 正在观察、也是下一句话的指挥对象。</summary>
         public Npc SelectedNpc { get; private set; }
 
-        /// <summary>最近一次工步的结果或跨日提示。</summary>
-        public string LastMessage { get; private set; } = "第 1 天，三名 NPC 在产出仓旁待命。";
+        /// <summary>每名 NPC 一份对话：切换指挥对象时恢复各自那一份，最多保留 6 轮。</summary>
+        public DialogueBook Dialogue { get; private set; } = new DialogueBook();
 
-        /// <summary>玩家最近一次输入。</summary>
-        public string LastPlayerText { get; private set; } = string.Empty;
+        /// <summary>正在等谁的回复；对话框只在指挥对象就是她时显示「正在理解」。</summary>
+        public string ThinkingNpcId { get; private set; } = string.Empty;
 
-        /// <summary>选中 NPC 对最近一次输入的回应（接单、拒绝或闲聊）。</summary>
-        public string LastReply { get; private set; } = string.Empty;
+        /// <summary>NPC 之间转述的说话人与台词；对话框临时借用，玩家一开口或换人就让位。</summary>
+        public string ChatterSpeakerId { get; private set; } = string.Empty;
 
-        /// <summary>最近一次输入被理解成了什么，供 HUD 的「理解成」一行展示。</summary>
-        public string LastUnderstood { get; private set; } = "还没有收到玩家的话";
-
-        /// <summary>对话框里此刻说话的人；开局是默认指挥对象。</summary>
-        public string SpeakerId { get; private set; } = DefaultNpcId;
-
-        /// <summary>最近一次对话的出口；头像表情由它加上此刻的状态决定。</summary>
-        public IntentOutlet LastOutlet { get; private set; } = IntentOutlet.Query;
-
-        /// <summary>最近一次农事指令是否接单；只影响表现层，不改变领域状态。</summary>
-        public bool LastAccepted { get; private set; }
+        /// <summary>NPC 之间转述的那句话；空表示此刻没有转述。</summary>
+        public string ChatterLine { get; private set; } = string.Empty;
 
         /// <summary>最近一次对话是不是 NPC 之间自己聊的；对话框据此换提示。</summary>
-        public bool LastFromNpcChat { get; private set; }
+        public bool LastFromNpcChat => !string.IsNullOrEmpty(ChatterLine);
+
+        /// <summary>
+        /// 对话框此刻的说话人：正在等她的回话时优先，其次是 NPC 转述，否则是指挥对象。
+        /// 切换指挥对象后头像、名字与表情立刻跟着换，不必先发一句话。
+        /// </summary>
+        public string SpeakerId
+        {
+            get
+            {
+                if (IsThinking && ThinkingNpcId == SelectedNpc?.Id)
+                {
+                    return ThinkingNpcId;
+                }
+
+                if (LastFromNpcChat)
+                {
+                    return ChatterSpeakerId;
+                }
+
+                return SelectedNpc != null ? SelectedNpc.Id : DefaultNpcId;
+            }
+        }
+
+        /// <summary>最近一次对话的出口；没有历史时按追问处理，头像显示平常脸。</summary>
+        public IntentOutlet LastOutlet => LastFromNpcChat
+            ? IntentOutlet.Chat
+            : Dialogue.CurrentRound?.Outlet ?? IntentOutlet.Query;
+
+        /// <summary>最近一次农事指令是否接单；只影响表现层，不改变领域状态。</summary>
+        public bool LastAccepted => !LastFromNpcChat && (Dialogue.CurrentRound?.Accepted ?? false);
 
         /// <summary>正在等模型回话；此时游戏循环照常推进。</summary>
         public bool IsThinking { get; private set; }
@@ -225,13 +246,13 @@ namespace ElysFarm.Demo
             Router = new IntentRouter(null);
             AutonomyEnabled = false;
             SelectedNpc = World.GetNpc(DefaultNpcId);
+            Dialogue = new DialogueBook();
+            Dialogue.SwitchTo(DefaultNpcId);
             World.Clock.Speed = 1f;
-            LastMessage = "固定剧本回放";
-            LastReply = string.Empty;
-            LastPlayerText = string.Empty;
-            LastUnderstood = "剧本回放";
             LastResult = null;
             IsThinking = false;
+            ThinkingNpcId = string.Empty;
+            ClearChatter();
 
             foreach (var view in npcViews)
             {
@@ -246,7 +267,7 @@ namespace ElysFarm.Demo
             AutonomyEnabled = true;
             World.Clock.Speed = 16f;
             SelectedNpc = World.GetNpc(AyaId);
-            LastMessage = "压测：三名 NPC 自主 · 16x · 决策抽屉打开";
+            Dialogue.SwitchTo(AyaId);
 
             foreach (var view in npcViews)
             {
@@ -369,24 +390,24 @@ namespace ElysFarm.Demo
                 return FaceCondition.Resting;
             }
 
-            return IsThinking && SpeakerId == npcId
+            return IsThinking && ThinkingNpcId == npcId
                 ? FaceCondition.Thinking
                 : FaceCondition.Idle;
         }
 
-        /// <summary>换说话人时把「出口 / 是否接单 / 是不是 NPC 自己聊的」一起换掉，避免三处各写一遍。</summary>
-        void RecordSpeaker(string npcId, IntentOutlet outlet, bool accepted, bool fromNpcChat = false)
+        /// <summary>玩家开口或换人时，收掉 NPC 之间那句转述，让对话框回到指挥对象。</summary>
+        void ClearChatter()
         {
-            SpeakerId = npcId;
-            LastOutlet = outlet;
-            LastAccepted = accepted;
-            LastFromNpcChat = fromNpcChat;
+            ChatterSpeakerId = string.Empty;
+            ChatterLine = string.Empty;
         }
 
-        /// <summary>切换 HUD 的观察与指挥对象；不影响任何 NPC 的自主行为。</summary>
+        /// <summary>切换 HUD 的观察与指挥对象；同时翻到这个人自己的对话。</summary>
         public void SelectNpc(string npcId)
         {
             SelectedNpc = World.GetNpc(npcId);
+            Dialogue.SwitchTo(SelectedNpc?.Id);
+            ClearChatter();
         }
 
         /// <summary>切换自主干活。关掉只影响之后的选择，正在走的路或工单会先干完。</summary>
@@ -438,10 +459,6 @@ namespace ElysFarm.Demo
             {
                 FollowCamera(following);
             }
-
-            LastMessage = PixelArt.UseArt
-                ? "切到像素素材"
-                : "素材已关闭，退回体块（领域状态不变）";
         }
 
         /// <summary>
@@ -456,19 +473,18 @@ namespace ElysFarm.Demo
                 return;
             }
 
-            LastPlayerText = text.Trim();
-            LastReply = string.Empty;
-            LastUnderstood = "正在理解…";
-            IsThinking = true;
             var target = SelectedNpc;
-            RecordSpeaker(target.Id, IntentOutlet.Query, false);
+            var spoken = text.Trim();
+            ClearChatter();
+            IsThinking = true;
+            ThinkingNpcId = target.Id;
             var view = ViewOf(target.Id);
             if (view != null)
             {
                 view.Intent = "正在听玩家说话";
             }
 
-            SubmitAsync(LastPlayerText, target);
+            SubmitAsync(spoken, target);
         }
 
         async void SubmitAsync(string text, Npc target)
@@ -481,7 +497,7 @@ namespace ElysFarm.Demo
                     return;
                 }
 
-                ApplyIntent(result, target);
+                ApplyIntent(result, target, text);
             }
             catch (Exception ex)
             {
@@ -491,9 +507,10 @@ namespace ElysFarm.Demo
                 }
 
                 IsThinking = false;
-                RecordSpeaker(target.Id, IntentOutlet.Query, false);
-                LastReply = "我脑子卡了一下，先按本地规矩干活。";
-                LastMessage = LastReply;
+                ThinkingNpcId = string.Empty;
+                ClearChatter();
+                var reply = "我脑子卡了一下，先按本地规矩干活。";
+                Dialogue.Record(target.Id, new DialogueRound(text, reply, "没听清", IntentOutlet.Query, false));
                 var view = ViewOf(target.Id);
                 if (view != null)
                 {
@@ -504,12 +521,12 @@ namespace ElysFarm.Demo
             }
         }
 
-        void ApplyIntent(IntentResult result, Npc target)
+        void ApplyIntent(IntentResult result, Npc target, string playerText)
         {
             IsThinking = false;
+            ThinkingNpcId = string.Empty;
+            ClearChatter();
             LastResult = result;
-            RecordSpeaker(target.Id, result.Outlet, result.Accepted);
-            LastReply = result.Reply;
 
             // 接单/被拒是两种头顶表情；追问与闲聊不冒，只在对话框里换脸。
             if (result.Outlet == IntentOutlet.FarmCommand)
@@ -526,7 +543,6 @@ namespace ElysFarm.Demo
 
             if (result.Accepted)
             {
-                LastUnderstood = FarmDemoText.Plan(result.FieldId, result.SpeciesId, result.PlannedSteps);
                 if (view != null)
                 {
                     view.Walking = false;
@@ -545,28 +561,33 @@ namespace ElysFarm.Demo
                 {
                     other.NextActionAt = 0f;
                 }
+            }
+            else if (view != null)
+            {
+                view.Intent = result.Outlet == IntentOutlet.FarmCommand ? "拒绝了这单活" : "陪着说了两句";
+            }
 
-                LastMessage = $"{target.DisplayName}：{result.Reply}";
-                return;
+            Dialogue.Record(
+                target.Id,
+                new DialogueRound(playerText, result.Reply, UnderstoodOf(result), result.Outlet, result.Accepted));
+        }
+
+        /// <summary>「理解成」一行：接单时给出地块与工步，其余出口说明这句话只留下什么。</summary>
+        static string UnderstoodOf(IntentResult result)
+        {
+            if (result.Accepted)
+            {
+                return FarmDemoText.Plan(result.FieldId, result.SpeciesId, result.PlannedSteps);
             }
 
             switch (result.Outlet)
             {
                 case IntentOutlet.Query:
-                    LastUnderstood = "追问：只读回答（不改状态）";
-                    break;
+                    return "追问：只读回答（不改状态）";
                 case IntentOutlet.Chat:
-                    LastUnderstood = "闲聊：只留下记忆（提到别人会变成传闻）";
-                    break;
+                    return "闲聊：只留下记忆（提到别人会变成传闻）";
                 default:
-                    LastUnderstood = "没有接单";
-                    break;
-            }
-
-            LastMessage = $"{target.DisplayName}：{result.Reply}";
-            if (view != null)
-            {
-                view.Intent = result.Outlet == IntentOutlet.FarmCommand ? "拒绝了这单活" : "陪着说了两句";
+                    return "没有接单";
             }
         }
 
@@ -576,11 +597,8 @@ namespace ElysFarm.Demo
             World = FarmDemoWorld.Create();
             Router = new IntentRouter(DemoModelSettings.CreateClient());
             SelectedNpc = World.GetNpc(DefaultNpcId);
-            World.DaySettled += day => LastMessage = $"第 {day} 天开始，作物结算完毕";
+            Dialogue.SwitchTo(DefaultNpcId);
             AutonomyEnabled = false;
-            LastMessage = "第 1 天，三名 NPC 在产出仓旁待命"
-                + (UsingModel ? "（模型在线）" : "（本地模板）")
-                + "。";
 
             foreach (var spawn in FarmLayout.NpcSpawns)
             {
@@ -848,12 +866,10 @@ namespace ElysFarm.Demo
                 var line = retold.Line;
                 speaker.Intent = $"跟{listener.Npc.DisplayName}说：{line}";
                 listener.Intent = $"听{speaker.Npc.DisplayName}说：{line}";
-                RecordSpeaker(speaker.Npc.Id, IntentOutlet.Chat, false, true);
-                LastReply = line;
+                ChatterSpeakerId = speaker.Npc.Id;
+                ChatterLine = line;
                 speaker.NextActionAt = Now + ChatHold;
                 listener.NextActionAt = Now + ChatHold;
-                LastMessage = $"第 {World.Clock.Day} 天 · "
-                    + $"{speaker.Npc.DisplayName}把听来的事讲给{listener.Npc.DisplayName}：{line}";
                 return;
             }
         }
@@ -944,13 +960,11 @@ namespace ElysFarm.Demo
                 var action = $"{FarmDemoText.StepName(executedStep)}了 {view.PendingFieldId}"
                     + (result.Yield > 0 ? $"，收得 {result.Yield} 个产出" : string.Empty);
                 view.Intent = npc.IsResting ? "太累了，去歇会儿" : action;
-                LastMessage = $"第 {World.Clock.Day} 天 · {npc.DisplayName}{action}";
                 view.NextActionAt = Now + WorkPause;
             }
             else
             {
                 view.Intent = npc.IsResting ? "太累了，去歇会儿" : $"没做成：{result.Reason}";
-                LastMessage = $"{npc.DisplayName}想{FarmDemoText.StepName(view.PendingStep)}，但{result.Reason}";
                 view.NextActionAt = Now + IdlePause;
             }
 

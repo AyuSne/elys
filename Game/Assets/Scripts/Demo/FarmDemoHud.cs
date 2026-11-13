@@ -432,7 +432,7 @@ namespace ElysFarm.Demo
                 GUI.contentColor = Color.white;
                 GUI.Label(
                     new Rect(inputRect.x + 14f, inputRect.y, inputRect.width - 20f, inputRect.height),
-                    $"对 {SpeakerName()} 说…",
+                    $"对 {TargetName()} 说…",
                     skin.SmallInk);
                 GUI.contentColor = previousContent;
                 GUI.color = previousColor;
@@ -450,18 +450,22 @@ namespace ElysFarm.Demo
 
         string DialogueLine()
         {
-            if (demo.IsThinking)
+            if (demo.IsThinking && demo.ThinkingNpcId == demo.SelectedNpc?.Id)
             {
                 return "……（正在理解你这句话）";
             }
 
-            var line = string.IsNullOrWhiteSpace(demo.LastReply) ? demo.LastMessage : demo.LastReply;
-            return FarmDemoText.Shorten(line, ReplyLimit);
+            var line = demo.LastFromNpcChat
+                ? demo.ChatterLine
+                : demo.Dialogue.CurrentRound?.Reply;
+            return string.IsNullOrWhiteSpace(line)
+                ? $"还没和{SpeakerName()}聊过。"
+                : FarmDemoText.Shorten(line, ReplyLimit);
         }
 
         string DialogueHint()
         {
-            if (demo.IsThinking)
+            if (demo.IsThinking && demo.ThinkingNpcId == demo.SelectedNpc?.Id)
             {
                 return "等模型回话…（游戏没有暂停）";
             }
@@ -471,12 +475,15 @@ namespace ElysFarm.Demo
                 return "她们自己聊的；说句话就能把话头接回来。";
             }
 
-            if (string.IsNullOrWhiteSpace(demo.LastPlayerText))
+            var round = demo.Dialogue.CurrentRound;
+            if (!round.HasValue)
             {
-                return "先说句话；卡片右上角可以切换她们自己找活。";
+                return demo.UsingModel
+                    ? "先说句话（模型在线）；卡片右上角可以切换她们自己找活。"
+                    : "先说句话（本地模板）；卡片右上角可以切换她们自己找活。";
             }
 
-            return $"你：{FarmDemoText.Shorten(demo.LastPlayerText, 32)} · {demo.LastUnderstood}";
+            return $"你：{FarmDemoText.Shorten(round.Value.PlayerText, 32)} · {round.Value.Understood}";
         }
 
         Npc Speaker()
@@ -496,6 +503,12 @@ namespace ElysFarm.Demo
         {
             var speaker = Speaker();
             return speaker != null ? speaker.DisplayName : "NPC";
+        }
+
+        /// <summary>下一句话发给谁；NPC 之间转述占用对话框时，输入框仍指向指挥对象。</summary>
+        string TargetName()
+        {
+            return demo.SelectedNpc != null ? demo.SelectedNpc.DisplayName : "NPC";
         }
 
         void DrawFace(Rect rect, Npc npc)
