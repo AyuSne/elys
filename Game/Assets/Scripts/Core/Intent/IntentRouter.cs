@@ -10,6 +10,7 @@ namespace ElysFarm.Core
     /// 把玩家的一句话分到三个出口：农事指令、追问、闲聊。
     /// 这是唯一允许把「说的话」变成「做的事」的入口（见规格）：
     /// 模型只提供意图草稿，地块、品种与工步还要在这里按白名单重新解析并通过动作校验。
+    /// 「怎么说」另走表达层（<see cref="ExpressionPrompt"/>），失败不编答案。
     /// 模型不可用、超时或输出不可用时，退到 <see cref="LocalIntentParser"/>，绝不阻塞调用方。
     /// </summary>
     public sealed class IntentRouter
@@ -22,6 +23,15 @@ namespace ElysFarm.Core
 
         /// <summary>一次记忆检索取向量的硬超时（秒）；超时退回关键词相似度。</summary>
         public const float EmbeddingDeadlineSeconds = 2f;
+
+        /// <summary>闲聊的表达层给不出可用台词时只说这一句故障台词，不生成假回答。</summary>
+        public const string ChatFailureLine = "我这会儿没听清，你再说一遍？";
+
+        /// <summary>表达层最多尝试的调用次数：空响应重试一次。</summary>
+        const int ExpressionAttempts = 2;
+
+        /// <summary>剩余预算低于这个值就不再发表达层请求，直接降级。</summary>
+        const float MinCallSeconds = 0.5f;
 
         readonly IModelClient client;
 
@@ -40,14 +50,17 @@ namespace ElysFarm.Core
         /// <summary>
         /// 解析并处理一句话。无论模型是否可用都会返回结果；
         /// 未显式指定 deadline 时，农事指令用规划级 15 秒，追问与闲聊用对话级 6 秒，
-        /// 取记忆向量也占用这次预算。超时、网络错误与非法 JSON 都退到本地解析，调用方不会抛出异常。
+        /// 取记忆向量与闲聊的表达层调用都占用这一次对话的预算。
+        /// <paramref name="dialogue"/> 给表达层提供口吻与最近几轮；它由演示层构造，路由器只读。
+        /// 超时、网络错误与非法 JSON 都退到本地解析，调用方不会抛出异常。
         /// </summary>
         public async Task<IntentResult> RouteAsync(
             string text,
             FarmWorld world,
             Npc npc,
             float? deadlineSeconds = null,
-            float? embeddingDeadlineSeconds = null)
+            float? embeddingDeadlineSeconds = null,
+            DialogueContext dialogue = null)
         {
             if (world == null)
             {
@@ -80,7 +93,17 @@ namespace ElysFarm.Core
             if (client == null || deadline <= 0f)
             {
                 var offlineMemories = world.RecallForAnswer(npc.Id, text);
-                return Finish(LocalFallback(text, world, npc, offlineMemories, ModelCallInfo.None));
+                return Finish(await ResolveAsync(
+                    LocalIntentParser.Parse(text, world, npc),
+                    text,
+                    offlineMemories,
+                    world,
+                    npc,
+                    usedFallback: true,
+                    ModelCallInfo.None,
+                    dialogue,
+                    routeClock: null,
+                    deadline: 0f));
             }
 
             // 追问与闲聊都要先检索记忆：向量可用时用余弦，断网或超时自动退回关键词。
@@ -95,94 +118,62 @@ namespace ElysFarm.Core
             var remaining = Math.Max(0.01f, deadline - (float)routeStartedAt.Elapsed.TotalSeconds);
             var memories = world.RecallForAnswer(npc.Id, text, cueEmbedding);
 
-            using var timeout = new CancellationTokenSource();
-            var startedAt = Stopwatch.StartNew();
             ChatRequest request;
-            Task<ChatResponse> callTask;
             try
             {
                 request = IntentPrompt.Build(world, npc, text, memories);
-                request.TimeoutSeconds = Math.Max(1, (int)Math.Ceiling(remaining));
-                callTask = client.CompleteAsync(request, timeout.Token);
             }
             catch (Exception ex)
             {
-                startedAt.Stop();
-                return Finish(LocalFallback(
+                return Finish(await ResolveFallback(
                     text,
+                    memories,
                     world,
                     npc,
-                    memories,
-                    new ModelCallInfo(
-                        client.ModelName,
-                        startedAt.Elapsed.TotalSeconds,
-                        0,
-                        0,
-                        ModelCallOutcome.Error,
-                        ex.Message)));
+                    Failed(0d, ModelCallOutcome.Error, ex.Message),
+                    dialogue,
+                    routeStartedAt,
+                    deadline));
             }
 
-            var deadlineTask = Task.Delay(TimeSpan.FromSeconds(remaining), timeout.Token);
-            var winner = await Task.WhenAny(callTask, deadlineTask);
-            if (winner == callTask)
+            var attempt = await CallAsync(request, remaining);
+            if (!attempt.Succeeded)
             {
-                timeout.Cancel();
-            }
-            else
-            {
-                Observe(callTask);
-                var timedOut = new ModelCallInfo(
-                    client.ModelName,
-                    remaining,
-                    0,
-                    0,
-                    ModelCallOutcome.Timeout,
-                    $"等待 {remaining:0.#} 秒未返回");
-                return Finish(LocalFallback(text, world, npc, memories, timedOut));
-            }
-
-            ChatResponse response;
-            try
-            {
-                response = await callTask;
-            }
-            catch (Exception ex)
-            {
-                startedAt.Stop();
-                return Finish(LocalFallback(
+                return Finish(await ResolveFallback(
                     text,
+                    memories,
                     world,
                     npc,
-                    memories,
-                    new ModelCallInfo(
-                        client.ModelName,
-                        startedAt.Elapsed.TotalSeconds,
-                        0,
-                        0,
-                        ModelCallOutcome.Error,
-                        ex.Message)));
+                    attempt.Call,
+                    dialogue,
+                    routeStartedAt,
+                    deadline));
             }
 
-            var responseModel = string.IsNullOrWhiteSpace(response.Model) ? client.ModelName : response.Model;
-            var call = new ModelCallInfo(
-                responseModel,
-                response.LatencySeconds,
-                response.PromptTokens,
-                response.CompletionTokens,
-                ModelCallOutcome.Ok);
-
-            if (!ModelIntentParser.TryParse(response.Content, out var draft, out _))
+            if (!ModelIntentParser.TryParse(attempt.Content, out var draft, out _))
             {
-                var unusable = new ModelCallInfo(
-                    responseModel,
-                    response.LatencySeconds,
-                    response.PromptTokens,
-                    response.CompletionTokens,
-                    ModelCallOutcome.Unusable);
-                return Finish(LocalFallback(text, world, npc, memories, unusable));
+                return Finish(await ResolveFallback(
+                    text,
+                    memories,
+                    world,
+                    npc,
+                    Unusable(attempt.Call),
+                    dialogue,
+                    routeStartedAt,
+                    deadline));
             }
 
-            return Finish(ResolveDraft(draft, text, memories, world, npc, false, call));
+            return Finish(await ResolveAsync(
+                draft,
+                text,
+                memories,
+                world,
+                npc,
+                usedFallback: false,
+                attempt.Call,
+                dialogue,
+                routeStartedAt,
+                deadline));
         }
 
         IntentResult Finish(IntentResult result)
@@ -191,18 +182,143 @@ namespace ElysFarm.Core
             return result;
         }
 
-        IntentResult LocalFallback(
+        /// <summary>本地解析接管一次：分类没拿到可用结果时用它，闲聊因此直接走降级。</summary>
+        Task<IntentResult> ResolveFallback(
             string text,
+            IReadOnlyList<MemoryHit> memories,
+            FarmWorld world,
+            Npc npc,
+            ModelCallInfo call,
+            DialogueContext dialogue,
+            Stopwatch routeClock,
+            float deadline)
+        {
+            return ResolveAsync(
+                LocalIntentParser.Parse(text, world, npc),
+                text,
+                memories,
+                world,
+                npc,
+                usedFallback: true,
+                call,
+                dialogue,
+                routeClock,
+                deadline);
+        }
+
+        /// <summary>
+        /// 把一份草稿落到三个出口。出口的最终裁决权在本地：农活请求不能被模型当成闲聊吞掉，
+        /// 纯闲聊也不能被模型凭空变成一条农活；闲聊在此之后另走一次表达层调用。
+        /// </summary>
+        async Task<IntentResult> ResolveAsync(
+            IntentDraft draft,
+            string playerText,
+            IReadOnlyList<MemoryHit> memories,
+            FarmWorld world,
+            Npc npc,
+            bool usedFallback,
+            ModelCallInfo call,
+            DialogueContext dialogue,
+            Stopwatch routeClock,
+            float deadline)
+        {
+            if (draft == null)
+            {
+                return IntentResult.Refuse("我没听明白。", usedFallback, call);
+            }
+
+            // 出口以玩家原话为准，模型只负责理解细节（地块、品种、措辞）。
+            var isRequest = LocalIntentParser.IsFarmRequest(playerText, world, npc);
+            if (isRequest != (draft.Outlet == IntentOutlet.FarmCommand))
+            {
+                draft = LocalIntentParser.Parse(playerText, world, npc);
+                call = Corrected(call);
+            }
+
+            if (draft.Outlet == IntentOutlet.Chat)
+            {
+                var budget = routeClock == null
+                    ? 0f
+                    : Math.Max(0f, deadline - (float)routeClock.Elapsed.TotalSeconds);
+                return await ChatAsync(playerText, world, npc, memories, draft, usedFallback, call, dialogue, budget);
+            }
+
+            return ResolveQueryOrCommand(draft, playerText, memories, world, npc, usedFallback, call);
+        }
+
+        /// <summary>
+        /// 闲聊的表达层：分类之后单独一次调用，只负责说法。
+        /// 台词由模型给；模型不可用、空响应重试后仍失败、或返回 JSON 时只说故障台词，
+        /// 并把结果标成本地降级，HUD 据此标出「本地模板」。
+        /// importance 仍用分类调用给出的分数写回记忆，地块、时钟与背包不动。
+        /// </summary>
+        async Task<IntentResult> ChatAsync(
+            string playerText,
             FarmWorld world,
             Npc npc,
             IReadOnlyList<MemoryHit> memories,
-            ModelCallInfo call)
+            IntentDraft draft,
+            bool usedFallback,
+            ModelCallInfo classification,
+            DialogueContext dialogue,
+            float budget)
         {
-            var draft = LocalIntentParser.Parse(text, world, npc);
-            return ResolveDraft(draft, text, memories, world, npc, true, call);
+            world.RememberChat(
+                npc.Id,
+                playerText,
+                draft.Importance > 0 ? draft.Importance : MemoryContext.PlayerChatImportance);
+
+            var reply = ChatFailureLine;
+            var call = classification;
+            var localTemplate = true;
+
+            if (!usedFallback && budget > MinCallSeconds)
+            {
+                var clock = Stopwatch.StartNew();
+                for (var attempt = 0; attempt < ExpressionAttempts; attempt++)
+                {
+                    var left = budget - (float)clock.Elapsed.TotalSeconds;
+                    if (left <= MinCallSeconds)
+                    {
+                        break;
+                    }
+
+                    var request = ExpressionPrompt.BuildChat(world, npc, playerText, memories, dialogue);
+                    var expression = await CallAsync(request, left);
+                    call = expression.Call;
+
+                    var spoken = expression.Succeeded ? ExpressionPrompt.CleanReply(expression.Content) : null;
+                    if (spoken != null)
+                    {
+                        reply = spoken;
+                        localTemplate = false;
+                        break;
+                    }
+
+                    if (expression.Succeeded)
+                    {
+                        call = Unusable(expression.Call);
+                    }
+                }
+            }
+
+            if (localTemplate && call.Succeeded)
+            {
+                // 分类成功了，但表达层没赶上剩余预算：整体按超时展示，别让 HUD 以为这句是模型说的。
+                call = new ModelCallInfo(
+                    call.Model,
+                    call.LatencySeconds,
+                    call.PromptTokens,
+                    call.CompletionTokens,
+                    ModelCallOutcome.Timeout,
+                    "表达层没有剩余预算");
+            }
+
+            return IntentResult.ReadOnly(IntentOutlet.Chat, reply, localTemplate, call);
         }
 
-        static IntentResult ResolveDraft(
+        /// <summary>追问与农事指令：追问只读，指令进白名单与动作校验。</summary>
+        static IntentResult ResolveQueryOrCommand(
             IntentDraft draft,
             string playerText,
             IReadOnlyList<MemoryHit> memories,
@@ -211,48 +327,20 @@ namespace ElysFarm.Core
             bool usedFallback,
             ModelCallInfo call)
         {
-            if (draft == null)
+            if (draft.Outlet == IntentOutlet.Query)
             {
-                return IntentResult.Refuse("我没听明白。", usedFallback, call);
-            }
-
-            // 出口以玩家原话为准，模型只负责理解细节（地块、品种、措辞）：
-            // 农活请求不能被模型当成闲聊吞掉，纯闲聊也不能被模型凭空变成一条农活。
-            var isRequest = LocalIntentParser.IsFarmRequest(playerText, world, npc);
-            if (isRequest != (draft.Outlet == IntentOutlet.FarmCommand))
-            {
-                draft = LocalIntentParser.Parse(playerText, world, npc);
-                call = Corrected(call);
-            }
-
-            switch (draft.Outlet)
-            {
-                case IntentOutlet.Query:
-                    // 本地追问必须重新生成：模型不可用时，draft 里的模板回复没有状态与记忆依据。
-                    var localReply = LocalIntentParser.QueryReply(world, npc, playerText, memories);
-                    var queryReply = usedFallback
-                        ? localReply
-                        : MemoryContext.EnsureQueryBasis(
-                            ReplyOr(draft.Reply, localReply),
-                            world,
-                            npc,
-                            memories,
-                            LocalIntentParser.IsMemoryQuestion(playerText),
-                            localReply);
-                    return IntentResult.ReadOnly(IntentOutlet.Query, queryReply, usedFallback, call);
-
-                case IntentOutlet.Chat:
-                    // 闲聊只留下记忆（提到别人时还留一条可转述的传闻），不改变地块、时钟与背包；
-                    // 模型给了 importance 就用模型的。
-                    world.RememberChat(
-                        npc.Id,
-                        playerText,
-                        draft.Importance > 0 ? draft.Importance : MemoryContext.PlayerChatImportance);
-                    return IntentResult.ReadOnly(
-                        IntentOutlet.Chat,
-                        ReplyOr(draft.Reply, LocalIntentParser.ChatReply(playerText ?? string.Empty)),
-                        usedFallback,
-                        call);
+                // 本地追问必须重新生成：模型不可用时，draft 里的模板回复没有状态与记忆依据。
+                var localReply = LocalIntentParser.QueryReply(world, npc, playerText, memories);
+                var queryReply = usedFallback
+                    ? localReply
+                    : MemoryContext.EnsureQueryBasis(
+                        ReplyOr(draft.Reply, localReply),
+                        world,
+                        npc,
+                        memories,
+                        LocalIntentParser.IsMemoryQuestion(playerText),
+                        localReply);
+                return IntentResult.ReadOnly(IntentOutlet.Query, queryReply, usedFallback, call);
             }
 
             if (draft.IsRefusal)
@@ -310,6 +398,99 @@ namespace ElysFarm.Core
                 $"好，我这就去{field.Id}{ActionName(draft.Goal.Value, species)}。");
 
             return IntentResult.AcceptedCommand(reply, order, usedFallback, call);
+        }
+
+        /// <summary>一次模型调用的结果：失败时 <see cref="Response"/> 为 null，<see cref="Call"/> 带原因与耗时。</summary>
+        readonly struct ModelAttempt
+        {
+            public ModelAttempt(ChatResponse response, ModelCallInfo call)
+            {
+                Response = response;
+                Call = call;
+            }
+
+            public ChatResponse Response { get; }
+
+            public ModelCallInfo Call { get; }
+
+            public bool Succeeded => Response != null;
+
+            public string Content => Response?.Content;
+        }
+
+        /// <summary>
+        /// 发一次对话补全并等它到预算上限。超时、断网与同步抛错都折算成一条失败摘要，
+        /// 由调用方决定降级；不向上抛异常。
+        /// </summary>
+        async Task<ModelAttempt> CallAsync(ChatRequest request, float budgetSeconds)
+        {
+            var budget = Math.Max(0.01f, budgetSeconds);
+            using var timeout = new CancellationTokenSource();
+            var startedAt = Stopwatch.StartNew();
+            Task<ChatResponse> callTask;
+            try
+            {
+                request.TimeoutSeconds = Math.Max(1, (int)Math.Ceiling(budget));
+                callTask = client.CompleteAsync(request, timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                startedAt.Stop();
+                return Fail(startedAt.Elapsed.TotalSeconds, ModelCallOutcome.Error, ex.Message);
+            }
+
+            var deadlineTask = Task.Delay(TimeSpan.FromSeconds(budget), timeout.Token);
+            var winner = await Task.WhenAny(callTask, deadlineTask);
+            if (winner != callTask)
+            {
+                Observe(callTask);
+                return Fail(budget, ModelCallOutcome.Timeout, $"等待 {budget:0.#} 秒未返回");
+            }
+
+            timeout.Cancel();
+
+            ChatResponse response;
+            try
+            {
+                response = await callTask;
+            }
+            catch (Exception ex)
+            {
+                startedAt.Stop();
+                return Fail(startedAt.Elapsed.TotalSeconds, ModelCallOutcome.Error, ex.Message);
+            }
+
+            var responseModel = string.IsNullOrWhiteSpace(response.Model) ? client.ModelName : response.Model;
+            return new ModelAttempt(
+                response,
+                new ModelCallInfo(
+                    responseModel,
+                    response.LatencySeconds,
+                    response.PromptTokens,
+                    response.CompletionTokens,
+                    ModelCallOutcome.Ok));
+        }
+
+        ModelAttempt Fail(double latencySeconds, ModelCallOutcome outcome, string detail)
+        {
+            return new ModelAttempt(null, Failed(latencySeconds, outcome, detail));
+        }
+
+        ModelCallInfo Failed(double latencySeconds, ModelCallOutcome outcome, string detail)
+        {
+            return new ModelCallInfo(client?.ModelName, latencySeconds, 0, 0, outcome, detail);
+        }
+
+        /// <summary>模型给了内容但这一层用不了（空内容、非法 JSON、JSON 冒充台词）。</summary>
+        static ModelCallInfo Unusable(ModelCallInfo call)
+        {
+            return new ModelCallInfo(
+                call.Model,
+                call.LatencySeconds,
+                call.PromptTokens,
+                call.CompletionTokens,
+                ModelCallOutcome.Unusable,
+                call.Detail);
         }
 
         /// <summary>

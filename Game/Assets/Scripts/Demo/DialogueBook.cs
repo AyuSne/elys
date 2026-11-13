@@ -11,8 +11,8 @@ namespace ElysFarm.Demo
     /// </summary>
     public sealed class DialogueBook
     {
-        /// <summary>每名 NPC 保留的最大轮数；第 7 轮挤掉最旧的一轮。</summary>
-        public const int MaxRounds = 6;
+        /// <summary>每名 NPC 保留的最大轮数；第 7 轮挤掉最旧的一轮，与表达层的上下文上限是同一个数。</summary>
+        public const int MaxRounds = DialogueContext.MaxRounds;
 
         readonly Dictionary<string, List<DialogueRound>> books =
             new Dictionary<string, List<DialogueRound>>(StringComparer.Ordinal);
@@ -65,13 +65,34 @@ namespace ElysFarm.Demo
             return RoundsOrNull(npcId) ?? (IReadOnlyList<DialogueRound>)Array.Empty<DialogueRound>();
         }
 
+        /// <summary>
+        /// 表达层要的最近几轮：去掉「理解成」这类界面注脚，只留一问一答，最旧在前。
+        /// 返回的是另一份列表，调用方改不到对话簿里的那一份。
+        /// </summary>
+        public IReadOnlyList<DialogueTurn> HistoryOf(string npcId)
+        {
+            var rounds = RoundsOrNull(npcId);
+            if (rounds == null || rounds.Count == 0)
+            {
+                return Array.Empty<DialogueTurn>();
+            }
+
+            var turns = new DialogueTurn[rounds.Count];
+            for (var i = 0; i < rounds.Count; i++)
+            {
+                turns[i] = new DialogueTurn(rounds[i].PlayerText, rounds[i].Reply);
+            }
+
+            return turns;
+        }
+
         List<DialogueRound> RoundsOrNull(string npcId)
         {
             return npcId != null && books.TryGetValue(npcId, out var rounds) ? rounds : null;
         }
     }
 
-    /// <summary>一轮对话：玩家当时说的话、NPC 的回话，以及 HUD 用来恢复表情与提示的两个注脚。</summary>
+    /// <summary>一轮对话：玩家当时说的话、NPC 的回话，以及 HUD 用来恢复表情与提示的几个注脚。</summary>
     public readonly struct DialogueRound
     {
         public DialogueRound(
@@ -79,13 +100,15 @@ namespace ElysFarm.Demo
             string reply,
             string understood,
             IntentOutlet outlet,
-            bool accepted)
+            bool accepted,
+            bool usedFallback = false)
         {
             PlayerText = playerText;
             Reply = reply;
             Understood = understood;
             Outlet = outlet;
             Accepted = accepted;
+            UsedFallback = usedFallback;
         }
 
         public string PlayerText { get; }
@@ -98,5 +121,8 @@ namespace ElysFarm.Demo
         public IntentOutlet Outlet { get; }
 
         public bool Accepted { get; }
+
+        /// <summary>这句话是本地模板说的（模型不可用或表达层没给出可用台词）；HUD 据此标出「本地模板」。</summary>
+        public bool UsedFallback { get; }
     }
 }

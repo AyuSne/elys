@@ -381,6 +381,7 @@ namespace ElysFarm.Demo
             var tag = new Rect(box.x + 160f, box.y - 30f, 76f, 32f);
             skin.DrawPanel(tag, skin.Panel);
             GUI.Label(tag, SpeakerName(), skin.TagText);
+            DrawLocalTemplateBadge(tag);
 
             var frame = new Rect(box.x + 4f, box.y + 4f, 136f, 136f);
             GUI.Box(frame, GUIContent.none, skin.PortraitFrame);
@@ -446,6 +447,35 @@ namespace ElysFarm.Demo
             }
 
             GUI.enabled = true;
+        }
+
+        /// <summary>
+        /// 这句话不是模型说的（离线、分类降级或表达层没给出可用台词）时，在名字旁标出来：
+        /// 观察者一眼能看出现在用的是本地模板，而不是模型在回话。
+        /// </summary>
+        void DrawLocalTemplateBadge(Rect tag)
+        {
+            if (!ShowsLocalTemplate())
+            {
+                return;
+            }
+
+            var badge = new Rect(tag.xMax + 6f, tag.y + 2f, 82f, 28f);
+            skin.DrawPanel(badge, skin.Panel);
+            GUI.Label(badge, "本地模板", skin.SmallInk);
+        }
+
+        bool ShowsLocalTemplate()
+        {
+            if (demo.IsThinkingAboutSelected || demo.IsRetellingSelected)
+            {
+                return false;
+            }
+
+            var round = demo.CurrentRound;
+            return round.HasValue
+                && round.Value.Outlet == IntentOutlet.Chat
+                && round.Value.UsedFallback;
         }
 
         string DialogueLine()

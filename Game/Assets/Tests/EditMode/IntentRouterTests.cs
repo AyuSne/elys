@@ -613,14 +613,25 @@ namespace ElysFarm.Tests
         {
             var world = NewWorld();
             world.Remember("ahe", "玩家说「随便聊聊」", 8);
-            const string json = "{\"outlet\":\"chat\",\"reply\":\"嗯。\",\"importance\":9}";
+            var calls = 0;
+            var client = new ScriptedModelClient((_, __) =>
+            {
+                calls++;
+                return Task.FromResult(new ChatResponse(
+                    calls == 1
+                        ? "{\"outlet\":\"chat\",\"importance\":9}"
+                        : "我记下了，你路上当心。",
+                    "fake-deepseek"));
+            });
 
-            var result = await new IntentRouter(new ScriptedModelClient(json)).RouteAsync(
+            var result = await new IntentRouter(client).RouteAsync(
                 "我明天要走了",
                 world,
                 world.GetNpc("ahe"));
 
             Assert.AreEqual(IntentOutlet.Chat, result.Outlet);
+            Assert.AreEqual("我记下了，你路上当心。", result.Reply, "回话走表达层");
+            Assert.AreEqual(2, calls, "importance 来自分类调用，回话来自表达层调用");
             var hits = world.RetrieveMemories("ahe", "待命");
             StringAssert.Contains("我明天要走了", hits[0].Text, "模型打出的高重要性应压过默认值");
         }

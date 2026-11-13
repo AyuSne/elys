@@ -500,7 +500,7 @@ namespace ElysFarm.Demo
         {
             try
             {
-                var result = await Router.RouteAsync(text, World, target);
+                var result = await Router.RouteAsync(text, World, target, dialogue: DialogueOf(target));
                 if (this == null)
                 {
                     return;
@@ -519,7 +519,9 @@ namespace ElysFarm.Demo
                 ThinkingNpcId = string.Empty;
                 ClearRetelling();
                 var reply = "我脑子卡了一下，先按本地规矩干活。";
-                Dialogue.Record(target.Id, new DialogueRound(text, reply, "没听清", IntentOutlet.Query, false));
+                Dialogue.Record(
+                    target.Id,
+                    new DialogueRound(text, reply, "没听清", IntentOutlet.Query, false, true));
                 var view = ViewOf(target.Id);
                 if (view != null)
                 {
@@ -578,7 +580,24 @@ namespace ElysFarm.Demo
 
             Dialogue.Record(
                 target.Id,
-                new DialogueRound(playerText, result.Reply, UnderstoodOf(result), result.Outlet, result.Accepted));
+                new DialogueRound(
+                    playerText,
+                    result.Reply,
+                    UnderstoodOf(result),
+                    result.Outlet,
+                    result.Accepted,
+                    result.UsedFallback));
+        }
+
+        /// <summary>
+        /// 表达层的输入：口吻住在演示层，最近几轮来自这名 NPC 自己的对话簿；
+        /// 路由器只读这两样，既不生成也不保存它们。
+        /// </summary>
+        DialogueContext DialogueOf(Npc npc)
+        {
+            return npc == null
+                ? DialogueContext.None
+                : new DialogueContext(NpcTones.Of(npc), Dialogue.HistoryOf(npc.Id));
         }
 
         /// <summary>「理解成」一行：接单时给出地块与工步，其余出口说明这句话只留下什么。</summary>

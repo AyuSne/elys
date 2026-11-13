@@ -64,6 +64,25 @@ namespace ElysFarm.Tests
             Assert.AreEqual(6, book.RoundsOf(FarmDemoBootstrap.AheId).Count, "别人的 6 轮不受影响");
         }
 
+        [Test]
+        public void 对话簿给出表达层要的最近六轮()
+        {
+            var book = new DialogueBook();
+            for (var i = 1; i <= 7; i++)
+            {
+                book.Record(FarmDemoBootstrap.AheId, Round($"第 {i} 句", $"第 {i} 答"));
+            }
+
+            var history = book.HistoryOf(FarmDemoBootstrap.AheId);
+            Assert.AreEqual(6, history.Count, "表达层只要最近 6 轮");
+            Assert.AreEqual("第 2 句", history[0].PlayerText, "第 7 轮挤掉最旧的一轮，剩下的最旧在前");
+            Assert.AreEqual("第 2 答", history[0].Reply, "NPC 当时的回话也要带上");
+            Assert.AreEqual("第 7 句", history[5].PlayerText, "最新一轮在最后");
+            Assert.AreEqual("第 7 答", history[5].Reply);
+
+            Assert.IsEmpty(book.HistoryOf(FarmDemoBootstrap.AtuId), "没聊过的人没有可带的历史");
+        }
+
         static DialogueRound Round(
             string playerText,
             string reply,

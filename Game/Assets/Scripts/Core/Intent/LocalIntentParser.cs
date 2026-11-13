@@ -87,9 +87,10 @@ namespace ElysFarm.Core
             if (aboutSomeoneElse || !IsFarmRequestNormalized(normalized))
             {
                 // 追问优先于闲聊：带问句标记但不像农活请求的，按追问处理。
+                // 闲聊不带台词：这句话怎么说是表达层（ExpressionPrompt）的事，本地只分类。
                 return IsQuery(normalized)
                     ? IntentDraft.Read(IntentOutlet.Query, null)
-                    : IntentDraft.Read(IntentOutlet.Chat, ChatReply(normalized));
+                    : IntentDraft.Read(IntentOutlet.Chat, string.Empty);
             }
 
             var goal = DetectGoal(normalized);
@@ -807,12 +808,6 @@ namespace ElysFarm.Core
         static string TrimEnd(string text)
         {
             return (text ?? string.Empty).Trim().TrimEnd('。', '！', '？', '，', '、');
-        }
-
-        internal static string ChatReply(string text)
-        {
-            var replies = new[] { "嗯，我记着呢。", "天不早了，地里的活我盯着。", "你说了算，我听着。" };
-            return replies[text.Length % replies.Length];
         }
     }
 }
