@@ -521,7 +521,12 @@ namespace ElysFarm.Demo
                 var reply = "我脑子卡了一下，先按本地规矩干活。";
                 Dialogue.Record(
                     target.Id,
-                    new DialogueRound(text, reply, "没听清", IntentOutlet.Query, false, true));
+                    new DialogueRound(
+                        new DialogueTurn(text, reply),
+                        "没听清",
+                        IntentOutlet.Query,
+                        accepted: false,
+                        usedFallback: true));
                 var view = ViewOf(target.Id);
                 if (view != null)
                 {
@@ -581,8 +586,7 @@ namespace ElysFarm.Demo
             Dialogue.Record(
                 target.Id,
                 new DialogueRound(
-                    playerText,
-                    result.Reply,
+                    new DialogueTurn(playerText, result.Reply),
                     UnderstoodOf(result),
                     result.Outlet,
                     result.Accepted,

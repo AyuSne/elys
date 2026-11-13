@@ -92,31 +92,33 @@ namespace ElysFarm.Core
 
             if (client == null || deadline <= 0f)
             {
-                var offlineMemories = world.RecallForAnswer(npc.Id, text);
-                return Finish(await ResolveAsync(
-                    LocalIntentParser.Parse(text, world, npc),
+                var offlineRoute = new RouteContext(
                     text,
-                    offlineMemories,
                     world,
                     npc,
-                    usedFallback: true,
-                    ModelCallInfo.None,
+                    world.RecallForAnswer(npc.Id, text),
                     dialogue,
-                    routeClock: null,
-                    deadline: 0f));
+                    clock: null,
+                    deadline: 0f);
+                return Finish(await ResolveAsync(
+                    offlineRoute,
+                    LocalIntentParser.Parse(text, world, npc),
+                    usedFallback: true,
+                    ModelCallInfo.None));
             }
 
             // 追问与闲聊都要先检索记忆：向量可用时用余弦，断网或超时自动退回关键词。
             // 取向量也占用这一次对话的硬超时预算，不能变成 6 秒之外再加 2 秒。
-            var routeStartedAt = Stopwatch.StartNew();
+            var routeClock = Stopwatch.StartNew();
             var cueEmbedding = await MemoryContext.TryEmbedCueAsync(
                 client,
                 text,
                 world,
                 npc,
                 Math.Min(deadline, embeddingDeadlineSeconds ?? EmbeddingDeadlineSeconds));
-            var remaining = Math.Max(0.01f, deadline - (float)routeStartedAt.Elapsed.TotalSeconds);
+            var remaining = Math.Max(0.01f, deadline - (float)routeClock.Elapsed.TotalSeconds);
             var memories = world.RecallForAnswer(npc.Id, text, cueEmbedding);
+            var route = new RouteContext(text, world, npc, memories, dialogue, routeClock, deadline);
 
             ChatRequest request;
             try
@@ -126,54 +128,22 @@ namespace ElysFarm.Core
             catch (Exception ex)
             {
                 return Finish(await ResolveFallback(
-                    text,
-                    memories,
-                    world,
-                    npc,
-                    Failed(0d, ModelCallOutcome.Error, ex.Message),
-                    dialogue,
-                    routeStartedAt,
-                    deadline));
+                    route,
+                    FailedCall(0d, ModelCallOutcome.Error, ex.Message)));
             }
 
             var attempt = await CallAsync(request, remaining);
             if (!attempt.Succeeded)
             {
-                return Finish(await ResolveFallback(
-                    text,
-                    memories,
-                    world,
-                    npc,
-                    attempt.Call,
-                    dialogue,
-                    routeStartedAt,
-                    deadline));
+                return Finish(await ResolveFallback(route, attempt.Call));
             }
 
             if (!ModelIntentParser.TryParse(attempt.Content, out var draft, out _))
             {
-                return Finish(await ResolveFallback(
-                    text,
-                    memories,
-                    world,
-                    npc,
-                    Unusable(attempt.Call),
-                    dialogue,
-                    routeStartedAt,
-                    deadline));
+                return Finish(await ResolveFallback(route, Unusable(attempt.Call)));
             }
 
-            return Finish(await ResolveAsync(
-                draft,
-                text,
-                memories,
-                world,
-                npc,
-                usedFallback: false,
-                attempt.Call,
-                dialogue,
-                routeStartedAt,
-                deadline));
+            return Finish(await ResolveAsync(route, draft, usedFallback: false, attempt.Call));
         }
 
         IntentResult Finish(IntentResult result)
@@ -183,27 +153,13 @@ namespace ElysFarm.Core
         }
 
         /// <summary>本地解析接管一次：分类没拿到可用结果时用它，闲聊因此直接走降级。</summary>
-        Task<IntentResult> ResolveFallback(
-            string text,
-            IReadOnlyList<MemoryHit> memories,
-            FarmWorld world,
-            Npc npc,
-            ModelCallInfo call,
-            DialogueContext dialogue,
-            Stopwatch routeClock,
-            float deadline)
+        Task<IntentResult> ResolveFallback(RouteContext route, ModelCallInfo call)
         {
             return ResolveAsync(
-                LocalIntentParser.Parse(text, world, npc),
-                text,
-                memories,
-                world,
-                npc,
+                route,
+                LocalIntentParser.Parse(route.Text, route.World, route.Npc),
                 usedFallback: true,
-                call,
-                dialogue,
-                routeClock,
-                deadline);
+                call);
         }
 
         /// <summary>
@@ -211,16 +167,10 @@ namespace ElysFarm.Core
         /// 纯闲聊也不能被模型凭空变成一条农活；闲聊在此之后另走一次表达层调用。
         /// </summary>
         async Task<IntentResult> ResolveAsync(
+            RouteContext route,
             IntentDraft draft,
-            string playerText,
-            IReadOnlyList<MemoryHit> memories,
-            FarmWorld world,
-            Npc npc,
             bool usedFallback,
-            ModelCallInfo call,
-            DialogueContext dialogue,
-            Stopwatch routeClock,
-            float deadline)
+            ModelCallInfo call)
         {
             if (draft == null)
             {
@@ -228,22 +178,19 @@ namespace ElysFarm.Core
             }
 
             // 出口以玩家原话为准，模型只负责理解细节（地块、品种、措辞）。
-            var isRequest = LocalIntentParser.IsFarmRequest(playerText, world, npc);
+            var isRequest = LocalIntentParser.IsFarmRequest(route.Text, route.World, route.Npc);
             if (isRequest != (draft.Outlet == IntentOutlet.FarmCommand))
             {
-                draft = LocalIntentParser.Parse(playerText, world, npc);
+                draft = LocalIntentParser.Parse(route.Text, route.World, route.Npc);
                 call = Corrected(call);
             }
 
             if (draft.Outlet == IntentOutlet.Chat)
             {
-                var budget = routeClock == null
-                    ? 0f
-                    : Math.Max(0f, deadline - (float)routeClock.Elapsed.TotalSeconds);
-                return await ChatAsync(playerText, world, npc, memories, draft, usedFallback, call, dialogue, budget);
+                return await ChatAsync(route, draft, usedFallback, call);
             }
 
-            return ResolveQueryOrCommand(draft, playerText, memories, world, npc, usedFallback, call);
+            return ResolveQueryOrCommand(route, draft, usedFallback, call);
         }
 
         /// <summary>
@@ -253,25 +200,21 @@ namespace ElysFarm.Core
         /// importance 仍用分类调用给出的分数写回记忆，地块、时钟与背包不动。
         /// </summary>
         async Task<IntentResult> ChatAsync(
-            string playerText,
-            FarmWorld world,
-            Npc npc,
-            IReadOnlyList<MemoryHit> memories,
+            RouteContext route,
             IntentDraft draft,
             bool usedFallback,
-            ModelCallInfo classification,
-            DialogueContext dialogue,
-            float budget)
+            ModelCallInfo classification)
         {
-            world.RememberChat(
-                npc.Id,
-                playerText,
+            route.World.RememberChat(
+                route.Npc.Id,
+                route.Text,
                 draft.Importance > 0 ? draft.Importance : MemoryContext.PlayerChatImportance);
 
             var reply = ChatFailureLine;
             var call = classification;
             var localTemplate = true;
 
+            var budget = route.Remaining;
             if (!usedFallback && budget > MinCallSeconds)
             {
                 var clock = Stopwatch.StartNew();
@@ -283,7 +226,12 @@ namespace ElysFarm.Core
                         break;
                     }
 
-                    var request = ExpressionPrompt.BuildChat(world, npc, playerText, memories, dialogue);
+                    var request = ExpressionPrompt.BuildChat(
+                        route.World,
+                        route.Npc,
+                        route.Text,
+                        route.Memories,
+                        route.Dialogue);
                     var expression = await CallAsync(request, left);
                     call = expression.Call;
 
@@ -313,32 +261,41 @@ namespace ElysFarm.Core
                     ModelCallOutcome.Timeout,
                     "表达层没有剩余预算");
             }
+            else if (!localTemplate && classification.Outcome == ModelCallOutcome.Correction)
+            {
+                // ADR-0004：本地出口纠正过模型的分类时，结果仍标 Correction 并保留那次分类调用的
+                // 模型名、耗时与 token；台词由表达层说，但观察者要能看出出口是谁定的。
+                call = new ModelCallInfo(
+                    classification.Model,
+                    classification.LatencySeconds,
+                    classification.PromptTokens,
+                    classification.CompletionTokens,
+                    ModelCallOutcome.Correction,
+                    "分类被本地出口纠正；台词由表达层生成");
+            }
 
             return IntentResult.ReadOnly(IntentOutlet.Chat, reply, localTemplate, call);
         }
 
         /// <summary>追问与农事指令：追问只读，指令进白名单与动作校验。</summary>
         static IntentResult ResolveQueryOrCommand(
+            RouteContext route,
             IntentDraft draft,
-            string playerText,
-            IReadOnlyList<MemoryHit> memories,
-            FarmWorld world,
-            Npc npc,
             bool usedFallback,
             ModelCallInfo call)
         {
             if (draft.Outlet == IntentOutlet.Query)
             {
                 // 本地追问必须重新生成：模型不可用时，draft 里的模板回复没有状态与记忆依据。
-                var localReply = LocalIntentParser.QueryReply(world, npc, playerText, memories);
+                var localReply = LocalIntentParser.QueryReply(route.World, route.Npc, route.Text, route.Memories);
                 var queryReply = usedFallback
                     ? localReply
                     : MemoryContext.EnsureQueryBasis(
                         ReplyOr(draft.Reply, localReply),
-                        world,
-                        npc,
-                        memories,
-                        LocalIntentParser.IsMemoryQuestion(playerText),
+                        route.World,
+                        route.Npc,
+                        route.Memories,
+                        LocalIntentParser.IsMemoryQuestion(route.Text),
                         localReply);
                 return IntentResult.ReadOnly(IntentOutlet.Query, queryReply, usedFallback, call);
             }
@@ -358,7 +315,13 @@ namespace ElysFarm.Core
                 return IntentResult.Refuse("这个活我还不会干。", usedFallback, call);
             }
 
-            if (!TryResolveCommandField(world, npc, draft.FieldToken, steps[0], out var field, out var fieldReason))
+            if (!TryResolveCommandField(
+                    route.World,
+                    route.Npc,
+                    draft.FieldToken,
+                    steps[0],
+                    out var field,
+                    out var fieldReason))
             {
                 return IntentResult.Refuse(fieldReason, usedFallback, call);
             }
@@ -368,7 +331,7 @@ namespace ElysFarm.Core
             {
                 if (!ActionValidator.TryResolveSpecies(
                         draft.SpeciesToken,
-                        npc.PreferredSpeciesId,
+                        route.Npc.PreferredSpeciesId,
                         out species,
                         out var speciesReason))
                 {
@@ -376,16 +339,22 @@ namespace ElysFarm.Core
                 }
             }
 
-            if (!world.TryAssignWorkOrder(npc.Id, field.Id, species?.Id, steps, out var order, out var reason))
+            if (!route.World.TryAssignWorkOrder(
+                    route.Npc.Id,
+                    field.Id,
+                    species?.Id,
+                    steps,
+                    out var order,
+                    out var reason))
             {
                 return IntentResult.Refuse(reason, usedFallback, call);
             }
 
             // 玩家的话也要记住：跨日之后再问「上次你让我浇的是哪块」得答得出来。
-            world.Remember(
-                npc.Id,
+            route.World.Remember(
+                route.Npc.Id,
                 MemoryContext.PlayerRequestMemory(
-                    world,
+                    route.World,
                     draft.Goal.Value,
                     field,
                     species,
@@ -398,6 +367,53 @@ namespace ElysFarm.Core
                 $"好，我这就去{field.Id}{ActionName(draft.Goal.Value, species)}。");
 
             return IntentResult.AcceptedCommand(reply, order, usedFallback, call);
+        }
+
+        /// <summary>
+        /// 一次路由的固定输入：玩家原话、世界、说话对象、检索到的记忆、表达层上下文与预算。
+        /// 这些值在整次路由里不变，打包成一个类型，免得每一步都传七八个位置参数。
+        /// </summary>
+        sealed class RouteContext
+        {
+            public RouteContext(
+                string text,
+                FarmWorld world,
+                Npc npc,
+                IReadOnlyList<MemoryHit> memories,
+                DialogueContext dialogue,
+                Stopwatch clock,
+                float deadline)
+            {
+                Text = text;
+                World = world;
+                Npc = npc;
+                Memories = memories;
+                Dialogue = dialogue;
+                Clock = clock;
+                Deadline = deadline;
+            }
+
+            public string Text { get; }
+
+            public FarmWorld World { get; }
+
+            public Npc Npc { get; }
+
+            /// <summary>本次回答检索命中的记忆；离线与在线都先检索，记录一致。</summary>
+            public IReadOnlyList<MemoryHit> Memories { get; }
+
+            /// <summary>表达层的口吻与最近几轮；离线时为 null。</summary>
+            public DialogueContext Dialogue { get; }
+
+            /// <summary>本次对话的总预算从此刻开始算；离线时为 null。</summary>
+            public Stopwatch Clock { get; }
+
+            public float Deadline { get; }
+
+            /// <summary>还剩多少秒预算；没有预算时（离线）为 0。</summary>
+            public float Remaining => Clock == null
+                ? 0f
+                : Math.Max(0f, Deadline - (float)Clock.Elapsed.TotalSeconds);
         }
 
         /// <summary>一次模型调用的结果：失败时 <see cref="Response"/> 为 null，<see cref="Call"/> 带原因与耗时。</summary>
@@ -436,7 +452,7 @@ namespace ElysFarm.Core
             catch (Exception ex)
             {
                 startedAt.Stop();
-                return Fail(startedAt.Elapsed.TotalSeconds, ModelCallOutcome.Error, ex.Message);
+                return FailedAttempt(startedAt.Elapsed.TotalSeconds, ModelCallOutcome.Error, ex.Message);
             }
 
             var deadlineTask = Task.Delay(TimeSpan.FromSeconds(budget), timeout.Token);
@@ -444,7 +460,7 @@ namespace ElysFarm.Core
             if (winner != callTask)
             {
                 Observe(callTask);
-                return Fail(budget, ModelCallOutcome.Timeout, $"等待 {budget:0.#} 秒未返回");
+                return FailedAttempt(budget, ModelCallOutcome.Timeout, $"等待 {budget:0.#} 秒未返回");
             }
 
             timeout.Cancel();
@@ -457,7 +473,7 @@ namespace ElysFarm.Core
             catch (Exception ex)
             {
                 startedAt.Stop();
-                return Fail(startedAt.Elapsed.TotalSeconds, ModelCallOutcome.Error, ex.Message);
+                return FailedAttempt(startedAt.Elapsed.TotalSeconds, ModelCallOutcome.Error, ex.Message);
             }
 
             var responseModel = string.IsNullOrWhiteSpace(response.Model) ? client.ModelName : response.Model;
@@ -471,12 +487,12 @@ namespace ElysFarm.Core
                     ModelCallOutcome.Ok));
         }
 
-        ModelAttempt Fail(double latencySeconds, ModelCallOutcome outcome, string detail)
+        ModelAttempt FailedAttempt(double latencySeconds, ModelCallOutcome outcome, string detail)
         {
-            return new ModelAttempt(null, Failed(latencySeconds, outcome, detail));
+            return new ModelAttempt(null, FailedCall(latencySeconds, outcome, detail));
         }
 
-        ModelCallInfo Failed(double latencySeconds, ModelCallOutcome outcome, string detail)
+        ModelCallInfo FailedCall(double latencySeconds, ModelCallOutcome outcome, string detail)
         {
             return new ModelCallInfo(client?.ModelName, latencySeconds, 0, 0, outcome, detail);
         }

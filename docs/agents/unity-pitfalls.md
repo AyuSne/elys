@@ -88,7 +88,7 @@
 - embedding 走 `IModelClient.EmbedAsync`（硅基流动 `/embeddings`，bge-m3 固定 1024 维，`input` 支持数组）。路由器的批量请求把「检索线索 + 最近缺向量的记忆」一起送；硬超时 2 秒，任何失败都退回关键词，不能挡对话。测试用假客户端返回固定向量，不联网；真实端点只用 `script eval` 或手工请求验。实测两条无关中文短句余弦约 0.5，排序看相对差。
 - 追问的「依据」是领域行为，不是 HUD 文案：`LocalIntentParser.QueryReply` 按「上次那件事 / 为什么没干活 / 状态 / 在干什么」四类生成，回答必带地块、工步、体力或记忆原话；`IntentRouter.EnsureQueryBasis` 给模型的空泛回答补本地依据，问「上次」时必须是记忆依据，只提当前地块不算。别把这段搬进演示层，否则离线追问会退化成套话。
 - `FarmWorld.Remember` 会清掉该 NPC 的 `RecallForAnswer` 缓存（记忆排序变了）；`ExecuteStep`、`TryDecide`、跨日也会清。改缓存生命周期时跑 `MemoryTests.决策面板显示最近一次追问命中的记忆` 和 `DecisionInspectorTests.读取决策快照不改变任何游戏状态`。
-- 心情与饥饿只供状态条展示，由工步、休息与跨日结算驱动；不要把它们加进效用打分，否则会改 ADR-0002 的公式和 #5 的测试预期。
+- 心情与饥饿只供状态条展示与表达层的状态摘要，由工步、休息与跨日结算驱动；不要把它们加进效用打分，否则会改 ADR-0002 的公式和 #5 的测试预期。
 - 决策可视化五项是记忆 / 意图 / 候选与否决原因 / 最近一次模型调用 / 状态条；面板只能读快照，不要把 prompt、token 流、工单进度或人设注脚塞进去。
 - 先读 `GLOSSARY.md` 再命名。`仓库` / `carry` 都是明文 Avoid 的词；本票因此做了一次大范围重命名（产出仓 / 随身 / held）。
 - 三个出口的最终裁决点在 `LocalIntentParser.IsFarmRequest`（#8）：请求一定进动作校验，非请求一定不产生工单；模型只提供细节。改词表后跑 `ChatTests`。`种子` / `种类` 里的「种」是名词，`FirstActionIndex` 会跳过；新增动作词时要同步 `DetectGoal`，否则会出现「是请求但没有目标」的拒绝。
@@ -108,7 +108,7 @@
 - 本机实测 `deepseek-flash` 的意图解析（thinking=low + JSON）稳定在 1–3 秒；偶发一次失败后重试即成功，因此降级路径必须真的可用，不能只写在文档里。
 - Play 模式下 `UnityWebRequest` 偶发 `Unable to complete SSL connection`（HTTP 0），而同一客户端在 Editor 的 `script eval` 里可以成功；这是网络/SSL 的偶发失败，不是代码 bug，自动回退本地模板即可。HUD 会显示「失败 … · 回退模板」。
 - 农事指令按规划级 15 秒、追问/闲聊按对话级 6 秒硬超时；两者都异步等待，超时或网络错误立即回退本地模板，游戏循环不暂停。`IModelClient` 现在覆盖对话补全与批量 embedding；`SupportsEmbeddings=false` 时路由器不发向量请求。
-- **闲聊是两次调用**（#19）：先是分类 JSON（`IntentPrompt`，仍产 importance、仍判「闲聊里夹带的农事请求」），分类之后才是表达层（`ExpressionPrompt`，temperature 0.8、max_tokens 200、不开思考、不要求 JSON）。表达层空响应 / 返回 JSON 重试一次，仍失败只说 `IntentRouter.ChatFailureLine` 并让 HUD 标「本地模板」，不要拿分类调用的 `reply` 冒充回答。表达层只拿分类用完后的剩余预算（对话级 6 秒），`client.Calls` 要按「分类 1 次 + 表达层 1–2 次」算。口吻在演示层 `NpcTones`，不进 `NpcPersona`；最近 6 轮由 `DialogueBook.HistoryOf` 映射成 `DialogueContext` 交给路由器，`DialogueContext.MaxRounds` 是「6 轮」的唯一常量。HUD 的「本地模板」只在「当前这一轮是闲聊且 `UsedFallback`」时画。
+- **闲聊是两次调用**（#19）：先是分类 JSON（`IntentPrompt`，仍产 importance、仍判「闲聊里夹带的农事请求」），分类之后才是表达层（`ExpressionPrompt`，temperature 0.8、max_tokens 200、不开思考、不要求 JSON）。表达层空响应 / 返回 JSON 重试一次，仍失败只说 `IntentRouter.ChatFailureLine` 并让 HUD 标「本地模板」，不要拿分类调用的 `reply` 冒充回答。表达层只拿分类用完后的剩余预算（对话级 6 秒），`client.Calls` 要按「分类 1 次 + 表达层 1–2 次」算。被本地纠正成闲聊的结果仍标 `Correction` 并保留分类调用的 token（ADR-0004），不要被表达层的 `Ok` 覆盖。口吻在演示层 `NpcTones`（按 `NpcPersona` 取，不进 `NpcPersona` 本身）；最近 6 轮由 `DialogueBook.HistoryOf` 映射成 `DialogueContext` 交给路由器，`DialogueContext.MaxRounds` 是「6 轮」的唯一常量。HUD 的「本地模板」只在「当前这一轮是闲聊且 `UsedFallback`」时画。
 - `response_format: json_object` 失败时 DeepSeek 会把内容替换成**空格**、`finish_reason` 仍是 `stop`；客户端必须把空白内容当失败并回退，不能当合法 JSON 继续解析。
 - 不点名地块时不要退回「最近的地块」，要交给效用打分挑（`IntentRouter.TryResolveCommandField`）；否则「给地浇水」会选中刚浇过的近地，违背「指令进入效用打分」。
 - 种植类工单在等待成熟时必须允许插做维护（`FarmWorld.AdvanceWorkOrder` 的 `NextMaintenanceStep`），否则小麦这类 7 天作物会因为只浇一次水而永远等不到收获。测试要断言五个计划工步的顺序，维护步不计入工单进度。

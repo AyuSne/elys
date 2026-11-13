@@ -341,9 +341,9 @@ namespace ElysFarm.Tests
             var client = new ScriptedModelClient((request, _) =>
             {
                 requests.Add(request);
-                return Task.FromResult(new ChatResponse(
-                    requests.Count == 1 ? PlantRadishJson : "你好呀，今天想干点什么？",
-                    "fake-deepseek"));
+                return Task.FromResult(requests.Count == 1
+                    ? new ChatResponse(PlantRadishJson, "fake-deepseek", 1.25d, 123, 45)
+                    : new ChatResponse("你好呀，今天想干点什么？", "fake-deepseek", 0.5d, 80, 12));
             });
 
             var result = await new IntentRouter(client).RouteAsync("你好呀", world, world.GetNpc("ahe"));
@@ -356,6 +356,9 @@ namespace ElysFarm.Tests
             Assert.AreEqual(0, world.Log.Count);
             Assert.AreEqual(2, requests.Count, "被本地纠正成闲聊之后还要走一次表达层，不是离线降级");
             Assert.AreEqual("你好呀，今天想干点什么？", result.Reply, "回话仍由表达层说");
+            Assert.AreEqual(ModelCallOutcome.Correction, result.Call.Outcome, "ADR-0004：本地出口纠正过分类，结果仍标 Correction");
+            Assert.AreEqual(123, result.Call.PromptTokens, "纠正时仍保留那次分类调用的 token");
+            Assert.AreEqual(45, result.Call.CompletionTokens);
         }
 
         [Test]

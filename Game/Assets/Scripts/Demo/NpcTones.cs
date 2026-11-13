@@ -27,26 +27,36 @@ namespace ElysFarm.Demo
         /// <summary>没匹配到人设时的中性口吻：仍然按两三句说，不装成任何一名 NPC。</summary>
         public const string Neutral = "平常自然的口吻，两三句说完。";
 
-        /// <summary>按 NPC 的人设 id 取口吻；不认识的人设给中性口吻。</summary>
+        /// <summary>按 NPC 的人设取口吻；不认识的人设给中性口吻。</summary>
         public static string Of(Npc npc)
         {
-            return Of(npc?.Persona?.Id);
+            return Of(npc?.Persona);
         }
 
-        /// <summary>按人设 id 取口吻；未知或空 id 给中性口吻。</summary>
-        public static string Of(string personaId)
+        /// <summary>按人设取口吻；与三份预设人设对不上时给中性口吻。</summary>
+        public static string Of(NpcPersona persona)
         {
-            switch (personaId)
+            if (persona == null)
             {
-                case "ahe":
-                    return Ahe;
-                case "aya":
-                    return Aya;
-                case "atu":
-                    return Atu;
-                default:
-                    return Neutral;
+                return Neutral;
             }
+
+            if (persona.Id == NpcPersona.Ahe.Id)
+            {
+                return Ahe;
+            }
+
+            if (persona.Id == NpcPersona.Aya.Id)
+            {
+                return Aya;
+            }
+
+            if (persona.Id == NpcPersona.Atu.Id)
+            {
+                return Atu;
+            }
+
+            return Neutral;
         }
     }
 }

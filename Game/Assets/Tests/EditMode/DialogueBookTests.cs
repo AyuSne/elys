@@ -90,7 +90,7 @@ namespace ElysFarm.Tests
             bool accepted = false,
             string understood = "闲聊")
         {
-            return new DialogueRound(playerText, reply, understood, outlet, accepted);
+            return new DialogueRound(new DialogueTurn(playerText, reply), understood, outlet, accepted);
         }
     }
 }

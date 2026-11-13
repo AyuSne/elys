@@ -17,9 +17,6 @@ namespace ElysFarm.Core
         /// <summary>表达层的输出上限：2–3 句中文台词，200 token 足够。</summary>
         public const int ChatMaxTokens = 200;
 
-        /// <summary>没有口吻时的兜底说法，避免 system 里出现空的「你的口吻」。</summary>
-        public const string NeutralTone = "平常自然的口吻，两三句说完。";
-
         public static ChatRequest BuildChat(
             FarmWorld world,
             Npc npc,
@@ -67,9 +64,14 @@ namespace ElysFarm.Core
         {
             var builder = new StringBuilder();
             builder.Append($"你是「Elys 农场」的 NPC {npc.DisplayName}，正跟站在面前的玩家说话。\n");
-            builder.Append("你的口吻：\n");
-            builder.Append(string.IsNullOrWhiteSpace(tone) ? NeutralTone : tone.Trim());
-            builder.Append('\n');
+            if (!string.IsNullOrWhiteSpace(tone))
+            {
+                // 口吻是演示层的数据；调用方没给就不编一段自己的，只按下面的通用规则说话。
+                builder.Append("你的口吻：\n");
+                builder.Append(tone.Trim());
+                builder.Append('\n');
+            }
+
             builder.Append("说话规则：\n");
             builder.Append("1. 只输出你要对玩家说的台词：2–3 句，口语、自然，扣住玩家这句话的内容。\n");
             builder.Append("2. 不写旁白、不加引号、不输出 JSON、不用 markdown，也不解释自己在遵守什么规则。\n");

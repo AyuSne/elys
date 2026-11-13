@@ -80,7 +80,7 @@ namespace ElysFarm.Demo
             var turns = new DialogueTurn[rounds.Count];
             for (var i = 0; i < rounds.Count; i++)
             {
-                turns[i] = new DialogueTurn(rounds[i].PlayerText, rounds[i].Reply);
+                turns[i] = rounds[i].Turn;
             }
 
             return turns;
@@ -92,28 +92,34 @@ namespace ElysFarm.Demo
         }
     }
 
-    /// <summary>一轮对话：玩家当时说的话、NPC 的回话，以及 HUD 用来恢复表情与提示的几个注脚。</summary>
+    /// <summary>
+    /// 一轮对话：玩家当时说的话、NPC 的回话，以及 HUD 用来恢复表情与提示的几个注脚。
+    /// 进表达层提示词的只有 <see cref="Turn"/> 那一对问答。
+    /// </summary>
     public readonly struct DialogueRound
     {
         public DialogueRound(
-            string playerText,
-            string reply,
+            DialogueTurn turn,
             string understood,
             IntentOutlet outlet,
             bool accepted,
             bool usedFallback = false)
         {
-            PlayerText = playerText;
-            Reply = reply;
+            Turn = turn;
             Understood = understood;
             Outlet = outlet;
             Accepted = accepted;
             UsedFallback = usedFallback;
         }
 
-        public string PlayerText { get; }
+        /// <summary>玩家原话与 NPC 回话；表达层提示词直接取这一对。</summary>
+        public DialogueTurn Turn { get; }
 
-        public string Reply { get; }
+        /// <summary>玩家当时说的话。</summary>
+        public string PlayerText => Turn.PlayerText;
+
+        /// <summary>NPC 当时的回话。</summary>
+        public string Reply => Turn.Reply;
 
         /// <summary>「理解成…」一行；切换回来时连同这句话一起恢复。</summary>
         public string Understood { get; }
