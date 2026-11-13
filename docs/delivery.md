@@ -3,6 +3,30 @@
 > 一句话：三条固定剧本可复现地跑通，录屏覆盖三条剧本，压测有数据，交付包在隔离环境里跑过。
 > 本页是 #10「收口：固定剧本、录屏与压测」的交付说明；玩法与实现见 [README](../README.md)。
 
+## #26 收口记录（#31，2026-11-14）
+
+#27–#30 四条修复完成后，按 #31 做全量回归、三条剧本、重打包与冒烟。命令与结果：
+
+| 验收 | 命令 | 结果 |
+|---|---|---|
+| 全量 EditMode | `scripts/run-tests.ps1` | 259/259 通过、0 失败；三项题目验收（五个工步完整 / 时间推进 / 背包守恒）全通过 |
+| 三条剧本 ×3 | `scripts/run-scenarios.ps1 -Runs 3 -RegenerateReference` | 参考从本轮代码重新生成；full-flow / refusal / memory 各 3/3 次逐字一致，且与参考逐字一致（总耗时 275.6 / 135.7 / 160.6 秒） |
+| 重打包 | `scripts/build-windows.ps1 -RequireClean` | 从收口提交构建，`Elys.provenance.json` 的 `source.dirty=false`；包 185 个文件、102.5 MB |
+| 冒烟 | `scripts/smoke-test-build.ps1` | 窗口 1304×784，截图 145 KB 非空；`Player.log` 有 1 条 `[Elys]` 启动日志、0 条异常 |
+| 录屏 | `scripts/record-demo.ps1` | 已重录：166.4 秒 / 4.3 MB / 3327 帧 / 1280×720 / 20fps；章节 00:00 / 01:22 / 02:00；三段 trace 都与参考一致 |
+
+**录屏要不要重录：按「可见文案」判据不需要，按「画面与当前包一致」判据需要，本次已重录。**
+
+三条剧本里没有出现本轮改动的文案：剧本二的拒绝仍是「品种不在白名单」与「A1 还没熟」，
+回放不点取消，剧本模式的三张卡写「等着剧本开口」而不是「待命」。所以台词、地块、三本账与旧录屏一样。
+唯一的画面变化是 Tab 提示的羊皮纸底衬：它在剧本字幕横幅上方露出一条，旧录屏没有。
+为了让 HUD 与当前包一致，本次仍重录。判断录屏是否过期时，先看画面里是否出现改动的文案或绘制，
+不要只看 trace——trace 只记领域结局。
+
+压测与干净环境报告沿用 #10 的结论，不在 #31 的验收项内。最终交付包由
+`scripts/package-windows.ps1 -RequireClean` 从收口提交重建，zip、SHA256 与文件清单在 `Builds/`，
+`Builds/Delivery/` 收齐压缩包、说明、录屏与证据。
+
 ## 交付物
 
 | 交付物 | 位置 | 复现方式 |
@@ -38,7 +62,7 @@
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-tests.ps1
    ```
 
-   全量 238 个 EditMode 用例，报告在 `TestResults/editmode.xml`；`ScenarioTests.*` 是 #10 新增的四条。
+   全量 259 个 EditMode 用例，报告在 `TestResults/editmode.xml`；`ScenarioTests.*` 是 #10 新增的四条。
 5. **复现三次一致**：
 
    ```powershell
@@ -90,8 +114,9 @@
 3. 脚本用严格 UTF-8 解码后逐字比对：三次之间逐字相同，且与领域参考逐字相同。
 4. 领域侧另有 `ScenarioTests.三条剧本连续跑三次_证据逐字一致` 兜底，不依赖构建。
 
-本次交付包的结果：full-flow 3/3、refusal 3/3、memory 3/3，三条都与领域参考逐字一致
-（耗时分别为 267.6 / 133.9 / 158.9 秒）；`TestResults/scenarios/summary.md` 是脚本生成的汇总。
+本次收口（#31）的结果：full-flow 3/3、refusal 3/3、memory 3/3，三条都与领域参考逐字一致
+（耗时分别为 275.6 / 135.7 / 160.6 秒）；参考也在本轮重新生成；`TestResults/scenarios/summary.md`
+是脚本生成的汇总。
 
 证据文本只记可观察结局：游戏日、地块状态与阶段、三本账、每日补货累计（`restocks=`）、
 按顺序执行过的计划工步、是否在休息、还挂着的工单。不记墙钟时间、帧率、浮点生长值，
@@ -100,7 +125,7 @@
 ## 录屏
 
 - 文件：[video/elys-demo.mp4](video/elys-demo.mp4)，1280×720，20fps，H.264（yuv420p），无音轨；
-  166.5 秒（2:46），4.4 MB。
+  166.4 秒（2:46），4.3 MB（#31 按当前 HUD 重录）。
 - 章节（同目录 `elys-demo.chapters.txt`）：`00:00` 剧本一全流程 · `01:22` 剧本二拒绝与抱怨 · `02:00` 剧本三记忆体现。
 - 采集方式：游戏内 `ScreenCapture.CaptureScreenshotAsTexture()` 逐帧抓后缓冲，再由 ffmpeg 编码。
   不是抓桌面窗口，所以不受窗口位置、125% DPI 缩放、标题栏或遮挡影响；画面里也没有鼠标指针。
@@ -172,3 +197,11 @@
 - `scripts/run-scenarios.ps1`、`record-demo.ps1`、`perf-test.ps1`、`verify-clean-environment.ps1`、
   `package-windows.ps1`、`focus-game-window.ps1`：交付验收脚本。
 - `README.md`、`GLOSSARY.md`、`docs/agents/unity-pitfalls.md` 与本文件：交付说明与踩坑记录。
+
+## #26 本次改动（#27–#31）
+
+- 领域：`FarmWorld` 的自主目标登记与候选排除（#27）、地被抢种时的失败理由（#28）；
+  演示层：`AutonomySwitch` 的自主开关（#29）、取消痕迹与待命措辞（#30）。
+- 证据与交付：本页补 #31 收口记录；`docs/video/elys-demo.mp4` 与
+  `docs/images/windows-build.png` 按当前 HUD 刷新；评审修复（Tab 提示位置、`StandbyIntent`
+  命名与文档核对）在提交 `6535fbb`。
