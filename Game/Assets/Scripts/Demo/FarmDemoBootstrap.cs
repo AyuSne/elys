@@ -152,9 +152,14 @@ namespace ElysFarm.Demo
         /// <summary>字幕第二行；标题为空时不画。</summary>
         public string CaptionDetail { get; private set; } = string.Empty;
 
+        /// <summary>
+        /// 是否让 NPC 自己找活干。开局待命；第一条被接受的农事指令自动恢复一次，
+        /// 之后只由玩家按开关决定（#29）。剧本回放永不打开。
+        /// </summary>
+        public bool AutonomyEnabled => autonomy.Enabled;
 
-        /// <summary>是否让 NPC 自己找活干；开局待命，等玩家第一句话或手动开启。</summary>
-        public bool AutonomyEnabled { get; private set; }
+        /// <summary>自主开关的状态机；HUD 的「自主中 / 待命」与压测读同一份状态。</summary>
+        readonly AutonomySwitch autonomy = new AutonomySwitch();
 
         /// <summary>当前是否用像素素材（false 表示体块回退）。</summary>
         public bool UsingArt => PixelArt.UseArt;
@@ -264,7 +269,7 @@ namespace ElysFarm.Demo
             stepAccumulator = 0f;
             simulationNow = 0f;
             Router = new IntentRouter(null);
-            AutonomyEnabled = false;
+            autonomy.Disable();
             SelectedNpc = World.GetNpc(DefaultNpcId);
             Dialogue = new DialogueBook();
             Dialogue.SwitchTo(DefaultNpcId);
@@ -284,7 +289,7 @@ namespace ElysFarm.Demo
         /// <summary>压测姿态：三名 NPC 一起自主、16x、决策抽屉常开，取最重的常规负载。</summary>
         public void BeginStressDemo()
         {
-            AutonomyEnabled = true;
+            autonomy.Enable();
             World.Clock.Speed = 16f;
             SelectedNpc = World.GetNpc(AyaId);
             Dialogue.SwitchTo(AyaId);
@@ -434,11 +439,11 @@ namespace ElysFarm.Demo
         /// <summary>切换自主干活。关掉只影响之后的选择，正在走的路或工单会先干完。</summary>
         public void ToggleAutonomy()
         {
-            AutonomyEnabled = !AutonomyEnabled;
+            autonomy.Toggle();
             foreach (var view in npcViews)
             {
                 view.NextActionAt = 0f;
-                view.Intent = AutonomyEnabled ? "自己找活干" : "待命，等玩家开口";
+                view.Intent = autonomy.Enabled ? "自己找活干" : "待命，等玩家开口";
             }
         }
 
@@ -619,9 +624,10 @@ namespace ElysFarm.Demo
                 }
 
                 // 剧本回放里不打开自主：否则等待期间其余 NPC 会自己找活，证据就不可重复了。
+                // 开局第一次接单才自动恢复一次；之后由玩家的开关说了算（#29）。
                 if (!ScriptedMode)
                 {
-                    AutonomyEnabled = true;
+                    autonomy.OnAcceptedOrder();
                 }
 
                 foreach (var other in npcViews)
@@ -707,7 +713,6 @@ namespace ElysFarm.Demo
             Router = new IntentRouter(DemoModelSettings.CreateClient());
             SelectedNpc = World.GetNpc(DefaultNpcId);
             Dialogue.SwitchTo(DefaultNpcId);
-            AutonomyEnabled = false;
 
             foreach (var spawn in FarmLayout.NpcSpawns)
             {

@@ -110,6 +110,8 @@
 
 **范围注记（#28 失败理由说实话）**。地被别人抢先种上时，`Field.Can(Sow)` 的拒绝理由从「还没空出来」改成「那块地还种着东西」，收成 `Field.SownReason` 这一个常量：判定与文案都读它，`Field` 里不再有散落的字面量——`StepResult.Reason` 与候选否决行断言到同一个常量，另有一条把常量钉回规格文案（「那块地还种着东西」）；意图行与拒绝台词按规格原句断言，期望值来自规格而不是实现。`ActionValidator.IsWaiting` 不加入这条理由——地块不会自己空出来，等条件的清单不动，`ActionValidator.DispositionOf` 对它仍返回 `Failed`；`AdvanceWorkOrder` 的释放规则也不改，`result.Outcome != StepOutcome.Waiting` 立刻 `ReleaseWorkOrderOf`，不挂一个游戏日等它自己变空。意图行因此是「没做成：那块地还种着东西（A3 · 播种）」，不是「没做成：还没空出来（A3 · 播种）」——「还没空出来」既不是会自己满足的条件、也不像做不下去，三态里没有它的位置；三人卡与决策抽屉同读 `StepOutcomeLabel` 这一句，候选否决行（抽屉第 ③ 项）读同一个常量。拒绝台词照旧由 `IntentRouter.RefusalLine` 给「地块 + 理由」（「A1 那块地还种着东西」）。测试：`WorkOrderTests` 新增一条（地被抢种后意图行说实话、失败立刻释放占位）、`FarmWorldTests` 新增一条（候选否决行与常量的唯一来源）；`ChatTests` 与 `IntentRouterTests` 两条回复文案断言跟着改成新理由。本票不改 ADR-0006，也不改 `GLOSSARY.md`：占位与释放时机没有变，只是失败说法的来源收拢。
 
+**范围注记（#29 暂停说了算）**。自主开关收成演示层的纯逻辑 `AutonomySwitch`：开局待命；`OnAcceptedOrder` 只在开局第一次接单时自动恢复自主一次，之后接单不再碰开关，玩家按 `Toggle` 才恢复；`BeginScriptedDemo` 调 `Disable`，剧本回放里接单也不打开（父票 #26 要求「剧本回放照旧永不打开自主」）。`FarmDemoBootstrap.AutonomyEnabled` 只转发 `autonomy.Enabled`，HUD 的「自主中 / 待命」、压测姿态（`Enable`）与 `UpdateNpc` 的 `if (!AutonomyEnabled)` 读同一份状态；暂停仍只影响之后的选择，正在走的路或工单先干完（README「怎么玩」第 5 条不变）。`FarmWorld` 与 `DecisionInspector` 不动：暂停后没有新决定，抽屉第 2 项自然回到「待命」，三人卡读演示层的「待命，等玩家开口」。测试：`AutonomySwitchTests` 四条（开局待命与第一次接单恢复、手动暂停后不再自动打开且再点才恢复、剧本回放永不打开、压测直接打开）；三条固定剧本的逐字一致仍由 `ScenarioTests` 盯住，回放路径另按 Play Mode 跑 trace 验收。范围取舍：父票 #26 的 Testing Decisions 原写「暂停开关与 HUD 底衬不写 EditMode 用例」，本票为「只自动恢复一次」这条规则补了一条纯逻辑接缝——截图无法断言「之后接单不再打开」，而把一次性标志留在 `FarmDemoBootstrap` 里只能靠 Play Mode 手工复验；开关按钮与 HUD 的接线仍按 Play Mode 验收，没有为它们写用例。Play Mode 截图与证据：`Game/Screenshots/29-paused.png`（点「待命」后发一条被接受的浇水指令：开关与三行都写「待命」，抽屉第 ② 项「阿芽的当前意图：待命」、流水只有阿禾的浇水）；三条固定剧本在编辑器 Play Mode 里各回放一遍，trace 与 `TestResults/scenarios/reference/` 严格 UTF-8 逐字相同（`full-flow` / `refusal` / `memory`）。
+
 ## Testing Decisions
 
 **好测试的标准**：只断言外部可观察行为，不断言内部实现。例如断言「不浇水的地块在十个游戏日后仍未成熟」，而不是断言某个私有字段的数值；断言「三本账满足入账减出账等于持有」，而不是断言某个字典的内容。
@@ -121,7 +123,7 @@
 
 不为 `MemoryStore`、`UtilityScorer`、`ActionValidator` 单开接缝：它们是 `FarmWorld` 内部模块，通过 `FarmWorld` 的行为暴露出来。`SecretFileLocator` 是 #4 的唯一例外（见「范围注记（#4）」）：它只做密钥来源决策，不碰领域状态。
 
-`CropStages`、`CameraRig`、`PixelArt`、`PortraitFace`、`FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup`、`DialogueBook`、`FarmDemoText` 是 #12–#23 的表现层例外（见「范围注记（#11–#16）」「范围注记（#18）」与「范围注记（#23）」）：它们只把领域快照翻译成图集格位、机位、布局、表情、每名 NPC 的对话状态或一行文案，不持有领域状态，也不依赖场景；场景渲染、Tilemap 拼接、HUD 布局与动画播放仍以 Play Mode 截图为准。`AssetLayoutTests` 是 #16 的交付护栏，只检查打包目录里没有 3D 模型/材质，不加载贴图。
+`CropStages`、`CameraRig`、`PixelArt`、`PortraitFace`、`FarmLayout`、`SortingOrder`、`OverheadEmotes`、`FarmStartup`、`DialogueBook`、`FarmDemoText` 是 #12–#23 的表现层例外（见「范围注记（#11–#16）」「范围注记（#18）」与「范围注记（#23）」）：它们只把领域快照翻译成图集格位、机位、布局、表情、每名 NPC 的对话状态或一行文案，不持有领域状态，也不依赖场景；场景渲染、Tilemap 拼接、HUD 布局与动画播放仍以 Play Mode 截图为准。`AutonomySwitch`（#29）是同类的演示层状态机：只记「开局自动恢复过一次」与「现在开没开」，不持有领域状态，也不依赖场景；开关按钮的接线与 Play Mode 画面仍以截图为准。`AssetLayoutTests` 是 #16 的交付护栏，只检查打包目录里没有 3D 模型/材质，不加载贴图。
 
 `DialogueContext`（口吻 + 最近几轮）是 `IntentRouter` 的一个入参值，不另开接缝：表达层的提示词与降级仍在 `IntentRouter` + 假 `IModelClient` 这条既有例外缝上断言。口吻数据 `NpcTones` 是演示层文案，不是模块；测试只断言它进了 system 提示词、三人两两不同（见「范围注记（#19）」）。
 
