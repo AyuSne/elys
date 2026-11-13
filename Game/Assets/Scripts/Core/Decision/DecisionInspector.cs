@@ -10,11 +10,20 @@ namespace ElysFarm.Core
         /// <summary>面板固定展示的检索命中条数。</summary>
         public const int MemoryCount = 3;
 
-        /// <summary>为某名 NPC 取一次五项快照。lastCall 由调用方从 <see cref="IntentRouter"/> 带来。</summary>
-        public static DecisionSnapshot Inspect(FarmWorld world, Npc npc, ModelCallInfo lastCall)
+        /// <summary>
+        /// 为某名 NPC 取一次五项快照。lastCall 由调用方从 <see cref="IntentRouter"/> 带来。
+        /// <paramref name="includeAutonomousIntent"/> 为 false 时（演示层暂停了自主），第 2 项写「待命」；
+        /// 检索线索仍按真实意图取，暂停不会把 ① 的记忆也换掉（#29）。
+        /// </summary>
+        public static DecisionSnapshot Inspect(
+            FarmWorld world,
+            Npc npc,
+            ModelCallInfo lastCall,
+            bool includeAutonomousIntent = true)
         {
             var candidates = world.RankCandidates(npc.Id);
             var intent = world.IntentOf(npc.Id);
+            var shownIntent = includeAutonomousIntent ? intent : world.IntentOf(npc.Id, false);
 
             // 玩家追问后展示回答实际依据的那三条；没有追问过才按当前意图检索。
             var memories = world.LastRecallOf(npc.Id) ?? world.RetrieveMemories(npc.Id, intent);
@@ -23,7 +32,7 @@ namespace ElysFarm.Core
                 npc.Id,
                 npc.DisplayName,
                 memories,
-                intent,
+                shownIntent,
                 candidates,
                 world.FieldClaims,
                 lastCall,

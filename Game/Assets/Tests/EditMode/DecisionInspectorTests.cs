@@ -226,6 +226,21 @@ namespace ElysFarm.Tests
         }
 
         [Test]
+        public void 暂停自主时抽屉意图回到待命_自主目标仍占着候选()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.TryDecide("ahe", out var pick, out var reason), reason);
+            Assert.AreEqual("A1", pick.FieldId);
+            StringAssert.Contains("自主：A1", world.Inspect("ahe").Intent, "自主开着时抽屉读同一份登记");
+
+            var paused = world.Inspect("ahe", includeAutonomousIntent: false);
+            Assert.AreEqual("待命", paused.Intent, "暂停后抽屉第 2 项写待命，不展示刚挑好的那一步");
+
+            var aya = world.Inspect("aya");
+            Assert.IsFalse(aya.Candidates.Any(c => c.IsValid), "暂停只改显示，不释放自主目标");
+        }
+
+        [Test]
         public void 读取决策快照不改变任何游戏状态()
         {
             var world = NewWorld();

@@ -36,22 +36,25 @@ namespace ElysFarm.Tests
         }
 
         [Test]
-        public void 剧本回放永不打开自主()
+        public void 开局先按过开关_第一次接单也不再自动恢复()
         {
             var autonomy = new AutonomySwitch();
-            autonomy.Disable();
-            autonomy.OnAcceptedOrder();
+            autonomy.Toggle();
+            autonomy.Toggle();
 
-            Assert.IsFalse(autonomy.Enabled, "剧本回放的接单也不能打开自主，三条证据才逐字一致");
+            Assert.IsFalse(autonomy.Enabled, "玩家已经按回待命");
+            autonomy.OnAcceptedOrder();
+            Assert.IsFalse(autonomy.Enabled, "玩家按过开关之后，接单不该再替他打开");
         }
 
         [Test]
-        public void 压测可以直接打开自主()
+        public void 剧本回放永不打开自主()
         {
             var autonomy = new AutonomySwitch();
-            autonomy.Enable();
+            autonomy.DisableForReplay();
+            autonomy.OnAcceptedOrder();
 
-            Assert.IsTrue(autonomy.Enabled, "压测姿态要三名 NPC 一起自主");
+            Assert.IsFalse(autonomy.Enabled, "剧本回放的接单也不能打开自主，三条证据才逐字一致");
         }
     }
 }

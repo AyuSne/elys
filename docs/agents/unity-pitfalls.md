@@ -125,7 +125,7 @@
 
 - **Game 视图默认是 1175×547，`capture` 会把它拉伸成 1280×720**（横向 1.09、纵向 1.31），按 720 摆的 HUD 会变形。要按 1280×720 验收，先用 `script eval` 反射拿到 `UnityEditor.GameView` 实例，调 `SetCustomResolution(new Vector2(1280, 720), "T3")`；之后 `targetRenderSize` 与 `capture` 都是 1280×720。`GameViewSizes.selectedSizeIndex` 那条路不够，窗口不会立刻换尺寸。
 - 左侧状态面板与右侧决策面板在 547 高度下各只有约 326 逻辑像素。`GUILayout.Label` 不设宽度会换行，直接把面板撑到下方日志区；三块地并排成一行、账本压成一行能省出 60+ 像素。相机也要避开底部 HUD：本票把机位从 z=-10 退到 z=-16，NPC 和草垛才不会被日志面板挡住。
-- NPC 一开局就自主干活会抢在玩家输入之前把地种掉，一句话指挥的演示看起来像被拒绝。演示默认让 NPC **待命**；开局第一次接单自动恢复自主一次，之后只认玩家的开关（#29 的纯逻辑 `AutonomySwitch`，别把「自动恢复」写回接单分支的临时变量）。HUD 另有「自主中 / 待命」开关。
+- NPC 一开局就自主干活会抢在玩家输入之前把地种掉，一句话指挥的演示看起来像被拒绝。演示默认让 NPC **待命**；玩家还没按过开关时，开局第一次接单自动恢复自主一次，之后只认玩家的开关（#29 的纯逻辑 `AutonomySwitch`，别把「自动恢复」写回接单分支的临时变量）。HUD 另有「自主中 / 待命」开关。
 - IMGUI 输入框与按钮走同一套提交路径；`UnityEngine.Input` 在本工程不可用（activeInputHandler=1），但 IMGUI 事件不受影响。
 - **动态字体的 `CalcSize` 比 `fontSize` 高**：18pt 标题约 29px、15pt 正文约 26px、12pt 备注约 22px。给标题留 30px，否则 `TextClipping.Clip` 会把字的顶部切掉（三人卡标题踩过）。
 - **`GUI.TextField` 会把光标色留在 `GUI.color` 里**。紧接着画的占位文字会被冲淡成接近背景色；画占位文字前显式 `GUI.color = Color.white`，画完再还原。

@@ -218,8 +218,11 @@ namespace ElysFarm.Core
         /// 该 NPC 此刻的意图：有工单时给出下一步与三态说法（等条件 / 跳过 / 没做成），
         /// 否则给出自主决定；休息中给出剩余时间。
         /// 决策可视化层与三人卡直接展示这句话，因此它只能来自领域状态，不能由 HUD 事后编造。
+        /// <paramref name="includeAutonomousIntent"/> 为 false 表示演示层已把自主暂停：
+        /// 没有工单、不在休息时一律给「待命」，不显示已挑好的「自主：…」或等待决定的「还在琢磨」；
+        /// 自主目标登记不动，候选排序仍按它避开那块地（#29）。
         /// </summary>
-        public string IntentOf(string npcId)
+        public string IntentOf(string npcId, bool includeAutonomousIntent = true)
         {
             var npc = GetNpc(npcId);
             var order = WorkOrderOf(npcId);
@@ -244,6 +247,11 @@ namespace ElysFarm.Core
                 return $"休息中（还剩 {npc.RestSecondsRemaining:0} 秒）";
             }
 
+            if (!includeAutonomousIntent)
+            {
+                return "待命";
+            }
+
             if (lastDecisions.TryGetValue(npcId, out var decision))
             {
                 return $"自主：{decision.FieldId} · {WorkStepLabel.Of(decision.Step)}";
@@ -257,10 +265,16 @@ namespace ElysFarm.Core
             return "待命";
         }
 
-        /// <summary>决策可视化层的五项只读快照；lastCall 由演示层从 <see cref="IntentRouter"/> 带来。</summary>
-        public DecisionSnapshot Inspect(string npcId, ModelCallInfo lastCall = default)
+        /// <summary>
+        /// 决策可视化层的五项只读快照；lastCall 由演示层从 <see cref="IntentRouter"/> 带来。
+        /// <paramref name="includeAutonomousIntent"/> 只在演示层暂停自主时为 false，见 <see cref="IntentOf"/>。
+        /// </summary>
+        public DecisionSnapshot Inspect(
+            string npcId,
+            ModelCallInfo lastCall = default,
+            bool includeAutonomousIntent = true)
         {
-            return DecisionInspector.Inspect(this, GetNpc(npcId), lastCall);
+            return DecisionInspector.Inspect(this, GetNpc(npcId), lastCall, includeAutonomousIntent);
         }
 
         /// <summary>记下一条属于某名 NPC 的记忆；importance 会被夹到 1..10，时间记为当前游戏日。</summary>

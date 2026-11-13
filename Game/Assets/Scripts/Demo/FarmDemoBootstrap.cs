@@ -153,13 +153,10 @@ namespace ElysFarm.Demo
         public string CaptionDetail { get; private set; } = string.Empty;
 
         /// <summary>
-        /// 是否让 NPC 自己找活干。开局待命；第一条被接受的农事指令自动恢复一次，
-        /// 之后只由玩家按开关决定（#29）。剧本回放永不打开。
+        /// 是否让 NPC 自己找活干。开局待命；玩家还没按过开关时，第一条被接受的农事指令
+        /// 自动恢复一次，之后只由玩家按开关决定（#29）。剧本回放永不打开。
         /// </summary>
         public bool AutonomyEnabled => autonomy.Enabled;
-
-        /// <summary>自主开关的状态机；HUD 的「自主中 / 待命」与压测读同一份状态。</summary>
-        readonly AutonomySwitch autonomy = new AutonomySwitch();
 
         /// <summary>当前是否用像素素材（false 表示体块回退）。</summary>
         public bool UsingArt => PixelArt.UseArt;
@@ -173,6 +170,9 @@ namespace ElysFarm.Demo
         readonly List<CropFieldView> fieldViews = new List<CropFieldView>();
         readonly List<NpcView> npcViews = new List<NpcView>();
         readonly EmoteBoard emotes = new EmoteBoard();
+
+        /// <summary>自主开关的状态机；HUD 的「自主中 / 待命」与压测读同一份状态。</summary>
+        readonly AutonomySwitch autonomy = new AutonomySwitch();
         float nextChatAt;
         float retoldUntil;
         int chatSlot;
@@ -269,7 +269,7 @@ namespace ElysFarm.Demo
             stepAccumulator = 0f;
             simulationNow = 0f;
             Router = new IntentRouter(null);
-            autonomy.Disable();
+            autonomy.DisableForReplay();
             SelectedNpc = World.GetNpc(DefaultNpcId);
             Dialogue = new DialogueBook();
             Dialogue.SwitchTo(DefaultNpcId);
@@ -443,7 +443,7 @@ namespace ElysFarm.Demo
             foreach (var view in npcViews)
             {
                 view.NextActionAt = 0f;
-                view.Intent = autonomy.Enabled ? "自己找活干" : "待命，等玩家开口";
+                view.Intent = AutonomyEnabled ? "自己找活干" : "待命，等玩家开口";
             }
         }
 
@@ -623,12 +623,9 @@ namespace ElysFarm.Demo
                     view.Intent = "按工单开工";
                 }
 
-                // 剧本回放里不打开自主：否则等待期间其余 NPC 会自己找活，证据就不可重复了。
-                // 开局第一次接单才自动恢复一次；之后由玩家的开关说了算（#29）。
-                if (!ScriptedMode)
-                {
-                    autonomy.OnAcceptedOrder();
-                }
+                // 剧本回放已在 BeginScriptedDemo 里把开关锁死（DisableForReplay）；
+                // 这里只负责开局第一次接单的自动恢复，之后由玩家的开关说了算（#29）。
+                autonomy.OnAcceptedOrder();
 
                 foreach (var other in npcViews)
                 {

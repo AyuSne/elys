@@ -746,7 +746,7 @@ namespace ElysFarm.Demo
             GUILayout.BeginArea(content);
             drawerScroll = GUILayout.BeginScrollView(drawerScroll, false, false);
 
-            var snapshot = demo.World.Inspect(demo.SelectedNpc.Id, demo.LastCall);
+            var snapshot = demo.World.Inspect(demo.SelectedNpc.Id, demo.LastCall, demo.AutonomyEnabled);
             DrawMemories(snapshot.Memories);
             DrawIntent(snapshot.NpcName, snapshot.Intent);
             DrawCandidates(snapshot.Candidates, snapshot.FieldClaims);
