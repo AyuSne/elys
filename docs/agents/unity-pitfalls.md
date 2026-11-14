@@ -180,3 +180,13 @@
 - **`Builds/Windows` 先删再打包。** Unity 只覆盖同名文件，上一版残留会叠进新包；`package-windows.ps1` 已处理。要「从干净提交构建」时先提交，再 `-RequireClean`，provenance 里 `dirty` 才是 false。
 - **干净环境验收**把 `Builds/Windows` 拷到 `%TEMP%`，清空 `DEEPSEEK_*` / `SILICONFLOW_*` / `ELYS_SECRETS_FILE`，PATH 只留 System32，再跑 memory 剧本并比对 trace。Unity 的 `Player.log` 仍可能落到真实用户的 `LocalLow`（Known Folder 由 shell 解析），脚本两处都找；这不是全新虚拟机，报告里要如实写。
 - **PowerShell 脚本改完先 `Parser::ParseFile` 检查语法。** 中文注释在编码坏掉时 `pwsh` 的报错会变成一串乱码 token，直接看行号比猜编码快。
+
+## 宣传片与素材采集
+
+- **不要用桌面抓屏录演示。** `ffmpeg ddagrab` 只能抓到"屏幕上看得见的东西"，为此必须把游戏窗口置顶铺满 1920×1080——等于把使用者的桌面抢走一到两分钟。改用游戏自己的 `FrameRecorder`（抓后缓冲，与窗口位置、遮挡、DPI 无关），配合 `SetWindowPos(h, HWND_NOTOPMOST, 3200, 0, ...)` 把窗口挪到屏幕外，全程不占桌面。输入仍走后台 `PostMessage`（`drive.ps1` 的 `bclick` / `bgbk` / `bkey`），不需要窗口可见或聚焦。
+- **1080p 下 `EncodeToPNG` 每帧约 70ms，只能跑 13fps。** `FrameRecorder.Initialize(dir, fps, useJpeg)` 的 `useJpeg` 走 `EncodeToJPG(92)`，实测 26–28fps；像素画在 q92 下肉眼无差。剧本回放仍用 PNG（交付证据要无损）。
+- **`-elysRecord` 现在在正常游玩里也生效**：没有 `-elysScenario` 时它开 live 录制，`-elysQuit` 从"剧本跑完后等待秒数"变成"录制多少秒后收尾退出"。
+- **`1/2/3` 机位键吃不到后台注入。** 那三个键走 `Input.GetKeyDown`，`PostMessage` 的 WM_KEYDOWN 进不了 Unity 的输入状态（`Tab` 能用是因为抽屉读的是 IMGUI 事件）。想切跟拍必须让窗口真的获得前台焦点去发 `SendInput`——那又会抢桌面。要做 4× 跟拍特写，得接受窗口可见，或者改成后期裁切。
+- **确定性剧本不一定演满五步。** 全流程剧本里那块地肥力还够，工单会把「施肥」**跳过**，只演播种/浇水/除草/收获。要五步齐全得从「拒绝与抱怨」剧本补施肥。判断某一步有没有真执行，逐秒抽三人卡的意图行读（`A2 · 施肥` 是执行中，`等肥力降下来（A1 · 施肥）` 是等待中）。
+- **PowerShell 里 `[System.IO.File]::ReadAllText($relativePath)` 用的是进程工作目录，不是 `Set-Location` 之后的目录。** 批量改文件一律传绝对路径，否则报「未能找到路径 D:\Elys\src\...」这种看起来莫名其妙的错。
+- **字幕/字卡的对比度要按最终背景算。** `#7A5F40` 在 `#F7E9CB` 羊皮纸上够用（≈4.5:1），压到 `#382718` 深底上只有 **2.4:1**，实测几乎看不见。深底另设一个 `#B49B78`（≈5.4:1）。
