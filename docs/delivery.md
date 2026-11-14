@@ -85,6 +85,7 @@
 
 | 交付物 | 位置 | 复现方式 |
 |---|---|---|
+| 宣传片（75 秒） | [video/elys-promo.mp4](video/elys-promo.mp4) + `elys-promo-nobgm.mp4` | 见 [video/elys-promo.md](video/elys-promo.md) |
 | Windows 可运行包 | `Builds/Windows/Elys.exe`（整个目录约 102 MB） | `scripts/build-windows.ps1` |
 | 可交付压缩包 | `Builds/Elys-Windows.zip` + `.sha256` + `.manifest.json` | `scripts/package-windows.ps1 -RequireClean` |
 | 三条剧本录屏 | [video/elys-demo.mp4](video/elys-demo.mp4)（1280×720 / 20fps / 无音轨） | `scripts/record-demo.ps1` |

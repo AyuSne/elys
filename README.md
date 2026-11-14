@@ -56,12 +56,18 @@
 
 | 交付物 | 位置 | 怎么复现 |
 |---|---|---|
+| 宣传片（75 秒，真模型实拍） | [docs/video/elys-promo.mp4](docs/video/elys-promo.mp4)（另有无 BGM 版） | [docs/video/elys-promo.md](docs/video/elys-promo.md) |
 | 录屏（三条剧本） | [docs/video/elys-demo.mp4](docs/video/elys-demo.mp4) | `scripts/record-demo.ps1` |
 | 固定剧本回放 | 包内 `Elys.exe -elysScenario full-flow`（或 `refusal` / `memory`） | 见下 |
 | 三次一致证据 | `TestResults/scenarios/summary.md`（生成物） | `scripts/run-scenarios.ps1` |
 | 帧率压测 | `TestResults/perf/perf-report.md`（生成物） | `scripts/perf-test.ps1` |
 | 干净环境验收 | `TestResults/clean-environment/report.md`（生成物） | `scripts/verify-clean-environment.ps1` |
 | 可交付包 | `Builds/Windows/` + `Builds/Elys-Windows.zip` | `scripts/package-windows.ps1 -RequireClean` |
+
+宣传片与录屏分工不同：录屏是**离线剧本回放**（可逐字复现，当证据用），
+宣传片是**真模型 live play**（真输入、真延迟，给人看），画面里抽屉的
+`deepseek-flash 2.34s · 747+269 tok` 是当次调用留下的真数。制作说明与诚实性注记见
+[docs/video/elys-promo.md](docs/video/elys-promo.md)。
 
 三条剧本与预期结局：
 
