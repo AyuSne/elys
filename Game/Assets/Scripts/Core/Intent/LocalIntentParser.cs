@@ -67,6 +67,24 @@ namespace ElysFarm.Core
         /// <summary>第一 / 第二人称开头时，后面的弱标记（想、要、给…）也算请求。</summary>
         static readonly string[] DirectAddressPrefixes = { "我", "你", "您", "俺", "咱" };
 
+        /// <summary>
+        /// 台词里「马上要去干」的几种第一人称说法。自主停着、手上又没有工单时，
+        /// 这类话是假话：她根本不会去（#32）。
+        /// </summary>
+        static readonly string[] PromiseMarkers =
+        {
+            "我这就",
+            "我马上",
+            "我先去",
+            "我现在就去",
+            "我立刻去",
+            "我正要去",
+            "正准备去",
+            "这就去",
+            "马上去",
+            "立刻去"
+        };
+
         static readonly char[] VocativeTrimChars = { ' ', '，', ',', '：', ':', '！', '!', '、', '\t' };
 
         /// <summary>讲往事的标记：没有强请求标记时，这类句子按陈述处理。</summary>
@@ -725,20 +743,21 @@ namespace ElysFarm.Core
             FarmWorld world,
             Npc npc,
             string question,
-            IReadOnlyList<MemoryHit> memories)
+            IReadOnlyList<MemoryHit> memories,
+            bool includeAutonomousIntent = true)
         {
             var normalized = Normalize(question ?? string.Empty);
             var builder = new StringBuilder();
 
             if (IsMemoryQuestion(normalized) && memories != null && memories.Count > 0)
             {
-                AppendMemoryAnswer(builder, world, npc, BestPlayerMemory(memories));
+                AppendMemoryAnswer(builder, world, npc, BestPlayerMemory(memories), includeAutonomousIntent);
                 return builder.ToString();
             }
 
             if (IsWhyNotWorking(normalized))
             {
-                AppendWhyNotWorking(builder, world, npc);
+                AppendWhyNotWorking(builder, world, npc, includeAutonomousIntent);
             }
             else if (IsStatusQuestion(normalized))
             {
@@ -746,7 +765,7 @@ namespace ElysFarm.Core
             }
             else
             {
-                AppendWhatDoing(builder, world, npc);
+                AppendWhatDoing(builder, world, npc, includeAutonomousIntent);
             }
 
             AppendMemoryBasis(builder, memories);
@@ -774,6 +793,29 @@ namespace ElysFarm.Core
                 || text.Contains("闲着");
         }
 
+        /// <summary>
+        /// 台词里有没有「马上要去干」的承诺。自主停着、手上又没有工单时，
+        /// 这类话是假话：她根本不会去（#32）。
+        /// 这里只认几种第一人称的将来说法，不判断句子想干什么——判据仍是领域事实。
+        /// </summary>
+        internal static bool PromisesAction(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            foreach (var marker in PromiseMarkers)
+            {
+                if (text.Contains(marker))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         static bool IsStatusQuestion(string text)
         {
             return text.Contains("累不累")
@@ -799,7 +841,11 @@ namespace ElysFarm.Core
                 out reason);
         }
 
-        static void AppendWhatDoing(StringBuilder builder, FarmWorld world, Npc npc)
+        static void AppendWhatDoing(
+            StringBuilder builder,
+            FarmWorld world,
+            Npc npc,
+            bool includeAutonomousIntent)
         {
             var order = world.WorkOrderOf(npc.Id);
             if (order != null && order.NextStep.HasValue)
@@ -822,17 +868,16 @@ namespace ElysFarm.Core
                 return;
             }
 
-            var intent = world.IntentOf(npc.Id);
+            var intent = world.IntentOf(npc.Id, includeAutonomousIntent);
             if (string.Equals(intent, FarmWorld.ThinkingReason, StringComparison.Ordinal))
             {
                 builder.Append($"我刚干完一趟，还在琢磨下一步（还要 {npc.DecisionSecondsRemaining:0} 秒）。");
                 return;
             }
 
-            const string autonomousPrefix = "自主：";
-            if (intent.StartsWith(autonomousPrefix, StringComparison.Ordinal))
+            var plan = AutonomousPlanOf(intent);
+            if (plan != null)
             {
-                var plan = intent.Substring(autonomousPrefix.Length).Replace(" · ", " ");
                 builder.Append($"我正打算去 {plan}，体力 {npc.Stamina:P0}。");
                 return;
             }
@@ -840,7 +885,20 @@ namespace ElysFarm.Core
             builder.Append($"我现在{intent}，体力 {npc.Stamina:P0}。");
         }
 
-        static void AppendWhyNotWorking(StringBuilder builder, FarmWorld world, Npc npc)
+        /// <summary>把「自主：A2 · 收获」拆成人话；没有自主目标时返回 null。格式由 <see cref="FarmWorld.IntentOf"/> 定，这里只翻译一次。</summary>
+        static string AutonomousPlanOf(string intent)
+        {
+            const string autonomousPrefix = "自主：";
+            return intent != null && intent.StartsWith(autonomousPrefix, StringComparison.Ordinal)
+                ? intent.Substring(autonomousPrefix.Length).Replace(" · ", " ")
+                : null;
+        }
+
+        static void AppendWhyNotWorking(
+            StringBuilder builder,
+            FarmWorld world,
+            Npc npc,
+            bool includeAutonomousIntent)
         {
             if (npc.IsResting)
             {
@@ -875,7 +933,19 @@ namespace ElysFarm.Core
                 return;
             }
 
-            builder.Append($"我正准备去 {next.Value.FieldId} {WorkStepLabel.Of(next.Value.Step)}，只是还没动身。");
+            // 手边有活不等于她要去干：#32 只认领域意图里那句已经挑好的「自主：…」。
+            // 演示层暂停自主时意图是「待命」，就照实说她没在挑活，别替她许愿。
+            var intent = world.IntentOf(npc.Id, includeAutonomousIntent);
+            var plan = AutonomousPlanOf(intent);
+            if (plan != null)
+            {
+                builder.Append($"我正准备去 {plan}，只是还没动身。");
+                return;
+            }
+
+            builder.Append(includeAutonomousIntent
+                ? $"我手边有活，还没拿定先做哪件：现在{intent}。"
+                : $"你说停，我就没自己去挑活：现在{intent}，你说一声我就去。");
         }
 
         static void AppendStatus(StringBuilder builder, Npc npc)
@@ -901,13 +971,18 @@ namespace ElysFarm.Core
             return memories[0];
         }
 
-        static void AppendMemoryAnswer(StringBuilder builder, FarmWorld world, Npc npc, MemoryHit memory)
+        static void AppendMemoryAnswer(
+            StringBuilder builder,
+            FarmWorld world,
+            Npc npc,
+            MemoryHit memory,
+            bool includeAutonomousIntent)
         {
             var text = TrimEnd(memory.Text);
             builder.Append(text.StartsWith("玩家", StringComparison.Ordinal)
                 ? $"对，第 {memory.Day} 天{ToSecondPerson(text)}。"
                 : $"我记得，第 {memory.Day} 天{text}。");
-            builder.Append($"现在{world.IntentOf(npc.Id)}，体力 {npc.Stamina:P0}。");
+            builder.Append($"现在{world.IntentOf(npc.Id, includeAutonomousIntent)}，体力 {npc.Stamina:P0}。");
         }
 
         static void AppendMemoryBasis(StringBuilder builder, IReadOnlyList<MemoryHit> memories)

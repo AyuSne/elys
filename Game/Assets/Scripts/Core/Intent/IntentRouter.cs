@@ -55,6 +55,8 @@ namespace ElysFarm.Core
         /// 未显式指定 deadline 时，农事指令用规划级 15 秒，追问与闲聊用对话级 6 秒，
         /// 取记忆向量与闲聊的表达层调用都占用这一次对话的预算。
         /// <paramref name="dialogue"/> 给表达层提供口吻与最近几轮；它由演示层构造，路由器只读。
+        /// <paramref name="includeAutonomousIntent"/> 只在演示层暂停自主时为 false：
+        /// 追问的事实串与台词校验都按「待命」来读，不把没挑到的活说成「正准备去」（#32）。
         /// 超时、网络错误与非法 JSON 都退到本地解析，调用方不会抛出异常。
         /// </summary>
         public async Task<IntentResult> RouteAsync(
@@ -63,7 +65,8 @@ namespace ElysFarm.Core
             Npc npc,
             float? deadlineSeconds = null,
             float? embeddingDeadlineSeconds = null,
-            DialogueContext dialogue = null)
+            DialogueContext dialogue = null,
+            bool includeAutonomousIntent = true)
         {
             if (world == null)
             {
@@ -118,7 +121,8 @@ namespace ElysFarm.Core
                     world.RecallForAnswer(npc.Id, text),
                     dialogue,
                     clock: null,
-                    deadline: 0f);
+                    deadline: 0f,
+                    includeAutonomousIntent);
                 return Finish(await ResolveAsync(
                     offlineRoute,
                     LocalIntentParser.Parse(text, world, npc),
@@ -137,7 +141,15 @@ namespace ElysFarm.Core
                 Math.Min(deadline, embeddingDeadlineSeconds ?? EmbeddingDeadlineSeconds));
             var remaining = Math.Max(0.01f, deadline - (float)routeClock.Elapsed.TotalSeconds);
             var memories = world.RecallForAnswer(npc.Id, text, cueEmbedding);
-            var route = new RouteContext(text, world, npc, memories, dialogue, routeClock, deadline);
+            var route = new RouteContext(
+                text,
+                world,
+                npc,
+                memories,
+                dialogue,
+                routeClock,
+                deadline,
+                includeAutonomousIntent);
 
             ChatRequest request;
             try
@@ -248,8 +260,9 @@ namespace ElysFarm.Core
                     route.Npc,
                     route.Text,
                     route.Memories,
-                    route.Dialogue),
-                accepts: null,
+                    route.Dialogue,
+                    route.IncludeAutonomousIntent),
+                accepts: spoken => AcceptsSpoken(route, spoken),
                 localReply: ChatFailureLine);
         }
 
@@ -260,7 +273,12 @@ namespace ElysFarm.Core
         /// </summary>
         async Task<IntentResult> QueryAsync(RouteContext route, ModelCallInfo classification)
         {
-            var facts = QueryFacts.Build(route.World, route.Npc, route.Text, route.Memories);
+            var facts = QueryFacts.Build(
+                route.World,
+                route.Npc,
+                route.Text,
+                route.Memories,
+                route.IncludeAutonomousIntent);
             return await ExpressAsync(
                 route,
                 IntentOutlet.Query,
@@ -270,15 +288,32 @@ namespace ElysFarm.Core
                     route.Npc,
                     route.Text,
                     facts,
-                    route.Dialogue),
-                accepts: facts.Accepts,
+                    route.Dialogue,
+                    route.IncludeAutonomousIntent),
+                accepts: spoken => AcceptsSpoken(route, spoken) && facts.Accepts(spoken),
                 localReply: facts.Reply);
+        }
+
+        /// <summary>
+        /// 表达层台词的第二道底线（#32）：她这会儿真会去，说什么都行；
+        /// 不会去（自主停着、手上又没有工单）就不许说「我这就去」这类承诺。
+        /// 判据是「她能不能去」，与事实串那句「具体要去哪里」问的不是一件事：
+        /// 后者要读已挑好的「自主：…」，这里只要自主开着就够了——她下一秒就会自己挑活。
+        /// </summary>
+        bool AcceptsSpoken(RouteContext route, string spoken)
+        {
+            if (route.IncludeAutonomousIntent || route.World.WorkOrderOf(route.Npc.Id) != null)
+            {
+                return true;
+            }
+
+            return !LocalIntentParser.PromisesAction(spoken);
         }
 
         /// <summary>
         /// 表达层的公共驱动：拿剩下的预算换一句台词，逐次重试直到可接受或用完次数。
         /// 模型不可用、没预算、空响应与 JSON 冒充台词都退到 <paramref name="localReply"/>，
-        /// 结果标成本地降级；<paramref name="accepts"/> 为 null 表示模型说了就收（闲聊）。
+        /// 结果标成本地降级；<paramref name="accepts"/> 是这道台词能不能用的判据（闲聊也有一道，见 <see cref="AcceptsSpoken"/>）。
         /// 分类调用纠正过出口时，ADR-0004 要求结果仍标 Correction 并保留那次调用的模型名、耗时与 token。
         /// </summary>
         async Task<IntentResult> ExpressAsync(
@@ -441,7 +476,8 @@ namespace ElysFarm.Core
                 IReadOnlyList<MemoryHit> memories,
                 DialogueContext dialogue,
                 Stopwatch clock,
-                float deadline)
+                float deadline,
+                bool includeAutonomousIntent = true)
             {
                 Text = text;
                 World = world;
@@ -450,6 +486,7 @@ namespace ElysFarm.Core
                 Dialogue = dialogue;
                 Clock = clock;
                 Deadline = deadline;
+                IncludeAutonomousIntent = includeAutonomousIntent;
             }
 
             public string Text { get; }
@@ -468,6 +505,9 @@ namespace ElysFarm.Core
             public Stopwatch Clock { get; }
 
             public float Deadline { get; }
+
+            /// <summary>演示层暂停自主时为 false：意图按「待命」读，见 <see cref="FarmWorld.IntentOf"/>。</summary>
+            public bool IncludeAutonomousIntent { get; }
 
             /// <summary>还剩多少秒预算；没有预算时（离线）为 0。</summary>
             public float Remaining => Clock == null

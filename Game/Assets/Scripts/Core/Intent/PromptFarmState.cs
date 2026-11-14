@@ -42,8 +42,15 @@ namespace ElysFarm.Core
         /// <summary>
         /// NPC 的状态与当前意图。心情与饥饿只在表达层的状态摘要里出现：
         /// 分类提示词只要体力与位置，别悄悄改既有分类调用看到的信息。
+        /// <paramref name="includeAutonomousIntent"/> 为 false（演示层暂停了自主）时，
+        /// 意图按「待命」写进提示词——否则模型会照着「自主：A2 · 收获」编出「我这就去收」这种假话（#32）。
         /// </summary>
-        public static void AppendNpc(StringBuilder user, FarmWorld world, Npc npc, bool includeMoodAndHunger = false)
+        public static void AppendNpc(
+            StringBuilder user,
+            FarmWorld world,
+            Npc npc,
+            bool includeMoodAndHunger = false,
+            bool includeAutonomousIntent = true)
         {
             user.Append($"NPC：{npc.DisplayName}（{npc.Id}），体力 {npc.Stamina:P0}，");
             if (includeMoodAndHunger)
@@ -52,7 +59,7 @@ namespace ElysFarm.Core
             }
 
             user.Append($"当前位置 x={npc.Position.X:0.#}, z={npc.Position.Z:0.#}。\n");
-            user.Append($"NPC 当前意图：{world.IntentOf(npc.Id)}。\n");
+            user.Append($"NPC 当前意图：{world.IntentOf(npc.Id, includeAutonomousIntent)}。\n");
         }
 
         /// <summary>检索命中的记忆，按权重降序，最多三条。</summary>

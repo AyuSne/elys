@@ -316,6 +316,123 @@ namespace ElysFarm.Tests
             return marker < 0 ? string.Empty : user.Substring(marker + "玩家说：".Length).Trim();
         }
 
+        [Test]
+        public async Task 暂停自主时闲聊里的行动承诺被拦_只说故障台词()
+        {
+            var world = NewWorld();
+            var requests = new List<ChatRequest>();
+            var client = new ScriptedModelClient((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ChatResponse(
+                    request.JsonOutput
+                        ? "{\"outlet\":\"chat\",\"importance\":4}"
+                        : "A2 的萝卜熟了，我这就去收。",
+                    "fake-deepseek",
+                    0.8d,
+                    100,
+                    20));
+            });
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "今天天气不错",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe),
+                includeAutonomousIntent: false);
+
+            Assert.AreEqual(IntentOutlet.Chat, result.Outlet);
+            Assert.AreEqual(
+                IntentRouter.ChatFailureLine,
+                result.Reply,
+                "自主停着、又没有工单时说「我这就去收」是假话，宁可只说没听清");
+            Assert.IsTrue(result.UsedFallback, "台词作废就要标成本地降级，HUD 才显示「本地模板」");
+
+            var user = requests[1].Messages[1].Content;
+            StringAssert.DoesNotContain("自主：", user, "提示词也不能先把「自主：A2 · 收获」喂给模型（#32 的根因）");
+            StringAssert.Contains("NPC 当前意图：待命", user, "暂停自主时提示词里的意图就是待命");
+            StringAssert.Contains("不要承诺", requests[1].Messages[0].Content, "说话规则要压住这类承诺");
+        }
+
+        [Test]
+        public async Task 自主开着时闲聊里的行动承诺照常采用()
+        {
+            var world = NewWorld();
+            var client = new ScriptedModelClient((request, _) => Task.FromResult(new ChatResponse(
+                request.JsonOutput
+                    ? "{\"outlet\":\"chat\",\"importance\":4}"
+                    : "A2 的萝卜熟了，我这就去收。",
+                "fake-deepseek",
+                0.8d,
+                100,
+                20)));
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "今天天气不错",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe));
+
+            Assert.AreEqual("A2 的萝卜熟了，我这就去收。", result.Reply, "自主开着时她确实会去，这话不能拦");
+            Assert.IsFalse(result.UsedFallback);
+        }
+
+        [Test]
+        public async Task 手上真有工单时闲聊里的行动承诺照常采用()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed, "先种上，浇水才是能派的活");
+            Assert.IsTrue(
+                world.TryAssignWorkOrder("ahe", "A1", null, new[] { WorkStep.Water }, out _, out var reason),
+                reason);
+            var client = new ScriptedModelClient((request, _) => Task.FromResult(new ChatResponse(
+                request.JsonOutput
+                    ? "{\"outlet\":\"chat\",\"importance\":4}"
+                    : "A1 的萝卜还等着浇水，我这就去。",
+                "fake-deepseek",
+                0.8d,
+                100,
+                20)));
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "今天天气不错",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe),
+                includeAutonomousIntent: false);
+
+            Assert.AreEqual(
+                "A1 的萝卜还等着浇水，我这就去。",
+                result.Reply,
+                "自主停着但她手上有玩家派的活，这话是真的，不能拦");
+            Assert.IsFalse(result.UsedFallback);
+        }
+
+        [Test]
+        public async Task 自主开着时闲聊的提示词里没有禁止承诺那条()
+        {
+            var world = NewWorld();
+            var requests = new List<ChatRequest>();
+            var client = new ScriptedModelClient((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ChatResponse(
+                    request.JsonOutput ? "{\"outlet\":\"chat\",\"importance\":4}" : "嗯，天好。",
+                    "fake-deepseek"));
+            });
+
+            await new IntentRouter(client).RouteAsync(
+                "今天天气不错",
+                world,
+                world.GetNpc("ahe"),
+                dialogue: new DialogueContext(NpcTones.Ahe));
+
+            StringAssert.DoesNotContain(
+                "不要承诺",
+                requests[1].Messages[0].Content,
+                "她这会儿真会去干活，不能把「我这就去」也一并禁掉");
+        }
+
         static FarmWorld NewWorld()
         {
             var world = new FarmWorld(new FarmClock());

@@ -497,6 +497,72 @@ namespace ElysFarm.Tests
             }
         }
 
+        [Test]
+        public async Task 暂停自主时追问为什么不去干活只说待命_不说正准备去()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed, "先种上，让她手边确实有活可干");
+            world.Tick(NpcPersona.Ahe.DecisionSeconds + 0.01f);
+            var npc = world.GetNpc("ahe");
+            Assert.IsNull(world.WorkOrderOf(npc.Id), "她没有工单");
+            Assert.IsTrue(world.NextStep(npc.Id).HasValue, "前提：候选里挑得出活干");
+            Assert.AreEqual("待命", world.IntentOf(npc.Id, false), "暂停自主时三人卡与抽屉读到的是待命");
+
+            var result = await new IntentRouter().RouteAsync(
+                "你怎么不去干活",
+                world,
+                npc,
+                includeAutonomousIntent: false);
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet, "只读追问，不产生工单");
+            Assert.IsNull(world.WorkOrderOf(npc.Id));
+            StringAssert.Contains("待命", result.Reply, "回答要落到与卡片、抽屉同一句待命");
+            StringAssert.DoesNotContain("正准备去", result.Reply, "自主关着时不许说正准备去哪块地");
+        }
+
+        [Test]
+        public async Task 暂停自主时两条追问对同一时刻给出同一种说法()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            world.Tick(NpcPersona.Ahe.DecisionSeconds + 0.01f);
+            var npc = world.GetNpc("ahe");
+            var expected = world.IntentOf(npc.Id, false);
+            Assert.AreEqual("待命", expected, "三人卡与抽屉第 ② 项此刻读到的就是这句");
+
+            var router = new IntentRouter();
+            var doing = await router.RouteAsync("你在干什么", world, npc, includeAutonomousIntent: false);
+            var why = await router.RouteAsync("你怎么不去干活", world, npc, includeAutonomousIntent: false);
+
+            StringAssert.Contains(expected, doing.Reply, "「在干什么」要落到同一句待命");
+            StringAssert.Contains(expected, why.Reply, "「怎么不去干活」也要落到同一句待命");
+            StringAssert.DoesNotContain("正准备去", doing.Reply);
+            StringAssert.DoesNotContain("正准备去", why.Reply);
+        }
+
+        [Test]
+        public async Task 暂停自主时追问的台词里承诺行动也不合格_回退事实串()
+        {
+            var world = NewWorld();
+            Assert.IsTrue(world.ExecuteStep("ahe", "A1", WorkStep.Sow).Executed);
+            world.Tick(NpcPersona.Ahe.DecisionSeconds + 0.01f);
+            var npc = world.GetNpc("ahe");
+            var client = new ScriptedModelClient((request, _) => Task.FromResult(new ChatResponse(
+                request.JsonOutput ? "{\"outlet\":\"query\"}" : "我这就去 A1 浇水，体力还有八成。",
+                "fake-deepseek")));
+
+            var result = await new IntentRouter(client).RouteAsync(
+                "你怎么不去干活",
+                world,
+                npc,
+                includeAutonomousIntent: false);
+
+            Assert.AreEqual(IntentOutlet.Query, result.Outlet);
+            Assert.IsTrue(result.UsedFallback, "台词在承诺一件不会发生的事，作废并回退事实串");
+            StringAssert.Contains("待命", result.Reply);
+            StringAssert.DoesNotContain("我这就去", result.Reply);
+        }
+
         static FarmWorld NewWorld()
         {
             var world = new FarmWorld(new FarmClock());

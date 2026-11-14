@@ -550,7 +550,12 @@ namespace ElysFarm.Demo
         {
             try
             {
-                var result = await Router.RouteAsync(text, World, target, dialogue: DialogueOf(target));
+                var result = await Router.RouteAsync(
+                    text,
+                    World,
+                    target,
+                    dialogue: DialogueOf(target),
+                    includeAutonomousIntent: AutonomyEnabled);
                 if (this == null)
                 {
                     return;

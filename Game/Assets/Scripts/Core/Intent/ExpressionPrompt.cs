@@ -29,19 +29,33 @@ namespace ElysFarm.Core
         /// <summary>两种台词共用的一句：话由模型说，做不做由本地规则定。</summary>
         const string WordingOnlyRule = "你只负责说话：接单、拒绝与执行都由本地规则决定。";
 
+        /// <summary>
+        /// 闲聊多一条：别每次拿地块状态收尾。演示里模型反复用「A2 的萝卜熟了」开头，
+        /// 三次闲聊读起来像同一句（R3-4）。
+        /// </summary>
+        const string NoStatusTailRule = "不要每次都拿地块状态收尾。";
+
+        /// <summary>
+        /// 她这会儿既没有工单、自主又停着：说什么「我这就去」都是假话（#32）。
+        /// 只在真的不会去的时候才写进提示词——她手上真有活时，这句行动表述是对的。
+        /// </summary>
+        const string NoPromiseRule = "你现在没在做、也没打算去做地里的活：不要承诺「我这就去」这类马上要做的行动。";
+
         public static ChatRequest BuildChat(
             FarmWorld world,
             Npc npc,
             string playerText,
             IReadOnlyList<MemoryHit> memories,
-            DialogueContext dialogue)
+            DialogueContext dialogue,
+            bool includeAutonomousIntent = true)
         {
+            var canAct = includeAutonomousIntent || world.WorkOrderOf(npc.Id) != null;
             return new ChatRequest(new[]
             {
-                new ChatMessage("system", BuildChatSystem(npc, dialogue?.Tone)),
+                new ChatMessage("system", BuildChatSystem(npc, dialogue?.Tone, canAct)),
                 new ChatMessage(
                     "user",
-                    BuildChatUser(world, npc, playerText, memories, dialogue?.History))
+                    BuildChatUser(world, npc, playerText, memories, dialogue?.History, includeAutonomousIntent))
             })
             {
                 JsonOutput = false,
@@ -60,14 +74,15 @@ namespace ElysFarm.Core
             Npc npc,
             string playerText,
             QueryFacts facts,
-            DialogueContext dialogue)
+            DialogueContext dialogue,
+            bool includeAutonomousIntent = true)
         {
             return new ChatRequest(new[]
             {
                 new ChatMessage("system", BuildQuerySystem(npc, dialogue?.Tone)),
                 new ChatMessage(
                     "user",
-                    BuildQueryUser(world, npc, playerText, facts, dialogue?.History))
+                    BuildQueryUser(world, npc, playerText, facts, dialogue?.History, includeAutonomousIntent))
             })
             {
                 JsonOutput = false,
@@ -101,7 +116,7 @@ namespace ElysFarm.Core
             return text.Length == 0 ? null : text;
         }
 
-        static string BuildChatSystem(Npc npc, string tone)
+        static string BuildChatSystem(Npc npc, string tone, bool canAct)
         {
             var builder = new StringBuilder();
             AppendVoice(builder, npc, tone);
@@ -110,7 +125,13 @@ namespace ElysFarm.Core
             builder.Append($"2. {FormatRule}");
             builder.Append($"3. {InjectionRule}");
             builder.Append("4. 不要编造「检索到的记忆」里没有的地块或事件；没听懂就直说没听清，不要编答案。\n");
-            builder.Append($"5. {WordingOnlyRule}");
+            builder.Append($"5. {WordingOnlyRule}\n");
+            builder.Append($"6. {NoStatusTailRule}\n");
+            if (!canAct)
+            {
+                builder.Append($"7. {NoPromiseRule}\n");
+            }
+
             return builder.ToString();
         }
 
@@ -146,10 +167,11 @@ namespace ElysFarm.Core
             Npc npc,
             string playerText,
             IReadOnlyList<MemoryHit> memories,
-            IReadOnlyList<DialogueTurn> history)
+            IReadOnlyList<DialogueTurn> history,
+            bool includeAutonomousIntent)
         {
             var user = new StringBuilder();
-            AppendState(user, world, npc, memories);
+            AppendState(user, world, npc, memories, includeAutonomousIntent);
             AppendHistory(user, npc, history);
             user.Append($"玩家说：{playerText}");
             return user.ToString();
@@ -161,10 +183,11 @@ namespace ElysFarm.Core
             Npc npc,
             string playerText,
             QueryFacts facts,
-            IReadOnlyList<DialogueTurn> history)
+            IReadOnlyList<DialogueTurn> history,
+            bool includeAutonomousIntent)
         {
             var user = new StringBuilder();
-            AppendState(user, world, npc, facts.Memories);
+            AppendState(user, world, npc, facts.Memories, includeAutonomousIntent);
             user.Append("本地事实（地块、工步、体力与命中的记忆都已核对，只能换一种说法）：\n");
             user.Append(PromptFarmState.OneLine(facts.Reply));
             user.Append('\n');
@@ -178,11 +201,17 @@ namespace ElysFarm.Core
             StringBuilder user,
             FarmWorld world,
             Npc npc,
-            IReadOnlyList<MemoryHit> memories)
+            IReadOnlyList<MemoryHit> memories,
+            bool includeAutonomousIntent)
         {
             user.Append("农场的真实状态：\n");
             PromptFarmState.AppendFields(user, world);
-            PromptFarmState.AppendNpc(user, world, npc, includeMoodAndHunger: true);
+            PromptFarmState.AppendNpc(
+                user,
+                world,
+                npc,
+                includeMoodAndHunger: true,
+                includeAutonomousIntent);
             PromptFarmState.AppendMemories(user, memories);
         }
 

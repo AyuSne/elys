@@ -54,7 +54,8 @@ namespace ElysFarm.Core
             FarmWorld world,
             Npc npc,
             string question,
-            IReadOnlyList<MemoryHit> memories)
+            IReadOnlyList<MemoryHit> memories,
+            bool includeAutonomousIntent = true)
         {
             if (world == null)
             {
@@ -80,7 +81,7 @@ namespace ElysFarm.Core
                 : (MemoryHit?)null;
 
             return new QueryFacts(
-                LocalIntentParser.QueryReply(world, npc, question, hits),
+                LocalIntentParser.QueryReply(world, npc, question, hits, includeAutonomousIntent),
                 hits,
                 ids,
                 cited);
