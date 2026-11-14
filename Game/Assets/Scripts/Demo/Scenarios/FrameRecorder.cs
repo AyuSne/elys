@@ -15,16 +15,23 @@ namespace ElysFarm.Demo
     {
         string directory;
         float fps = 20f;
+        bool jpeg;
         bool started;
         bool stopRequested;
         int frameCount;
 
         public bool Finished { get; private set; }
 
-        public void Initialize(string targetDirectory, float framesPerSecond)
+        /// <summary>
+        /// <paramref name="useJpeg"/> 为 true 时写 JPEG 而不是 PNG：1080p 下
+        /// <c>EncodeToPNG</c> 每帧要 ~70ms，实测只能跑到 13fps；JPEG 质量 92 能跑到 30fps 以上，
+        /// 肉眼与无损无差（宣传片素材采集用这条）。
+        /// </summary>
+        public void Initialize(string targetDirectory, float framesPerSecond, bool useJpeg = false)
         {
             directory = targetDirectory;
             fps = Mathf.Max(1f, framesPerSecond);
+            jpeg = useJpeg;
             if (!started && isActiveAndEnabled)
             {
                 StartRecording();
@@ -96,8 +103,9 @@ namespace ElysFarm.Demo
                 }
 
                 frameCount++;
-                var path = Path.Combine(directory, $"frame-{frameCount:000000}.png");
-                File.WriteAllBytes(path, texture.EncodeToPNG());
+                var ext = jpeg ? "jpg" : "png";
+                var path = Path.Combine(directory, $"frame-{frameCount:000000}.{ext}");
+                File.WriteAllBytes(path, jpeg ? texture.EncodeToJPG(92) : texture.EncodeToPNG());
             }
             catch (Exception ex)
             {

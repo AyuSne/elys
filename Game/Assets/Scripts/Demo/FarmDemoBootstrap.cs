@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using ElysFarm.Core;
 using UnityEngine;
@@ -226,6 +227,47 @@ namespace ElysFarm.Demo
             {
                 StartPerformanceProbe(options.PerfSeconds, options.PerfOutput);
             }
+            else if (!string.IsNullOrWhiteSpace(options.RecordDirectory))
+            {
+                // 正常游玩也能逐帧录：抓的是播放器后缓冲，窗口可以被挡住、可以挪到屏幕外，
+                // 录制期间不占用桌面（宣传片素材采集用这条路径）。
+                StartLiveRecording(options.RecordDirectory, options.RecordFps, options.QuitAfter);
+            }
+        }
+
+        /// <summary>
+        /// 正常游玩时的逐帧录制。与剧本回放共用 <see cref="FrameRecorder"/>，
+        /// 但不接管输入、不暂停仿真；<paramref name="seconds"/> 秒后收尾并退出。
+        /// </summary>
+        public FrameRecorder StartLiveRecording(string frameDirectory, float framesPerSecond = 30f, float seconds = 0f)
+        {
+            var recorder = GetComponent<FrameRecorder>();
+            if (recorder == null)
+            {
+                recorder = gameObject.AddComponent<FrameRecorder>();
+            }
+
+            recorder.Initialize(frameDirectory, framesPerSecond, true);
+            Debug.Log($"[Elys][record] live 录制已开：{framesPerSecond:0.#} fps → {frameDirectory}");
+            if (seconds > 0f)
+            {
+                StartCoroutine(FinishLiveRecording(recorder, seconds));
+            }
+
+            return recorder;
+        }
+
+        IEnumerator FinishLiveRecording(FrameRecorder recorder, float seconds)
+        {
+            yield return new WaitForSecondsRealtime(seconds);
+            recorder.StopRecording();
+            var deadline = Time.realtimeSinceStartup + 30f;
+            while (!recorder.Finished && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Application.Quit();
         }
 
         /// <summary>开始回放一条固定剧本；编辑器里也能由 script eval 直接调用。</summary>
