@@ -50,6 +50,10 @@
 #10 把 demo 收成一件可交付的东西：三条固定剧本、录屏、压测与干净环境验收。
 完整说明见 [docs/delivery.md](docs/delivery.md)。
 
+分支已收口：`feature/2d-presentation` 快进合并回 `main`，标 `delivery-2026-11-14`。
+第三轮试玩遗留的 9 条（措辞、信息密度一类）明确不修，清单与理由见
+[docs/delivery.md](docs/delivery.md) 的「已知缺陷（本轮不修）」。
+
 | 交付物 | 位置 | 怎么复现 |
 |---|---|---|
 | 录屏（三条剧本） | [docs/video/elys-demo.mp4](docs/video/elys-demo.mp4) | `scripts/record-demo.ps1` |
