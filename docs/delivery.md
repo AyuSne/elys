@@ -27,6 +27,19 @@
 `scripts/package-windows.ps1 -RequireClean` 从收口提交重建，zip、SHA256 与文件清单在 `Builds/`，
 `Builds/Delivery/` 收齐压缩包、说明、录屏与证据。
 
+## #32 重打包记录（2026-11-14）
+
+#32（说了就去做）合入 `29342ef` 后按交付口径重打一次，确认交付物没被改坏：
+
+| 验收 | 命令 | 结果 |
+|---|---|---|
+| 全量 EditMode | `scripts/run-tests.ps1` | 266/266 通过、0 失败；三项题目验收（五个工步完整 / 时间推进 / 背包守恒）全通过 |
+| 三条剧本 ×3 | `scripts/run-scenarios.ps1 -Runs 3` | full-flow / refusal / memory 各 3/3 次逐字一致，且与 #31 的参考逐字一致（267.9 / 135.8 / 159.3 秒）；参考未重新生成 |
+| 重打包 | `scripts/package-windows.ps1 -RequireClean` | 从 `29342ef` 构建，provenance 的 `source.dirty=false`；包 184 个文件 / 107,288,765 字节（102.3 MB）；zip 38,801,870 字节（37.0 MB），SHA256 `88e8a2c7ce7ee52885cd82837cbb6de3829ca9b725cbd8d01e4c609eb3c9df5a`；Delivery 41.7 MB |
+| 冒烟 | 同上（打包脚本内） | 窗口 1298×767，截图 138 KB 非空；`Player.log` 有 1 条 `[Elys]` 启动日志、0 条异常 |
+
+**录屏不重录。** #32 改的是「自主停着时说出口的行动承诺」。三条剧本里只有剧本二有追问，走的是「我累了在歇着」那条休息分支，事实串与改动前逐字相同；交付包三次回放也与参考逐字一致，说明画面里不会出现变过的台词。压测与干净环境报告沿用 #10 的结论，本次不动。
+
 ## 交付物
 
 | 交付物 | 位置 | 复现方式 |
@@ -205,3 +218,15 @@
 - 证据与交付：本页补 #31 收口记录；`docs/video/elys-demo.mp4` 与
   `docs/images/windows-build.png` 按当前 HUD 刷新；评审修复（Tab 提示位置、`StandbyIntent`
   命名与文档核对）在提交 `6535fbb`。
+
+## #32 本次改动
+
+- 领域与表达层：`PromptFarmState.AppendNpc`、`ExpressionPrompt.BuildChat` / `BuildQuery`、`IntentRouter.RouteAsync`
+  多一个 `includeAutonomousIntent`，提示词、事实串、追问三条路按同一句领域意图读；`IntentRouter.AcceptsSpoken`
+  与 `LocalIntentParser.PromisesAction` 是台词闸；`LocalIntentParser.QueryReply` 的「为什么没干活」只认已挑好的
+  自主目标。
+- 演示层：`FarmDemoBootstrap.SubmitAsync` 传 `AutonomyEnabled`。
+- 测试：`QueryTests` 三条、`ChatTests` 四条，仍只打 `IntentRouter` + 假 `IModelClient` 这条既有例外缝。
+- 文档：`README.md`（用例数与验收表）、`docs/spec/ai-farm-npc.md`（范围注记 #32）与本文件。
+- 真机复验截图：`TestResults/playtest3/shots/300–305`（生成物，不入库）。
+
